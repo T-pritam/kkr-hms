@@ -1,0 +1,224 @@
+'use client'
+
+import { useState, useRef } from 'react'
+import { Button } from '@/components/ui/button'
+import { X, Download, Upload, Info } from 'lucide-react'
+
+interface ImportEmployeeModalProps {
+  isOpen: boolean
+  onClose: () => void
+  onSuccess: () => void
+}
+
+export function ImportEmployeeModal({ isOpen, onClose, onSuccess }: ImportEmployeeModalProps) {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      if (!file.name.endsWith('.csv')) {
+        setError('Please select a CSV file')
+        return
+      }
+      setSelectedFile(file)
+      setError('')
+    }
+  }
+
+  const handleDownloadTemplate = () => {
+    const csvContent = `Name,Salary,Role
+John Doe,25000,Nurse
+Jane Smith,30000,Wardboy
+Michael Johnson,28000,Compounder
+Sarah Williams,26000,OT Boy
+Robert Brown,32000,Lab Technician`
+
+    const blob = new Blob([csvContent], { type: 'text/csv' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'employee_import_template.csv'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
+  }
+
+  const handleImport = async () => {
+    if (!selectedFile) {
+      setError('Please select a file')
+      return
+    }
+
+    setLoading(true)
+    setError('')
+
+    try {
+      const formData = new FormData()
+      formData.append('file', selectedFile)
+
+      const response = await fetch('/api/employees/import', {
+        method: 'POST',
+        body: formData,
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to import employees')
+      }
+
+      onSuccess()
+      onClose()
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (!isOpen) return null
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-gray-900 rounded-lg p-4 sm:p-6 w-full max-w-2xl border border-gray-800 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-4 sm:mb-6">
+          <h2 className="text-xl sm:text-2xl font-bold text-white">Import Employees from CSV</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-white">
+            <X size={24} />
+          </button>
+        </div>
+
+        {error && (
+          <div className="mb-4 p-3 rounded-md bg-red-900/20 border border-red-900 text-red-400 text-sm">
+            {error}
+          </div>
+        )}
+
+        {/* CSV Format Info */}
+        <div className="mb-6 p-4 rounded-lg bg-blue-900/20 border border-blue-800">
+          <div className="flex items-start gap-3">
+            <Info className="text-blue-400 mt-1 flex-shrink-0" size={20} />
+            <div className="flex-1">
+              <h3 className="text-blue-400 font-semibold mb-2">CSV Format Requirements</h3>
+              <p className="text-blue-300 text-sm mb-3">
+                👉 Click "Download Template" button below to get the CSV format
+              </p>
+              
+              <div className="space-y-2 text-sm">
+                <p className="text-gray-300">Your CSV file must contain these columns:</p>
+                <ul className="list-disc list-inside text-gray-400 space-y-1 ml-2">
+                  <li>
+                    <span className="text-white font-medium">Name</span> - Employee name (required, non-empty)
+                  </li>
+                  <li>
+                    <span className="text-white font-medium">Salary</span> - Monthly salary as number (required, minimum ₹1000)
+                  </li>
+                  <li>
+                    <span className="text-white font-medium">Role</span> - Employee designation (optional, defaults to "Nurse")
+                  </li>
+                </ul>
+              </div>
+
+              <div className="mt-4">
+                <p className="text-gray-300 text-sm font-semibold mb-2">Available Roles:</p>
+                <p className="text-gray-400 text-sm">
+                  Nurse, Wardboy, Compounder, OT Boy, Watchman, Cleaner, Lab Technician, Pharmacist
+                </p>
+              </div>
+
+              <div className="mt-4 p-3 bg-gray-800/50 rounded border border-gray-700">
+                <p className="text-gray-300 text-sm font-semibold mb-1">Example CSV:</p>
+                <pre className="text-xs text-gray-400 font-mono">
+Name, Salary, Role
+John Doe, 25000, Nurse
+Jane Smith, 30000, Wardboy
+                </pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* File Selection */}
+        <div className="mb-6">
+          <h3 className="text-white font-semibold mb-3">Select CSV File:</h3>
+          <div className="border-2 border-dashed border-gray-700 rounded-lg p-6 text-center">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv"
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+            
+            {selectedFile ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-center gap-2 text-green-400">
+                  <Upload size={24} />
+                  <span className="font-medium">{selectedFile.name}</span>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setSelectedFile(null)
+                    if (fileInputRef.current) fileInputRef.current.value = ''
+                  }}
+                  className="text-sm"
+                >
+                  Choose Different File
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <Upload size={48} className="mx-auto text-gray-400" />
+                <div>
+                  <Button
+                    variant="outline"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    Click to Select CSV File
+                  </Button>
+                </div>
+                <p className="text-sm text-gray-400">or drag and drop your CSV file here</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex flex-col sm:flex-row gap-3">
+          <Button
+            variant="outline"
+            onClick={handleDownloadTemplate}
+            className="flex items-center justify-center gap-2"
+          >
+            <Download size={18} />
+            Download Template
+          </Button>
+          
+          <div className="flex-1 flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              className="flex-1"
+              disabled={loading}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleImport}
+              className="flex-1"
+              disabled={loading || !selectedFile}
+            >
+              {loading ? 'Importing...' : 'Import'}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

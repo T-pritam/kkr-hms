@@ -1,0 +1,91 @@
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
+import { verifyToken, getAccessToken, getRefreshToken, generateAccessToken, setAuthCookies } from '@/lib/auth/jwt'
+import { updateSession } from '@/lib/supabase/middleware'
+
+const publicPaths = ['/login', '/reset-password', '/change-password', '/api/auth/login', '/api/auth/reset-password', '/api/auth/change-password']
+const authPaths = ['/login', '/reset-password']
+
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl
+  
+  // Update Supabase session
+  const { supabaseResponse, user } = await updateSession(request)
+
+  // Check if path is public
+  const isPublicPath = publicPaths.some(path => pathname.startsWith(path))
+
+  // Get tokens from cookies
+  const accessTokenCookie = request.cookies.get('accessToken')
+  const refreshTokenCookie = request.cookies.get('refreshToken')
+
+  let accessToken = accessTokenCookie?.value
+  let isAuthenticated = false
+  let userRole = null
+
+  // Verify access token
+  if (accessToken) {
+    const payload = await verifyToken(accessToken)
+    if (payload && payload.type === 'access') {
+      isAuthenticated = true
+      userRole = payload.role
+    }
+  }
+
+  // If access token invalid/expired, try refresh token
+  if (!isAuthenticated && refreshTokenCookie) {
+    const refreshPayload = await verifyToken(refreshTokenCookie.value)
+    if (refreshPayload && refreshPayload.type === 'refresh') {
+      // Generate new access token
+      const newAccessToken = await generateAccessToken({
+        userId: refreshPayload.userId,
+        email: refreshPayload.email,
+        role: refreshPayload.role,
+      })
+      
+      const response = NextResponse.next()
+      response.cookies.set('accessToken', newAccessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 10 * 60,
+        path: '/',
+      })
+      
+      isAuthenticated = true
+      userRole = refreshPayload.role
+      
+      return response
+    }
+  }
+
+  // Redirect authenticated users away from auth pages
+  if (isAuthenticated && authPaths.some(path => pathname.startsWith(path))) {
+    return NextResponse.redirect(new URL('/dashboard', request.url))
+  }
+
+  // Redirect unauthenticated users to login
+  if (!isAuthenticated && !isPublicPath) {
+    const loginUrl = new URL('/login', request.url)
+    loginUrl.searchParams.set('from', pathname)
+    return NextResponse.redirect(loginUrl)
+  }
+
+  // Role-based access control
+  if (isAuthenticated && userRole) {
+    const adminOnlyPaths = ['/employees', '/finances', '/daily-ledger/employee-ledger', '/admin']
+    const isAdminOnlyPath = adminOnlyPaths.some(path => pathname.startsWith(path))
+    
+    if (isAdminOnlyPath && userRole !== 'ADMIN') {
+      return NextResponse.redirect(new URL('/dashboard', request.url))
+    }
+  }
+
+  return supabaseResponse
+}
+
+export const config = {
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+  ],
+}
