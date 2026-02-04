@@ -58,8 +58,8 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
       icon: UsersRound,
       roles: ['ADMIN', 'DOCTOR'],
       submenu: [
-        { name: 'Employee Details', href: '/employees/details' },
-        { name: 'Employee Salary', href: '/employees/salary' },
+        { name: 'Employee Details', href: '/employees/details', roles: ['ADMIN'] },
+        { name: 'Employee Salary', href: '/employees/salary', roles: ['ADMIN'] },
       ],
     },
     {

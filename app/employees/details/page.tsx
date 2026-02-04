@@ -27,14 +27,30 @@ export default function EmployeeDetailsPage() {
   const fetchEmployees = async () => {
     try {
       setLoading(true)
-      const url = `/api/employees?page=${currentPage}&pageSize=${pageSize}&search=${encodeURIComponent(searchTerm)}`
-      const response = await fetch(url)
+      const response = await fetch(`/api/employees?status=Active`, {
+        credentials: 'include'
+      })
       const data = await response.json()
 
-      if (response.ok) {
-        setEmployees(data.employees || [])
-        setTotalEmployees(data.total || 0)
-        setTotalPages(data.totalPages || 0)
+      if (response.ok && data.success) {
+        // Filter by search term client-side for now
+        const filtered = searchTerm
+          ? (data.data || []).filter((emp: any) =>
+              emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              emp.designation?.toLowerCase().includes(searchTerm.toLowerCase())
+            )
+          : data.data || []
+
+        // Implement client-side pagination
+        const start = (currentPage - 1) * pageSize
+        const end = start + pageSize
+        const paginated = filtered.slice(start, end)
+
+        setEmployees(paginated)
+        setTotalEmployees(filtered.length)
+        setTotalPages(Math.ceil(filtered.length / pageSize))
+      } else {
+        console.error('Failed to fetch:', data.error)
       }
     } catch (error) {
       console.error(error)
@@ -49,9 +65,25 @@ export default function EmployeeDetailsPage() {
   }, [searchTerm, currentPage, pageSize])
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this employee?')) return
-    await fetch(`/api/employees/${id}`, { method: 'DELETE' })
-    fetchEmployees()
+    if (!confirm('Are you sure you want to mark this employee as Inactive? Their historical salary and advance records will be preserved.')) return
+
+    try {
+      const response = await fetch(`/api/employees/${id}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        fetchEmployees()
+      } else {
+        alert(data.error || 'Failed to delete employee')
+      }
+    } catch (error) {
+      console.error('Delete error:', error)
+      alert('Failed to delete employee')
+    }
   }
 
   const formatDate = (date?: string) =>

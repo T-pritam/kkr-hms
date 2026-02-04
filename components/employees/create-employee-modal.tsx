@@ -45,12 +45,13 @@ export function CreateEmployeeModal({ isOpen, onClose, onSuccess }: CreateEmploy
       const response = await fetch('/api/employees', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(formData),
       })
 
       const data = await response.json()
 
-      if (!response.ok) {
+      if (!response.ok || !data.success) {
         throw new Error(data.error || 'Failed to create employee')
       }
 

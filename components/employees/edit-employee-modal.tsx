@@ -46,12 +46,13 @@ export function EditEmployeeModal({ isOpen, onClose, onSuccess, employee }: Edit
       const response = await fetch(`/api/employees/${employee.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(formData),
       })
 
       const data = await response.json()
 
-      if (!response.ok) {
+      if (!response.ok || !data.success) {
         throw new Error(data.error || 'Failed to update employee')
       }
 
