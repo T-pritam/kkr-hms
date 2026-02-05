@@ -75,12 +75,12 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
       submenu: [
         {
           name: 'Daily Summary',
-          href: '/daily-ledger/summary',
+          href: '/ledger/summary',
           roles: ['ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST'],
         },
         {
           name: 'Employee Shift Schedule',
-          href: '/daily-ledger/employee-ledger',
+          href: '/ledger/employee-shift',
           roles: ['ADMIN'],
         },
       ],

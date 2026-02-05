@@ -303,47 +303,6 @@ export default function DailyLedgerSummaryPage() {
           </Card>
         </div>
 
-        {/* Payment Mode Breakdown */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Payment Mode Breakdown (Credits)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-              <div>
-                <p className="text-sm text-gray-400">Cash</p>
-                <p className="text-xl font-bold text-white">
-                  {formatCurrency(summary?.total_credits_cash || 0)}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-400">UPI</p>
-                <p className="text-xl font-bold text-white">
-                  {formatCurrency(summary?.total_credits_upi || 0)}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-400">Card</p>
-                <p className="text-xl font-bold text-white">
-                  {formatCurrency(summary?.total_credits_card || 0)}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-400">Bank Transfer</p>
-                <p className="text-xl font-bold text-white">
-                  {formatCurrency(summary?.payment_mode_summary?.bank_transfer || 0)}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-400">Cheque</p>
-                <p className="text-xl font-bold text-white">
-                  {formatCurrency(summary?.payment_mode_summary?.cheque || 0)}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
         {/* Transactions Table */}
         <Card>
           <CardHeader>
