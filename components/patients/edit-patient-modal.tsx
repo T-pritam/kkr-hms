@@ -5,12 +5,22 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { X } from 'lucide-react'
+import { ReferralSelect } from './referral-select'
 
 interface EditPatientModalProps {
   isOpen: boolean
   onClose: () => void
   onSuccess: () => void
   patient: any
+}
+
+// Helper function to get today's date in YYYY-MM-DD format (respecting local timezone)
+const getTodayDate = () => {
+  const today = new Date()
+  const year = today.getFullYear()
+  const month = String(today.getMonth() + 1).padStart(2, '0')
+  const day = String(today.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 export function EditPatientModal({ isOpen, onClose, onSuccess, patient }: EditPatientModalProps) {
@@ -22,6 +32,7 @@ export function EditPatientModal({ isOpen, onClose, onSuccess, patient }: EditPa
     phone: '',
     gender: 'Male',
     date_of_birth: '',
+    date_of_join: '',
     address: '',
     referred_by: '',
     emergency_contact_name: '',
@@ -40,6 +51,7 @@ export function EditPatientModal({ isOpen, onClose, onSuccess, patient }: EditPa
         phone: patient.phone || '',
         gender: patient.gender || 'Male',
         date_of_birth: patient.date_of_birth || '',
+        date_of_join: patient.date_of_join || '',
         address: patient.address || '',
         referred_by: patient.referred_by || '',
         emergency_contact_name: patient.emergency_contact_name || '',
@@ -126,32 +138,35 @@ export function EditPatientModal({ isOpen, onClose, onSuccess, patient }: EditPa
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="referred_by">Referred By</Label>
-            <select
-              id="referred_by"
+            <ReferralSelect
               value={formData.referred_by}
-              onChange={(e) => setFormData({ ...formData, referred_by: e.target.value })}
-              className="flex h-10 w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
+              onChange={(value) => setFormData({ ...formData, referred_by: value })}
               disabled={loading}
-            >
-              <option value="">Select referral source</option>
-              <option value="Self">Self</option>
-              <option value="Doctor">Doctor</option>
-              <option value="Hospital">Hospital</option>
-              <option value="Family">Family/Friend</option>
-              <option value="Insurance">Insurance</option>
-            </select>
+            />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="phone">Phone</Label>
-            <Input
-              id="phone"
-              value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              disabled={loading}
-              placeholder="+91 98765 43210"
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="phone">Phone</Label>
+              <Input
+                id="phone"
+                value={formData.phone}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                disabled={loading}
+                placeholder="+91 98765 43210"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="date_of_join">Date of Joining</Label>
+              <Input
+                id="date_of_join"
+                type="date"
+                value={formData.date_of_join}
+                onChange={(e) => setFormData({ ...formData, date_of_join: e.target.value })}
+                disabled={loading}
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

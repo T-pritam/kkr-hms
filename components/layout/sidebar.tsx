@@ -71,12 +71,12 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
     {
       name: 'Daily Ledger',
       icon: BookOpen,
-      roles: ['ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST'],
+      roles: ['ADMIN', 'DOCTOR'],
       submenu: [
         {
           name: 'Daily Summary',
           href: '/ledger/summary',
-          roles: ['ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST'],
+          roles: ['ADMIN', 'DOCTOR'],
         },
         {
           name: 'Employee Shift Schedule',
@@ -84,6 +84,12 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
           roles: ['ADMIN'],
         },
       ],
+    },
+    {
+      name: 'Daily Ledger',
+      href: '/ledger/summary',
+      icon: BookOpen,
+      roles: ['NURSE', 'RECEPTIONIST'],
     },
     {
       name: 'Admin Panel',
