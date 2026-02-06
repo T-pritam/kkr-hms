@@ -89,7 +89,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Role-based filtering: non-admin users can only see their own transactions
-    if (payload.role !== 'admin') {
+    if (payload.role !== 'ADMIN' && payload.role !== 'DOCTOR') {
       query = query.eq('created_by', payload.userId)
     } else if (createdBy) {
       // Admin can filter by created_by
@@ -163,6 +163,8 @@ export async function POST(request: NextRequest) {
     } = body
 
     // Validation
+    console.log('Received transaction data:', body)
+    console.log(amount, typeof amount)
     if (!transaction_date || !transaction_type || !source || !amount || !payment_mode || !description) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }

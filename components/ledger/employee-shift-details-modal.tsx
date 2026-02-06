@@ -95,7 +95,7 @@ export function EmployeeShiftDetailsModal({
           </button>
         </div>
 
-        <div className="p-6 space-y-6">
+        <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
           {/* Summary Stats */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
@@ -158,7 +158,7 @@ export function EmployeeShiftDetailsModal({
                         {formatCurrency(txn.amount)}
                       </td>
                       <td className="py-3 px-4 text-gray-300 text-sm capitalize">
-                        {txn.payment_mode.replace('_', ' ')}
+                        {txn.payment_mode.replace('_', ' ')} { txn.reference_number && `(${txn.reference_number})` }
                       </td>
                       <td className="py-3 px-4">
                         <span className={`px-2 py-1 rounded-full text-xs border ${

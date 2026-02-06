@@ -40,6 +40,11 @@ export async function GET(request: NextRequest) {
     if (!payload) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    
+    // Admin only
+    if (payload.role !== 'ADMIN' && payload.role !== 'DOCTOR') {
+      return NextResponse.json({ error: 'Forbidden. Admin access required.' }, { status: 403 })
+    }
 
     const searchParams = request.nextUrl.searchParams
     const monthYear = searchParams.get('month_year')
@@ -124,6 +129,11 @@ export async function POST(request: NextRequest) {
     const payload = await verifyToken(accessToken)
     if (!payload) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Admin only
+    if (payload.role !== 'ADMIN' && payload.role !== 'DOCTOR') {
+      return NextResponse.json({ error: 'Forbidden. Admin access required.' }, { status: 403 })
     }
 
     const body = await request.json()

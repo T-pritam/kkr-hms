@@ -2,7 +2,7 @@
 
 import { ReactNode, useEffect, useState } from 'react'
 import { Sidebar } from './sidebar'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 
 interface DashboardLayoutProps {
   children: ReactNode
@@ -11,28 +11,39 @@ interface DashboardLayoutProps {
 export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [userRole, setUserRole] = useState<string>('ADMIN')
   const [loading, setLoading] = useState(true)
+
   const router = useRouter()
+  const pathname = usePathname()
 
   useEffect(() => {
-    // Verify authentication on client side
     const checkAuth = async () => {
       try {
         const response = await fetch('/api/auth/me')
+
         if (!response.ok) {
           router.push('/login')
           return
         }
+
         const data = await response.json()
-        setUserRole(data.user.role)
+        const role = data.user.role
+
+        setUserRole(role)
+
+        // 🚨 ROLE BASED REDIRECT
+        if (role !== 'ADMIN' && pathname === '/dashboard') {
+          router.replace('/patients')
+          return
+        }
       } catch (error) {
         router.push('/login')
       } finally {
         setLoading(false)
       }
     }
-    
+
     checkAuth()
-  }, [router])
+  }, [router, pathname])
 
   if (loading) {
     return (

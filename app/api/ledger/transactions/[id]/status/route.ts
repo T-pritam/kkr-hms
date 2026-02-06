@@ -45,7 +45,7 @@ export async function PUT(
     }
 
     // Admin only
-    if (payload.role !== 'admin') {
+    if (payload.role !== 'ADMIN' && payload.role !== 'DOCTOR') {
       return NextResponse.json({ error: 'Forbidden. Admin access required.' }, { status: 403 })
     }
 

@@ -39,7 +39,7 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
       name: 'Dashboard',
       href: '/dashboard',
       icon: LayoutDashboard,
-      roles: ['ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST'],
+      roles: ['ADMIN', 'DOCTOR'],
     },
     {
       name: 'Patients',

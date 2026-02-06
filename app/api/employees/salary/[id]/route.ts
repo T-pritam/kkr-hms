@@ -46,6 +46,11 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // Admin only
+    if (payload.role !== 'ADMIN' && payload.role !== 'DOCTOR') {
+      return NextResponse.json({ error: 'Forbidden. Admin access required.' }, { status: 403 })
+    }
+
     const supabase = await createClient()
 
     const { data: salaryRecord, error } = await supabase
@@ -132,6 +137,11 @@ export async function PATCH(
     const payload = await verifyToken(accessToken)
     if (!payload) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Admin only
+    if (payload.role !== 'ADMIN' && payload.role !== 'DOCTOR') {
+      return NextResponse.json({ error: 'Forbidden. Admin access required.' }, { status: 403 })
     }
 
     const supabase = await createClient()
@@ -310,6 +320,11 @@ export async function DELETE(
     const payload = await verifyToken(accessToken)
     if (!payload) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Admin only
+    if (payload.role !== 'ADMIN' && payload.role !== 'DOCTOR') {
+      return NextResponse.json({ error: 'Forbidden. Admin access required.' }, { status: 403 })
     }
 
     const supabase = await createClient()

@@ -41,6 +41,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // Admin only
+    if (payload.role !== 'ADMIN' && payload.role !== 'DOCTOR') {
+      return NextResponse.json({ error: 'Forbidden. Admin access required.' }, { status: 403 })
+    }
+
     const body = await request.json()
     const { employee_id, month_year } = body
 
