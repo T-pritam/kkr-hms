@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Upload, Download, FileText } from 'lucide-react';
+import { Plus, Upload, Download, FileText, Trash2 } from 'lucide-react';
+import { useUser } from '@/hooks/use-user';
 
 interface CaseSheetTabProps {
   patientId: string;
@@ -9,8 +10,10 @@ interface CaseSheetTabProps {
 }
 
 export default function CaseSheetTab({ patientId, billing }: CaseSheetTabProps) {
-  const [caseSheets, setCaseSheets] = useState<any[]>([]);
+  const { user } = useUser();
+  const [caseSheet, setCaseSheet] = useState<any>(null);
   const [showForm, setShowForm] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [formData, setFormData] = useState({
@@ -28,7 +31,14 @@ export default function CaseSheetTab({ patientId, billing }: CaseSheetTabProps) 
       const response = await fetch(`/api/patients/${patientId}/case-sheets`);
       if (response.ok) {
         const data = await response.json();
-        setCaseSheets(data);
+        setCaseSheet(data[0] || null);
+        if (data[0]) {
+          setFormData({
+            discharge_date: data[0].discharge_date || '',
+            discharge_notes: data[0].discharge_notes || '',
+            case_sheet_file: null,
+          });
+        }
       }
     } catch (error) {
       console.error('Error fetching case sheets:', error);
@@ -66,12 +76,14 @@ export default function CaseSheetTab({ patientId, billing }: CaseSheetTabProps) 
             filename: file.name,
             contentType: file.type,
             patientId,
+            fileSize: file.size,
           }),
         }
       );
 
       if (!response.ok) {
-        throw new Error('Failed to get upload URL');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to get upload URL');
       }
 
       const { uploadUrl, publicUrl, filename } = await response.json();
@@ -104,8 +116,8 @@ export default function CaseSheetTab({ patientId, billing }: CaseSheetTabProps) 
     setLoading(true);
 
     try {
-      let caseSheetUrl = '';
-      let caseSheetFilename = '';
+      let caseSheetUrl = caseSheet?.case_sheet_url || '';
+      let caseSheetFilename = caseSheet?.case_sheet_filename || '';
 
       // Upload file if selected
       if (formData.case_sheet_file) {
@@ -119,28 +131,51 @@ export default function CaseSheetTab({ patientId, billing }: CaseSheetTabProps) 
         }
       }
 
-      const response = await fetch(`/api/patients/${patientId}/case-sheets`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          patient_billing_id: billing?.id,
-          discharge_date: formData.discharge_date,
-          discharge_notes: formData.discharge_notes,
-          case_sheet_url: caseSheetUrl,
-          case_sheet_filename: caseSheetFilename,
-        }),
-      });
-
-      if (response.ok) {
-        await fetchCaseSheets();
-        setShowForm(false);
-        setFormData({
-          discharge_date: '',
-          discharge_notes: '',
-          case_sheet_file: null,
+      if (isEditing && caseSheet) {
+        // Update existing case sheet
+        const response = await fetch(`/api/patients/${patientId}/case-sheets/${caseSheet.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            discharge_date: formData.discharge_date,
+            discharge_notes: formData.discharge_notes,
+            case_sheet_url: caseSheetUrl,
+            case_sheet_filename: caseSheetFilename,
+          }),
         });
-      } else {
-        alert('Failed to save case sheet');
+
+        if (response.ok) {
+          await fetchCaseSheets();
+          setShowForm(false);
+          setIsEditing(false);
+        } else {
+          alert('Failed to update case sheet');
+        }
+      } else if (!caseSheet) {
+        // Create new case sheet
+        const response = await fetch(`/api/patients/${patientId}/case-sheets`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            patient_billing_id: billing?.id,
+            discharge_date: formData.discharge_date,
+            discharge_notes: formData.discharge_notes,
+            case_sheet_url: caseSheetUrl,
+            case_sheet_filename: caseSheetFilename,
+          }),
+        });
+
+        if (response.ok) {
+          await fetchCaseSheets();
+          setShowForm(false);
+          setFormData({
+            discharge_date: '',
+            discharge_notes: '',
+            case_sheet_file: null,
+          });
+        } else {
+          alert('Failed to save case sheet');
+        }
       }
     } catch (error) {
       console.error('Error saving case sheet:', error);
@@ -150,17 +185,48 @@ export default function CaseSheetTab({ patientId, billing }: CaseSheetTabProps) 
     }
   };
 
+  const handleDelete = async () => {
+    if (!caseSheet || !user || user.role !== 'ADMIN') return;
+    
+    if (!confirm('Are you sure you want to delete this case sheet?')) return;
+
+    try {
+      const response = await fetch(`/api/patients/${patientId}/case-sheets/${caseSheet.id}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        setCaseSheet(null);
+        setFormData({
+          discharge_date: '',
+          discharge_notes: '',
+          case_sheet_file: null,
+        });
+      } else {
+        alert('Failed to delete case sheet');
+      }
+    } catch (error) {
+      console.error('Error deleting case sheet:', error);
+      alert('Failed to delete case sheet');
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h3 className="text-xl font-semibold text-white">Case Sheet & Discharge</h3>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
-        >
-          <Plus className="h-4 w-4" />
-          Add Case Sheet
-        </button>
+        {!caseSheet && (
+          <button
+            onClick={() => {
+              setShowForm(!showForm);
+              setIsEditing(false);
+            }}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            Add Case Sheet
+          </button>
+        )}
       </div>
 
       {showForm && (
@@ -238,61 +304,81 @@ export default function CaseSheetTab({ patientId, billing }: CaseSheetTabProps) 
       )}
 
       <div className="space-y-4">
-        {caseSheets.length === 0 ? (
+        {!caseSheet ? (
           <div className="bg-gray-800 rounded-lg p-8 text-center text-gray-400">
-            No case sheets recorded yet
+            No case sheet recorded yet
           </div>
         ) : (
-          caseSheets.map((sheet) => (
-            <div key={sheet.id} className="bg-gray-800 rounded-lg p-6">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    <FileText className="h-5 w-5 text-blue-400" />
-                    <h4 className="text-lg font-semibold text-white">
-                      Case Sheet - {sheet.discharge_date ? new Date(sheet.discharge_date).toLocaleDateString() : 'No Date'}
-                    </h4>
+          <div className="bg-gray-800 rounded-lg p-6 space-y-4">
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-4">
+                  <FileText className="h-5 w-5 text-blue-400" />
+                  <h4 className="text-lg font-semibold text-white">
+                    Case Sheet - {caseSheet.discharge_date ? new Date(caseSheet.discharge_date).toLocaleDateString() : 'No Date'}
+                  </h4>
+                </div>
+                
+                {caseSheet.discharge_notes && (
+                  <div className="mb-4">
+                    <p className="text-sm font-medium text-gray-400 mb-1">Discharge Notes:</p>
+                    <p className="text-white whitespace-pre-wrap">{caseSheet.discharge_notes}</p>
                   </div>
-                  
-                  {sheet.discharge_notes && (
-                    <div className="mb-4">
-                      <p className="text-sm font-medium text-gray-400 mb-1">Discharge Notes:</p>
-                      <p className="text-white whitespace-pre-wrap">{sheet.discharge_notes}</p>
-                    </div>
-                  )}
+                )}
 
-                  <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="grid grid-cols-2 gap-4 text-sm mb-4">
+                  <div>
+                    <span className="text-gray-400">Created:</span>
+                    <span className="text-white ml-2">
+                      {new Date(caseSheet.created_at).toLocaleString()}
+                    </span>
+                  </div>
+                  {caseSheet.uploaded_at && (
                     <div>
-                      <span className="text-gray-400">Created:</span>
+                      <span className="text-gray-400">Uploaded:</span>
                       <span className="text-white ml-2">
-                        {new Date(sheet.created_at).toLocaleString()}
+                        {new Date(caseSheet.uploaded_at).toLocaleString()}
                       </span>
                     </div>
-                    {sheet.uploaded_at && (
-                      <div>
-                        <span className="text-gray-400">Uploaded:</span>
-                        <span className="text-white ml-2">
-                          {new Date(sheet.uploaded_at).toLocaleString()}
-                        </span>
-                      </div>
-                    )}
-                  </div>
+                  )}
                 </div>
-
-                {sheet.case_sheet_url && (
-                  <a
-                    href={sheet.case_sheet_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors ml-4"
-                  >
-                    <Download className="h-4 w-4" />
-                    Download PDF
-                  </a>
-                )}
               </div>
+
+              {caseSheet.case_sheet_url && (
+                <a
+                  href={caseSheet.case_sheet_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors ml-4"
+                >
+                  <Download className="h-4 w-4" />
+                  Download PDF
+                </a>
+              )}
             </div>
-          ))
+
+            <div className="flex gap-2 pt-4 border-t border-gray-700">
+              <button
+                onClick={() => {
+                  setShowForm(!showForm);
+                  setIsEditing(true);
+                }}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+              >
+                <Plus className="h-4 w-4" />
+                Edit Case Sheet
+              </button>
+              {user?.role === 'ADMIN' && (
+                <button
+                  onClick={handleDelete}
+                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete
+                </button>
+              )}
+            </div>
+          </div>
         )}
       </div>
     </div>

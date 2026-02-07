@@ -25,7 +25,10 @@ export async function GET(
 
     const { data, error } = await supabase
       .from('patient_billing_installments')
-      .select('*')
+      .select(`
+        *,
+        users!created_by(id, username)
+      `)
       .eq('patient_billing_id', billingId)
       .order('installment_number', { ascending: true });
 

@@ -20,7 +20,10 @@ export async function GET(
 
     let query = supabase
       .from('patient_charges')
-      .select('*')
+      .select(`
+        *,
+        users!created_by(id, username)
+      `)
       .eq('patient_id', patientId);
 
     if (billingId) {

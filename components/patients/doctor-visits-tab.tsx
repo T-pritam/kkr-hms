@@ -1,18 +1,32 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Calendar, Clock } from 'lucide-react';
+import { Plus, Calendar, Clock, Search, X, Edit2, Trash2 } from 'lucide-react';
+import { useUser } from '@/hooks/use-user';
 
 interface DoctorVisitsTabProps {
     patientId: string;
     patientJoinDate?: string;
 }
 
+interface Doctor {
+    id: string;
+    name: string;
+    specialist?: string;
+}
+
 export default function DoctorVisitsTab({ patientId, patientJoinDate }: DoctorVisitsTabProps) {
+    const { user } = useUser();
     const [consultations, setConsultations] = useState<any[]>([]);
-    const [doctors, setDoctors] = useState<any[]>([]);
+    const [doctors, setDoctors] = useState<Doctor[]>([]);
+    const [filteredDoctors, setFilteredDoctors] = useState<Doctor[]>([]);
     const [showForm, setShowForm] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [dischargeDate, setDischargeDate] = useState<string | null>(null);
+    const [doctorSearch, setDoctorSearch] = useState('');
+    const [showDoctorDropdown, setShowDoctorDropdown] = useState(false);
+    const [editingId, setEditingId] = useState<string | null>(null);
+
     const getCurrentTime = () => {
         const now = new Date()
         return now.toTimeString().slice(0, 5) // "HH:mm"
@@ -22,7 +36,6 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate }: DoctorVi
         doctor_id: '',
         consultation_date: '',
         consultation_time: getCurrentTime(),
-        visit_number: 1,
         price_per_visit: 0,
         notes: '',
     });
@@ -30,7 +43,23 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate }: DoctorVi
     useEffect(() => {
         fetchConsultations();
         fetchDoctors();
+        fetchDischargeDate();
     }, [patientId]);
+
+    // Filter doctors based on search term
+    useEffect(() => {
+        if (doctorSearch.trim() === '') {
+            setFilteredDoctors(doctors);
+        } else {
+            const searchLower = doctorSearch.toLowerCase();
+            setFilteredDoctors(
+                doctors.filter((doctor) =>
+                    doctor.name.toLowerCase().includes(searchLower) ||
+                    doctor.specialist?.toLowerCase().includes(searchLower)
+                )
+            );
+        }
+    }, [doctorSearch, doctors]);
 
     const fetchConsultations = async () => {
         try {
@@ -46,13 +75,28 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate }: DoctorVi
 
     const fetchDoctors = async () => {
         try {
-            const response = await fetch('/api/doctors');
+            const response = await fetch('/api/doctors/all');
             if (response.ok) {
                 const data = await response.json();
-                setDoctors(data.data || []);
+                setDoctors(Array.isArray(data) ? data : []);
+                setFilteredDoctors(Array.isArray(data) ? data : []);
             }
         } catch (error) {
             console.error('Error fetching doctors:', error);
+        }
+    };
+
+    const fetchDischargeDate = async () => {
+        try {
+            const response = await fetch(`/api/patients/${patientId}/case-sheets`);
+            if (response.ok) {
+                const data = await response.json();
+                if (data && data.length > 0 && data[0].discharge_date) {
+                    setDischargeDate(data[0].discharge_date);
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching discharge date:', error);
         }
     };
 
@@ -62,9 +106,13 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate }: DoctorVi
 
         try {
             const consultationDateTime = `${formData.consultation_date}T${formData.consultation_time || '00:00'}:00`;
+            const url = editingId 
+                ? `/api/patients/${patientId}/consultations/${editingId}`
+                : `/api/patients/${patientId}/consultations`;
+            const method = editingId ? 'PATCH' : 'POST';
 
-            const response = await fetch(`/api/patients/${patientId}/consultations`, {
-                method: 'POST',
+            const response = await fetch(url, {
+                method,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     ...formData,
@@ -75,27 +123,91 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate }: DoctorVi
             if (response.ok) {
                 await fetchConsultations();
                 setShowForm(false);
-                setFormData({
-                    doctor_id: '',
-                    consultation_date: '',
-                    consultation_time: '',
-                    visit_number: 1,
-                    price_per_visit: 0,
-                    notes: '',
-                });
+                setEditingId(null);
+                setDoctorSearch('');
+                setShowDoctorDropdown(false);
+                resetForm();
             } else {
                 const error = await response.json();
-                alert(error.error || 'Failed to create consultation');
+                alert(error.error || 'Failed to save consultation');
             }
         } catch (error) {
-            console.error('Error creating consultation:', error);
-            alert('Failed to create consultation');
+            console.error('Error saving consultation:', error);
+            alert('Failed to save consultation');
         } finally {
             setLoading(false);
         }
     };
 
+    const resetForm = () => {
+        setFormData({
+            doctor_id: '',
+            consultation_date: '',
+            consultation_time: getCurrentTime(),
+            price_per_visit: 0,
+            notes: '',
+        });
+        setEditingId(null);
+        setDoctorSearch('');
+        setShowDoctorDropdown(false);
+    };
+
+    const handleEdit = (consultation: any) => {
+        setEditingId(consultation.id);
+        const dateTime = new Date(consultation.consultation_date);
+        setFormData({
+            doctor_id: consultation.doctor_id,
+            consultation_date: dateTime.toISOString().split('T')[0],
+            consultation_time: dateTime.toTimeString().slice(0, 5),
+            price_per_visit: consultation.price_per_visit || 0,
+            notes: consultation.notes || '',
+        });
+        setShowForm(true);
+    };
+
+    const handleDelete = async (id: string) => {
+        if (!confirm('Are you sure you want to delete this consultation?')) return;
+
+        try {
+            const response = await fetch(`/api/patients/${patientId}/consultations/${id}`, {
+                method: 'DELETE',
+            });
+
+            if (response.ok) {
+                await fetchConsultations();
+            } else {
+                alert('Failed to delete consultation');
+            }
+        } catch (error) {
+            console.error('Error deleting consultation:', error);
+            alert('Failed to delete consultation');
+        }
+    };
+
+    const canEditOrDelete = (consultation: any) => {
+        return user?.role === 'ADMIN' || consultation.created_by === user?.id;
+    };
+
+    // Calculate date constraints
+    const getMaxDate = () => {
+        if (dischargeDate) {
+            // If discharged, can only add consultations up to discharge date
+            return dischargeDate;
+        }
+        // If not discharged, can only add consultations up to yesterday (not tomorrow)
+        const today = new Date();
+        today.setDate(today.getDate() - 1);
+        return today.toISOString().split('T')[0];
+    };
+
     const minDate = patientJoinDate || new Date().toISOString().split('T')[0];
+    const maxDate = getMaxDate();
+
+    const getSelectedDoctorName = () => {
+        if (!formData.doctor_id) return '';
+        const doctor = doctors.find(d => d.id === formData.doctor_id);
+        return doctor ? `${doctor.name} ${doctor.specialist ? `- ${doctor.specialist}` : ''}` : '';
+    };
 
     return (
         <div className="space-y-6">
@@ -113,37 +225,64 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate }: DoctorVi
             {showForm && (
                 <form onSubmit={handleSubmit} className="bg-gray-800 rounded-lg p-6 space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
+                        <div className="relative">
                             <label className="block text-sm font-medium text-gray-400 mb-2">
                                 Doctor *
                             </label>
-                            <select
-                                required
-                                value={formData.doctor_id}
-                                onChange={(e) => setFormData({ ...formData, doctor_id: e.target.value })}
-                                className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
-                            >
-                                <option value="">Select Doctor</option>
-                                {doctors.map((doctor) => (
-                                    <option key={doctor.id} value={doctor.id}>
-                                        {doctor.name} {doctor.specialist ? `- ${doctor.specialist}` : ''}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
+                            <div className="relative">
+                                <div
+                                    onClick={() => setShowDoctorDropdown(!showDoctorDropdown)}
+                                    className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none cursor-pointer flex items-center justify-between"
+                                >
+                                    <span>{getSelectedDoctorName() || 'Select Doctor'}</span>
+                                    <Search className="h-4 w-4 text-gray-400" />
+                                </div>
 
-                        <div>
-                            <label className="block text-sm font-medium text-gray-400 mb-2">
-                                Visit Number *
-                            </label>
-                            <input
-                                type="number"
-                                required
-                                min="1"
-                                value={formData.visit_number}
-                                onChange={(e) => setFormData({ ...formData, visit_number: parseInt(e.target.value) })}
-                                className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
-                            />
+                                {showDoctorDropdown && (
+                                    <div className="absolute top-full left-0 right-0 mt-1 bg-gray-700 border border-gray-600 rounded-lg shadow-lg z-10">
+                                        <div className="p-2 border-b border-gray-600">
+                                            <input
+                                                type="text"
+                                                placeholder="Search doctor name or specialist..."
+                                                value={doctorSearch}
+                                                onChange={(e) => setDoctorSearch(e.target.value)}
+                                                className="w-full bg-gray-600 text-white rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                                            />
+                                        </div>
+                                        <div className="max-h-48 overflow-y-auto">
+                                            {filteredDoctors.length === 0 ? (
+                                                <div className="px-4 py-3 text-sm text-gray-400">
+                                                    No doctors found
+                                                </div>
+                                            ) : (
+                                                filteredDoctors.map((doctor) => (
+                                                    <button
+                                                        key={doctor.id}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setFormData({ ...formData, doctor_id: doctor.id });
+                                                            setShowDoctorDropdown(false);
+                                                            setDoctorSearch('');
+                                                        }}
+                                                        className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-600 transition-colors ${
+                                                            formData.doctor_id === doctor.id
+                                                                ? 'bg-blue-600 text-white'
+                                                                : 'text-gray-300'
+                                                        }`}
+                                                    >
+                                                        <div className="font-medium">{doctor.name}</div>
+                                                        {doctor.specialist && (
+                                                            <div className="text-xs text-gray-400">
+                                                                {doctor.specialist}
+                                                            </div>
+                                                        )}
+                                                    </button>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
                         <div>
@@ -155,10 +294,17 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate }: DoctorVi
                                 type="date"
                                 required
                                 min={minDate}
+                                max={maxDate}
                                 value={formData.consultation_date}
                                 onChange={(e) => setFormData({ ...formData, consultation_date: e.target.value })}
                                 className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
                             />
+                            <p className="text-xs text-gray-400 mt-1">
+                                {dischargeDate 
+                                    ? `Consultations until discharge date: ${new Date(dischargeDate).toLocaleDateString()}`
+                                    : 'Consultations up to yesterday only'
+                                }
+                            </p>
                         </div>
 
                         <div>
@@ -190,7 +336,7 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate }: DoctorVi
 
                         <div>
                             <label className="block text-sm font-medium text-gray-400 mb-2">
-                                Total Amount: ₹{(formData.visit_number * formData.price_per_visit).toFixed(2)}
+                                Total Amount: ₹{formData.price_per_visit.toFixed(2)}
                             </label>
                         </div>
                     </div>
@@ -210,14 +356,19 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate }: DoctorVi
                     <div className="flex gap-3">
                         <button
                             type="submit"
-                            disabled={loading}
+                            disabled={loading || !formData.doctor_id}
                             className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg transition-colors disabled:opacity-50"
                         >
-                            {loading ? 'Saving...' : 'Save Consultation'}
+                            {loading ? 'Saving...' : editingId ? 'Update Consultation' : 'Save Consultation'}
                         </button>
                         <button
                             type="button"
-                            onClick={() => setShowForm(false)}
+                            onClick={() => {
+                                setShowForm(false);
+                                resetForm();
+                                setDoctorSearch('');
+                                setShowDoctorDropdown(false);
+                            }}
                             className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded-lg transition-colors"
                         >
                             Cancel
@@ -233,10 +384,11 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate }: DoctorVi
                             <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Date & Time</th>
                             <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Doctor</th>
                             <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Specialist</th>
-                            <th className="px-4 py-3 text-right text-sm font-medium text-gray-300">Visits</th>
                             <th className="px-4 py-3 text-right text-sm font-medium text-gray-300">Price/Visit</th>
                             <th className="px-4 py-3 text-right text-sm font-medium text-gray-300">Total</th>
                             <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Notes</th>
+                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Created By</th>
+                            <th className="px-4 py-3 text-center text-sm font-medium text-gray-300">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-700">
@@ -259,9 +411,6 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate }: DoctorVi
                                         {consultation.doctor?.specialist || 'N/A'}
                                     </td>
                                     <td className="px-4 py-3 text-sm text-white text-right">
-                                        {consultation.visit_number}
-                                    </td>
-                                    <td className="px-4 py-3 text-sm text-white text-right">
                                         ₹{parseFloat(consultation.price_per_visit).toFixed(2)}
                                     </td>
                                     <td className="px-4 py-3 text-sm text-white text-right font-medium">
@@ -269,6 +418,29 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate }: DoctorVi
                                     </td>
                                     <td className="px-4 py-3 text-sm text-gray-400">
                                         {consultation.notes || '-'}
+                                    </td>
+                                    <td className="px-4 py-3 text-sm text-gray-300">
+                                        {consultation.created_by_user?.username || 'Unknown'}
+                                    </td>
+                                    <td className="px-4 py-3 text-center">
+                                        {canEditOrDelete(consultation) && (
+                                            <div className="flex justify-center gap-2">
+                                                <button
+                                                    onClick={() => handleEdit(consultation)}
+                                                    className="text-blue-400 hover:text-blue-300 transition-colors"
+                                                    title="Edit"
+                                                >
+                                                    <Edit2 className="h-4 w-4" />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDelete(consultation.id)}
+                                                    className="text-red-400 hover:text-red-300 transition-colors"
+                                                    title="Delete"
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </button>
+                                            </div>
+                                        )}
                                     </td>
                                 </tr>
                             ))

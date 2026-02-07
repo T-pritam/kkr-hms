@@ -20,7 +20,8 @@ export async function GET(
       .from('patient_consultations')
       .select(`
         *,
-        doctor:doctors(id, name, specialist)
+        doctor:doctors(id, name, specialist),
+        created_by_user:users!created_by(id, username, email)
       `)
       .eq('patient_id', patientId)
       .order('consultation_date', { ascending: false });
@@ -71,13 +72,22 @@ export async function POST(
       }
     }
 
+    // Calculate visit_number: count consultations for this doctor and patient
+    const { data: existingConsultations } = await supabase
+      .from('patient_consultations')
+      .select('id', { count: 'exact' })
+      .eq('patient_id', patientId)
+      .eq('doctor_id', body.doctor_id);
+
+    const visitNumber = (existingConsultations?.length || 0) + 1;
+
     const consultationData = {
       patient_id: patientId,
       doctor_id: body.doctor_id,
       consultation_date: body.consultation_date,
-      visit_number: body.visit_number || 1,
+      visit_number: visitNumber,
       price_per_visit: body.price_per_visit || 0,
-      total_price: (body.visit_number || 1) * (body.price_per_visit || 0),
+      total_price: body.price_per_visit || 0,
       notes: body.notes,
       created_by: authResult.user.id,
     };
@@ -87,7 +97,8 @@ export async function POST(
       .insert(consultationData)
       .select(`
         *,
-        doctor:doctors(id, name, specialist)
+        doctor:doctors(id, name, specialist),
+        created_by_user:users!created_by(id, username, email)
       `)
       .single();
 

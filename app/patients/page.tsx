@@ -177,7 +177,8 @@ export default function PatientsPage() {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   setSelectedPatient(patient)
                                   setEditModalOpen(true)
                                 }}
@@ -187,7 +188,10 @@ export default function PatientsPage() {
                               <Button
                                 size="sm"
                                 variant="destructive"
-                                onClick={() => handleDelete(patient.id)}
+                                onClick={(e) => { 
+                                  e.stopPropagation();
+                                  handleDelete(patient.id)
+                                }}
                               >
                                 <Trash2 size={16} />
                               </Button>

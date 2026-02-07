@@ -53,7 +53,6 @@ export default function PatientInfoTab({ patient }: PatientInfoTabProps) {
     {
       title: 'Medical Information',
       fields: [
-        { label: 'Referred By', value: patient.referred_by || 'N/A' },
         { label: 'Medical History', value: patient.medical_history || 'N/A', multiline: true },
         { label: 'Allergies', value: patient.allergies || 'N/A', multiline: true },
         { label: 'Current Medications', value: patient.current_medications || 'N/A', multiline: true },

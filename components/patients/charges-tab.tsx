@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Plus } from 'lucide-react';
+import { useUser } from '@/hooks/use-user';
 
 interface ChargesTabProps {
   patientId: string;
@@ -10,9 +11,11 @@ interface ChargesTabProps {
 }
 
 export default function ChargesTab({ patientId, billing, onCreateBilling }: ChargesTabProps) {
+  const { user } = useUser();
   const [charges, setCharges] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     charge_type: '',
     description: '',
@@ -43,32 +46,82 @@ export default function ChargesTab({ patientId, billing, onCreateBilling }: Char
     setLoading(true);
 
     try {
-      const response = await fetch(`/api/patients/${patientId}/charges`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...formData,
-          patient_billing_id: billing.id,
-        }),
+      if (editingId) {
+        const response = await fetch(`/api/patients/${patientId}/charges/${editingId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData),
+        });
+
+        if (response.ok) {
+          await fetchCharges();
+          resetForm();
+        } else {
+          alert('Failed to update charge');
+        }
+      } else {
+        const response = await fetch(`/api/patients/${patientId}/charges`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...formData,
+            patient_billing_id: billing.id,
+          }),
+        });
+
+        if (response.ok) {
+          await fetchCharges();
+          resetForm();
+        } else {
+          alert('Failed to add charge');
+        }
+      }
+    } catch (error) {
+      console.error('Error saving charge:', error);
+      alert('Failed to save charge');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resetForm = () => {
+    setShowForm(false);
+    setEditingId(null);
+    setFormData({
+      charge_type: '',
+      description: '',
+      amount: 0,
+      charge_date: new Date().toISOString().split('T')[0],
+    });
+  };
+
+  const handleEdit = (charge: any) => {
+    setEditingId(charge.id);
+    setFormData({
+      charge_type: charge.charge_type,
+      description: charge.description,
+      amount: parseFloat(charge.amount),
+      charge_date: charge.charge_date,
+    });
+    setShowForm(true);
+  };
+
+  const handleDelete = async (chargeId: string) => {
+    if (!confirm('Are you sure you want to delete this charge?')) return;
+
+    try {
+      const response = await fetch(`/api/patients/${patientId}/charges/${chargeId}`, {
+        method: 'DELETE',
       });
 
       if (response.ok) {
         await fetchCharges();
-        setShowForm(false);
-        setFormData({
-          charge_type: '',
-          description: '',
-          amount: 0,
-          charge_date: new Date().toISOString().split('T')[0],
-        });
       } else {
-        alert('Failed to add charge');
+        alert('Failed to delete charge');
       }
     } catch (error) {
-      console.error('Error adding charge:', error);
-      alert('Failed to add charge');
-    } finally {
-      setLoading(false);
+      console.error('Error deleting charge:', error);
+      alert('Failed to delete charge');
     }
   };
 
@@ -202,41 +255,75 @@ export default function ChargesTab({ patientId, billing, onCreateBilling }: Char
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Date</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Charge Type</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Description</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Created By</th>
               <th className="px-4 py-3 text-right text-sm font-medium text-gray-300">Amount</th>
+              <th className="px-4 py-3 text-center text-sm font-medium text-gray-300">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-700">
             {charges.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
                   No charges recorded yet
                 </td>
               </tr>
             ) : (
               <>
-                {charges.map((charge) => (
-                  <tr key={charge.id} className="hover:bg-gray-700/50">
-                    <td className="px-4 py-3 text-sm text-white">
-                      {new Date(charge.charge_date).toLocaleDateString()}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-white">
-                      {charge.charge_type}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-400">
-                      {charge.description || '-'}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-white text-right font-medium">
-                      ₹{parseFloat(charge.amount).toFixed(2)}
-                    </td>
-                  </tr>
-                ))}
+                {charges.map((charge) => {
+                  const canEdit = user?.id === charge.created_by || user?.role === 'ADMIN';
+                  const canDelete = user?.id === charge.created_by || user?.role === 'ADMIN';
+                  
+                  return (
+                    <tr key={charge.id} className="hover:bg-gray-700/50">
+                      <td className="px-4 py-3 text-sm text-white">
+                        {new Date(charge.charge_date).toLocaleDateString()}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-white">
+                        {charge.charge_type}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-400">
+                        {charge.description || '-'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-400">
+                        {charge.users?.username || 'Unknown'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-white text-right font-medium">
+                        ₹{parseFloat(charge.amount).toFixed(2)}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <div className="flex gap-2 justify-center">
+                          {canEdit && (
+                            <button
+                              onClick={() => handleEdit(charge)}
+                              className="text-blue-400 hover:text-blue-300 text-sm font-medium"
+                            >
+                              Edit
+                            </button>
+                          )}
+                          {canDelete && (
+                            <button
+                              onClick={() => handleDelete(charge.id)}
+                              className="text-red-400 hover:text-red-300 text-sm font-medium"
+                            >
+                              Delete
+                            </button>
+                          )}
+                          {!canEdit && !canDelete && (
+                            <span className="text-gray-500 text-sm">-</span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
                 <tr className="bg-gray-700 font-semibold">
-                  <td colSpan={3} className="px-4 py-3 text-sm text-white text-right">
+                  <td colSpan={4} className="px-4 py-3 text-sm text-white text-right">
                     Total Charges:
                   </td>
                   <td className="px-4 py-3 text-sm text-white text-right">
                     ₹{charges.reduce((sum, c) => sum + parseFloat(c.amount), 0).toFixed(2)}
                   </td>
+                  <td></td>
                 </tr>
               </>
             )}

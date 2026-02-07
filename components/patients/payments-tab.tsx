@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Check } from 'lucide-react';
+import { Plus, Edit2, Trash2, Edit } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { useUser } from '@/hooks/use-user';
 
 interface PaymentsTabProps {
   patientId: string;
@@ -10,11 +12,11 @@ interface PaymentsTabProps {
 }
 
 export default function PaymentsTab({ patientId, billing, onCreateBilling }: PaymentsTabProps) {
+  const { user } = useUser();
   const [installments, setInstallments] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [user, setUser] = useState<any>(null);
   const [formData, setFormData] = useState({
     amount: 0,
     payment_date: new Date().toISOString().split('T')[0],
@@ -25,23 +27,10 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
   });
 
   useEffect(() => {
-    fetchUser();
     if (billing) {
       fetchInstallments();
     }
   }, [billing]);
-
-  const fetchUser = async () => {
-    try {
-      const response = await fetch('/api/auth/me');
-      if (response.ok) {
-        const data = await response.json();
-        setUser(data);
-      }
-    } catch (error) {
-      console.error('Error fetching user:', error);
-    }
-  };
 
   const fetchInstallments = async () => {
     try {
@@ -106,7 +95,7 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
       payment_method: installment.payment_method,
       transaction_reference: installment.transaction_reference || '',
       remarks: installment.remarks || '',
-      create_ledger_entry: false,
+      create_ledger_entry: true,
     });
     setShowForm(true);
   };
@@ -144,6 +133,7 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
   };
 
   const canEditOrDelete = (installment: any) => {
+    console.log('Checking permissions for installment:', user?.role, user?.id);
     return user?.role === 'ADMIN' || installment.created_by === user?.id;
   };
 
@@ -255,20 +245,6 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
                 className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
               />
             </div>
-
-            {!editingId && (
-              <div className="md:col-span-2">
-                <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formData.create_ledger_entry}
-                    onChange={(e) => setFormData({ ...formData, create_ledger_entry: e.target.checked })}
-                    className="w-4 h-4 rounded bg-gray-700 border-gray-600"
-                  />
-                  Create entry in Daily Ledger
-                </label>
-              </div>
-            )}
           </div>
 
           <div className="flex gap-3">
@@ -298,15 +274,16 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Date</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Method</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Reference</th>
-              <th className="px-4 py-3 text-right text-sm font-medium text-gray-300">Amount</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Remarks</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Created By</th>
+              <th className="px-4 py-3 text-right text-sm font-medium text-gray-300">Amount</th>
               <th className="px-4 py-3 text-center text-sm font-medium text-gray-300">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-700">
             {installments.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={8} className="px-4 py-8 text-center text-gray-400">
                   No payments recorded yet
                 </td>
               </tr>
@@ -326,42 +303,49 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
                     <td className="px-4 py-3 text-sm text-gray-400">
                       {installment.transaction_reference || '-'}
                     </td>
-                    <td className="px-4 py-3 text-sm text-white text-right font-medium">
-                      ₹{parseFloat(installment.amount).toFixed(2)}
-                    </td>
                     <td className="px-4 py-3 text-sm text-gray-400">
                       {installment.remarks || '-'}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-400">
+                      {installment.users?.username || 'Unknown'}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-white text-right font-medium">
+                      ₹{parseFloat(installment.amount).toFixed(2)}
                     </td>
                     <td className="px-4 py-3 text-center">
                       {canEditOrDelete(installment) && (
                         <div className="flex justify-center gap-2">
-                          <button
-                            onClick={() => handleEdit(installment)}
-                            className="text-blue-400 hover:text-blue-300"
-                            title="Edit"
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={(e) => {
+                              handleEdit(installment);
+                            }}
                           >
-                            <Edit2 className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(installment.id)}
-                            className="text-red-400 hover:text-red-300"
-                            title="Delete"
+                            <Edit size={16} />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={(e) => {
+                              handleDelete(installment.id);
+                            }}
                           >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                            <Trash2 size={16} />
+                          </Button>
                         </div>
                       )}
                     </td>
                   </tr>
                 ))}
                 <tr className="bg-gray-700 font-semibold">
-                  <td colSpan={4} className="px-4 py-3 text-sm text-white text-right">
+                  <td colSpan={6} className="px-4 py-3 text-sm text-white text-right">
                     Total Paid:
                   </td>
                   <td className="px-4 py-3 text-sm text-white text-right">
                     ₹{installments.reduce((sum, i) => sum + parseFloat(i.amount), 0).toFixed(2)}
                   </td>
-                  <td colSpan={2}></td>
+                  <td colSpan={3}></td>
                 </tr>
               </>
             )}

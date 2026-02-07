@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Insert new patient
-    const { error } = await supabase.from('patients').insert({
+    const { data: patientData, error: patientError } = await supabase.from('patients').insert({
       patient_id,
       name,
       phone: phone || null,
@@ -132,10 +132,29 @@ export async function POST(request: NextRequest) {
       allergies: allergies || null,
       current_medications: current_medications || null,
       status: 'Active',
-    })
+    }).select()
 
-    if (error) {
-      throw error
+    if (patientError) {
+      throw patientError
+    }
+
+    // Create corresponding billing record
+    const newPatientId = patientData[0]?.id
+    if (newPatientId) {
+      const { error: billingError } = await supabase.from('patient_billing').insert({
+        patient_id: newPatientId,
+        base_charge: 0,
+        total_doctor_fees: 0,
+        patient_charges_total: 0,
+        patient_paid_amount: 0,
+        billing_status: 'pending',
+        referral_settled: false,
+        created_by: payload.userId,
+      })
+
+      if (billingError) {
+        console.error('Error creating billing record:', billingError)
+      }
     }
 
     return NextResponse.json(

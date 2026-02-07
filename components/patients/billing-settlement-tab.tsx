@@ -20,8 +20,12 @@ export default function BillingSettlementTab({
   const [doctors, setDoctors] = useState<any[]>([]);
   const [showSettlementForm, setShowSettlementForm] = useState(false);
   const [showReferralForm, setShowReferralForm] = useState(false);
+  const [showBaseChargeForm, setShowBaseChargeForm] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [baseChargeData, setBaseChargeData] = useState({
+    base_charge: 0,
+  });
   const [settlementFormData, setSettlementFormData] = useState({
     doctor_id: '',
     visit_count: 0,
@@ -188,6 +192,34 @@ export default function BillingSettlementTab({
     }
   };
 
+  const handleBaseChargeUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      const response = await fetch(`/api/patients/${patientId}/billing`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          billing_id: billing.id,
+          base_charge: baseChargeData.base_charge,
+        }),
+      });
+
+      if (response.ok) {
+        onBillingUpdate();
+        setShowBaseChargeForm(false);
+      } else {
+        alert('Failed to update base charge');
+      }
+    } catch (error) {
+      console.error('Error updating base charge:', error);
+      alert('Failed to update base charge');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (!billing) {
     return (
       <div className="bg-gray-800 rounded-lg p-8 text-center">
@@ -208,7 +240,57 @@ export default function BillingSettlementTab({
     <div className="space-y-6">
       {/* Billing Summary */}
       <div className="bg-gray-800 rounded-lg p-6">
-        <h3 className="text-xl font-semibold text-white mb-4">Billing Summary</h3>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-xl font-semibold text-white">Billing Summary</h3>
+          {isAdmin && (
+            <button
+              onClick={() => {
+                setShowBaseChargeForm(!showBaseChargeForm);
+                setBaseChargeData({ base_charge: parseFloat(billing.base_charge || 0) });
+              }}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+            >
+              <Plus className="h-4 w-4" />
+              Set Base Charge
+            </button>
+          )}
+        </div>
+
+        {showBaseChargeForm && isAdmin && (
+          <form onSubmit={handleBaseChargeUpdate} className="bg-gray-700 rounded-lg p-4 mb-4 space-y-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Base Charge (₹) *
+              </label>
+              <input
+                type="number"
+                required
+                step="0.01"
+                min="0"
+                value={baseChargeData.base_charge}
+                onChange={(e) => setBaseChargeData({ base_charge: parseFloat(e.target.value) })}
+                className="w-full bg-gray-600 text-white rounded-lg px-4 py-2 border border-gray-500 focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={loading}
+                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {loading ? 'Saving...' : 'Update'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowBaseChargeForm(false)}
+                className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-gray-700 rounded-lg p-4">
             <p className="text-gray-400 text-sm">Base Charge</p>

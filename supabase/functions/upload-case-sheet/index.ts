@@ -59,6 +59,32 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // Validate file size - max 10MB
+    if (fileSize > MAX_FILE_SIZE) {
+      return new Response(
+        JSON.stringify({
+          error: `File size exceeds 10MB limit. Maximum allowed: 10MB, Uploaded: ${(fileSize / 1024 / 1024).toFixed(2)}MB`,
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    // Validate file type
+    if (contentType !== "application/pdf") {
+      return new Response(
+        JSON.stringify({
+          error: "Only PDF files are allowed. Uploaded file type: " + contentType,
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
     /* ---------------- VALIDATIONS ---------------- */
     if (contentType !== "application/pdf") {
       return new Response(
