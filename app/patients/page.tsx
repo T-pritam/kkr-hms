@@ -8,14 +8,16 @@ import { Plus, Edit, Trash2, Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { CreatePatientModal } from '@/components/patients/create-patient-modal'
 import { EditPatientModal } from '@/components/patients/edit-patient-modal'
+import PatientDetailsModal from '@/components/patients/patient-details-modal'
 import { TablePagination } from '@/components/ui/table-pagination'
 
 export default function PatientsPage() {
-  const [patients, setPatients] = useState([])
+  const [patients, setPatients] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [editModalOpen, setEditModalOpen] = useState(false)
-  const [selectedPatient, setSelectedPatient] = useState(null)
+  const [detailsModalOpen, setDetailsModalOpen] = useState(false)
+  const [selectedPatient, setSelectedPatient] = useState<any>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
@@ -78,8 +80,8 @@ export default function PatientsPage() {
   }
 
   const getStatusColor = (status: string) => {
-    return status === 'Active' 
-      ? 'bg-green-900/30 text-green-400 border-green-800' 
+    return status === 'Active'
+      ? 'bg-green-900/30 text-green-400 border-green-800'
       : 'bg-gray-900/30 text-gray-400 border-gray-800'
   }
 
@@ -92,8 +94,8 @@ export default function PatientsPage() {
             <p className="text-gray-400 mt-1 text-sm sm:text-base">Manage patient records</p>
           </div>
           <div className="flex gap-2 w-full sm:w-auto">
-            <Button 
-              onClick={() => setCreateModalOpen(true)} 
+            <Button
+              onClick={() => setCreateModalOpen(true)}
               className="flex-1 sm:flex-none"
             >
               <Plus size={20} className="mr-2" />
@@ -146,7 +148,11 @@ export default function PatientsPage() {
                       {patients.map((patient: any) => (
                         <tr
                           key={patient.id}
-                          className="border-b border-gray-800 hover:bg-gray-900/50"
+                          className="border-b border-gray-800 hover:bg-gray-900/50 cursor-pointer"
+                          onClick={() => {
+                            setSelectedPatient(patient)
+                            setDetailsModalOpen(true)
+                          }}
                         >
                           <td className="py-3 px-4 text-blue-400 font-medium">{patient.patient_id}</td>
                           <td className="py-3 px-4 text-white flex items-center gap-2">
@@ -198,7 +204,11 @@ export default function PatientsPage() {
                   {patients.map((patient: any) => (
                     <div
                       key={patient.id}
-                      className="bg-gray-800/50 rounded-lg p-4 border border-gray-700"
+                      className="bg-gray-800/50 rounded-lg p-4 border border-gray-700 cursor-pointer hover:bg-gray-800 transition-colors cursor-pointer"
+                      onClick={() => {
+                        setSelectedPatient(patient)
+                        setDetailsModalOpen(true)
+                      }}
                     >
                       <div className="flex items-start justify-between mb-3">
                         <div>
@@ -229,7 +239,8 @@ export default function PatientsPage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation()
                             setSelectedPatient(patient)
                             setEditModalOpen(true)
                           }}
@@ -241,7 +252,10 @@ export default function PatientsPage() {
                         <Button
                           size="sm"
                           variant="destructive"
-                          onClick={() => handleDelete(patient.id)}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleDelete(patient.id)
+                          }}
                         >
                           <Trash2 size={16} />
                         </Button>
@@ -286,6 +300,16 @@ export default function PatientsPage() {
         }}
         onSuccess={fetchPatients}
         patient={selectedPatient}
+      />
+
+      <PatientDetailsModal
+        isOpen={detailsModalOpen}
+        onClose={() => {
+          setDetailsModalOpen(false)
+          setSelectedPatient(null)
+        }}
+        patientId={selectedPatient?.id}
+        patientData={selectedPatient}
       />
     </DashboardLayout>
   )
