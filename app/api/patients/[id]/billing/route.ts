@@ -16,15 +16,42 @@ export async function GET(
     const { id } = await params;
     const patientId = id;
 
-    const { data, error } = await supabase
+    // Get patient with referral info
+    const { data: patient, error: patientError } = await supabase
+      .from('patients')
+      .select('id, referred_by')
+      .eq('id', patientId)
+      .single();
+
+    if (patientError) throw patientError;
+
+    // Get patient billing records
+    const { data: billingRecords, error: billingError } = await supabase
       .from('patient_billing')
       .select('*')
       .eq('patient_id', patientId)
       .order('created_at', { ascending: false });
 
-    if (error) throw error;
+    if (billingError) throw billingError;
 
-    return NextResponse.json(data);
+    // Get referral details if patient has referred_by
+    let referralData = null;
+    if (patient?.referred_by) {
+      const { data: referral, error: referralError } = await supabase
+        .from('referrals')
+        .select('id, name, phone, status')
+        .eq('id', patient.referred_by)
+        .single();
+
+      if (!referralError) {
+        referralData = referral;
+      }
+    }
+
+    return NextResponse.json({
+      billings: billingRecords,
+      referral: referralData,
+    });
   } catch (error) {
     console.error('Error fetching patient billing:', error);
     return NextResponse.json(
@@ -76,6 +103,14 @@ export async function POST(
 
     if (error) throw error;
 
+    // Update patient's referred_by if referral_id is provided
+    if (body.referral_id) {
+      await supabase
+        .from('patients')
+        .update({ referred_by: body.referral_id })
+        .eq('id', patientId);
+    }
+
     return NextResponse.json(data);
   } catch (error) {
     console.error('Error creating patient billing:', error);
@@ -101,6 +136,8 @@ export async function PATCH(
     }
 
     const supabase = await createClient();
+    const { id } = await params;
+    const patientId = id;
     const body = await request.json();
 
     const updateData: any = {
@@ -119,6 +156,9 @@ export async function PATCH(
     if (body.referral_settlement_date !== undefined) {
       updateData.referral_settlement_date = body.referral_settlement_date;
     }
+    if (body.base_charge !== undefined) {
+      updateData.base_charge = body.base_charge;
+    }
 
     const { data, error } = await supabase
       .from('patient_billing')
@@ -128,6 +168,14 @@ export async function PATCH(
       .single();
 
     if (error) throw error;
+
+    // Update patient's referred_by if referral_id is provided
+    if (body.referral_id) {
+      await supabase
+        .from('patients')
+        .update({ referred_by: body.referral_id })
+        .eq('id', patientId);
+    }
 
     return NextResponse.json(data);
   } catch (error) {

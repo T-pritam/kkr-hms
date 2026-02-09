@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { X, User, Stethoscope, DollarSign, CreditCard, FileText, Receipt } from 'lucide-react';
 import PatientInfoTab from './patient-info-tab';
 import DoctorVisitsTab from './doctor-visits-tab';
@@ -26,6 +26,9 @@ export default function PatientDetailsModal({
 }: PatientDetailsModalProps) {
   const [activeTab, setActiveTab] = useState<Tab>('info');
   const [billing, setBilling] = useState<any>(null);
+  const [isCreatingBilling, setIsCreatingBilling] = useState(false);
+  const billingCreationInProgress = useRef(false);
+  const doctorVisitsRefreshKey = useRef(0);
 
   useEffect(() => {
     if (isOpen && patientId) {
@@ -38,7 +41,19 @@ export default function PatientDetailsModal({
       const response = await fetch(`/api/patients/${patientId}/billing`);
       if (response.ok) {
         const data = await response.json();
-        setBilling(data[0] || null);
+        // Handle new API response structure with billings array and referral object
+        if (data.billings && Array.isArray(data.billings)) {
+          const billingRecord = data.billings[0];
+          if (billingRecord && data.referral) {
+            billingRecord.referral = data.referral;
+          }
+          setBilling(billingRecord || null);
+        } else if (Array.isArray(data)) {
+          // Fallback for old API response structure
+          setBilling(data[0] || null);
+        } else {
+          setBilling(null);
+        }
       }
     } catch (error) {
       console.error('Error fetching billing:', error);
@@ -46,7 +61,22 @@ export default function PatientDetailsModal({
   };
 
   const createBilling = async () => {
+    // Prevent duplicate creation attempts
+    if (isCreatingBilling || billingCreationInProgress.current) {
+      console.log('Billing creation already in progress');
+      return;
+    }
+
+    // Don't create if billing already exists
+    if (billing) {
+      console.log('Billing already exists:', billing.id);
+      return;
+    }
+
     try {
+      setIsCreatingBilling(true);
+      billingCreationInProgress.current = true;
+
       const response = await fetch(`/api/patients/${patientId}/billing`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -58,10 +88,26 @@ export default function PatientDetailsModal({
       if (response.ok) {
         const data = await response.json();
         setBilling(data);
+        billingCreationInProgress.current = false;
       }
     } catch (error) {
       console.error('Error creating billing:', error);
+      billingCreationInProgress.current = false;
+    } finally {
+      setIsCreatingBilling(false);
     }
+  };
+
+  // Refresh doctor visits when settlements are updated
+  const refreshDoctorVisits = () => {
+    doctorVisitsRefreshKey.current += 1;
+  };
+
+  // Handle billing updates from BillingSettlementTab
+  const handleBillingUpdate = async () => {
+    await fetchBilling();
+    // Also refresh doctor visits to show updated amounts
+    refreshDoctorVisits();
   };
 
   if (!isOpen) return null;
@@ -123,8 +169,10 @@ export default function PatientDetailsModal({
           
           {activeTab === 'visits' && (
             <DoctorVisitsTab
+              key={`doctor-visits-${doctorVisitsRefreshKey.current}`}
               patientId={patientId}
               patientJoinDate={patientData?.date_of_join}
+              billing={billing}
             />
           )}
           
@@ -156,7 +204,8 @@ export default function PatientDetailsModal({
               patientId={patientId}
               billing={billing}
               onCreateBilling={createBilling}
-              onBillingUpdate={fetchBilling}
+              onBillingUpdate={handleBillingUpdate}
+              onSettlementUpdate={refreshDoctorVisits}
             />
           )}
         </div>

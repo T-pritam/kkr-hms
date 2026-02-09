@@ -49,15 +49,20 @@ export async function PATCH(
     }
 
     // Update consultation
-    const updateData = {
-      doctor_id: body.doctor_id || consultation.doctor_id,
-      consultation_date: body.consultation_date || consultation.consultation_date,
-      price_per_visit: body.price_per_visit !== undefined ? body.price_per_visit : consultation.price_per_visit,
-      total_price: body.price_per_visit !== undefined ? body.price_per_visit : consultation.total_price,
-      notes: body.notes || consultation.notes,
+    const updateData: any = {
+      doctor_id: body.doctor_id !== undefined ? body.doctor_id : consultation.doctor_id,
+      notes: body.notes !== undefined ? body.notes : consultation.notes,
       updated_by: authResult.user.id,
       updated_at: new Date().toISOString(),
     };
+
+    // Convert consultation_date to UTC if provided
+    if (body.consultation_date !== undefined) {
+      const localDate = new Date(body.consultation_date);
+      updateData.consultation_date = localDate.toISOString();
+    } else {
+      updateData.consultation_date = consultation.consultation_date;
+    }
 
     const { data, error } = await supabase
       .from('patient_consultations')
@@ -128,19 +133,44 @@ export async function DELETE(
       );
     }
 
-    // Delete consultation
+    // Check if this consultation has related settled settlements
+    if (consultation.doctor_id) {
+      const { data: settlements } = await supabase
+        .from('doctor_visit_settlements')
+        .select('id, settled')
+        .eq('doctor_id', consultation.doctor_id)
+        .eq('patient_id', patientId)
+        .eq('settled', true)
+        .is('deleted_at', null);
+
+      if (settlements && settlements.length > 0) {
+        return NextResponse.json(
+          {
+            error: 'Cannot delete consultation with settled fees',
+            message: 'This consultation has been settled. Please unsettled it first or contact an administrator.',
+            settlementFound: true,
+          },
+          { status: 409 }
+        );
+      }
+    }
+
+    // Soft delete consultation (mark as deleted)
     const { error: deleteError } = await supabase
       .from('patient_consultations')
-      .delete()
+      .update({ deleted_at: new Date().toISOString() })
       .eq('id', consultationId);
 
     if (deleteError) throw deleteError;
 
-    return NextResponse.json({ message: 'Consultation deleted successfully' });
+    return NextResponse.json({ 
+      success: true,
+      message: 'Consultation deleted successfully' 
+    });
   } catch (error) {
     console.error('Error deleting consultation:', error);
     return NextResponse.json(
-      { error: 'Failed to delete consultation' },
+      { error: 'Failed to delete consultation', details: String(error) },
       { status: 500 }
     );
   }

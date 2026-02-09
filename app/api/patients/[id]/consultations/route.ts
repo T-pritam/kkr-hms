@@ -24,6 +24,7 @@ export async function GET(
         created_by_user:users!created_by(id, username, email)
       `)
       .eq('patient_id', patientId)
+      .is('deleted_at', null)
       .order('consultation_date', { ascending: false });
 
     if (error) throw error;
@@ -53,6 +54,14 @@ export async function POST(
     const patientId = id;
     const body = await request.json();
 
+    // Validate required fields (doctor_id is now optional)
+    if (!body.doctor_id && !body.notes) {
+      return NextResponse.json(
+        { error: 'At least doctor_id or notes must be provided' },
+        { status: 400 }
+      );
+    }
+
     // Validate consultation date is after patient join date
     const { data: patient } = await supabase
       .from('patients')
@@ -61,7 +70,7 @@ export async function POST(
       .single();
 
     if (patient?.date_of_join) {
-      const consultationDate = new Date(body.consultation_date);
+      const consultationDate = new Date(body.consultation_date || new Date());
       const joinDate = new Date(patient.date_of_join);
       
       if (consultationDate < joinDate) {
@@ -73,22 +82,33 @@ export async function POST(
     }
 
     // Calculate visit_number: count consultations for this doctor and patient
-    const { data: existingConsultations } = await supabase
-      .from('patient_consultations')
-      .select('id', { count: 'exact' })
-      .eq('patient_id', patientId)
-      .eq('doctor_id', body.doctor_id);
+    let visitNumber = 1;
+    if (body.doctor_id) {
+      const { data: existingConsultations } = await supabase
+        .from('patient_consultations')
+        .select('id', { count: 'exact' })
+        .eq('patient_id', patientId)
+        .eq('doctor_id', body.doctor_id)
+        .is('deleted_at', null);
 
-    const visitNumber = (existingConsultations?.length || 0) + 1;
+      visitNumber = (existingConsultations?.length || 0) + 1;
+    }
+
+    // Convert consultation_date to UTC if provided
+    let consultationDateUTC = new Date().toISOString();
+    if (body.consultation_date) {
+      // Parse the date string from frontend (which is in local timezone)
+      const localDate = new Date(body.consultation_date);
+      // Convert to UTC by getting ISO string
+      consultationDateUTC = localDate.toISOString();
+    }
 
     const consultationData = {
       patient_id: patientId,
-      doctor_id: body.doctor_id,
-      consultation_date: body.consultation_date,
+      doctor_id: body.doctor_id || null,
+      consultation_date: consultationDateUTC,
       visit_number: visitNumber,
-      price_per_visit: body.price_per_visit || 0,
-      total_price: body.price_per_visit || 0,
-      notes: body.notes,
+      notes: body.notes || null,
       created_by: authResult.user.id,
     };
 

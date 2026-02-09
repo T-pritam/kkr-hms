@@ -7,6 +7,7 @@ import { useUser } from '@/hooks/use-user';
 interface DoctorVisitsTabProps {
     patientId: string;
     patientJoinDate?: string;
+    billing?: any;
 }
 
 interface Doctor {
@@ -15,7 +16,7 @@ interface Doctor {
     specialist?: string;
 }
 
-export default function DoctorVisitsTab({ patientId, patientJoinDate }: DoctorVisitsTabProps) {
+export default function DoctorVisitsTab({ patientId, patientJoinDate, billing }: DoctorVisitsTabProps) {
     const { user } = useUser();
     const [consultations, setConsultations] = useState<any[]>([]);
     const [doctors, setDoctors] = useState<Doctor[]>([]);
@@ -36,7 +37,6 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate }: DoctorVi
         doctor_id: '',
         consultation_date: '',
         consultation_time: getCurrentTime(),
-        price_per_visit: 0,
         notes: '',
     });
 
@@ -105,7 +105,10 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate }: DoctorVi
         setLoading(true);
 
         try {
-            const consultationDateTime = `${formData.consultation_date}T${formData.consultation_time || '00:00'}:00`;
+            const consultationDateTime = new Date(
+  `${formData.consultation_date}T${formData.consultation_time}:00+05:30`
+).toISOString();
+
             const url = editingId 
                 ? `/api/patients/${patientId}/consultations/${editingId}`
                 : `/api/patients/${patientId}/consultations`;
@@ -144,7 +147,6 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate }: DoctorVi
             doctor_id: '',
             consultation_date: '',
             consultation_time: getCurrentTime(),
-            price_per_visit: 0,
             notes: '',
         });
         setEditingId(null);
@@ -159,14 +161,16 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate }: DoctorVi
             doctor_id: consultation.doctor_id,
             consultation_date: dateTime.toISOString().split('T')[0],
             consultation_time: dateTime.toTimeString().slice(0, 5),
-            price_per_visit: consultation.price_per_visit || 0,
             notes: consultation.notes || '',
         });
         setShowForm(true);
     };
 
-    const handleDelete = async (id: string) => {
-        if (!confirm('Are you sure you want to delete this consultation?')) return;
+    const handleDelete = async (id: string, consultation: any) => {
+        const confirmMsg = 'Are you sure you want to delete this consultation?' + 
+                          (consultation.payment_status === 'paid' ? '\n\nWarning: This consultation has been settled.' : '');
+        
+        if (!confirm(confirmMsg)) return;
 
         try {
             const response = await fetch(`/api/patients/${patientId}/consultations/${id}`, {
@@ -176,7 +180,12 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate }: DoctorVi
             if (response.ok) {
                 await fetchConsultations();
             } else {
-                alert('Failed to delete consultation');
+                const error = await response.json();
+                if (error.settlementFound) {
+                    alert('Cannot delete: ' + error.message);
+                } else {
+                    alert(error.error || 'Failed to delete consultation');
+                }
             }
         } catch (error) {
             console.error('Error deleting consultation:', error);
@@ -209,6 +218,42 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate }: DoctorVi
         return doctor ? `${doctor.name} ${doctor.specialist ? `- ${doctor.specialist}` : ''}` : '';
     };
 
+    // Format date in IST as "2nd Feb 2026 6:34 PM"
+const normalizeISO = (dateString: string) =>
+  dateString.replace(/\+00:00$/, 'Z');
+
+const formatConsultationDateIST = (dateString: string) => {
+  console.log('Formatting date:', dateString);
+
+  const normalized = dateString.replace(/\+00:00$/, 'Z');
+  const date = new Date(normalized);
+
+  const parts = new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).formatToParts(date);
+
+  const get = (type: string) =>
+    parts.find(p => p.type === type)?.value || '';
+
+  const day = Number(get('day'));
+
+  const suffix =
+    day % 10 === 1 && day !== 11 ? 'st' :
+    day % 10 === 2 && day !== 12 ? 'nd' :
+    day % 10 === 3 && day !== 13 ? 'rd' :
+    'th';
+
+  return `${day}${suffix} ${get('month')} ${get('year')} ${get('hour')}:${get('minute')} ${get('dayPeriod')}`;
+};
+
+
+
     return (
         <div className="space-y-6">
             <div className="flex justify-between items-center">
@@ -227,7 +272,7 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate }: DoctorVi
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="relative">
                             <label className="block text-sm font-medium text-gray-400 mb-2">
-                                Doctor *
+                                Doctor (Optional)
                             </label>
                             <div className="relative">
                                 <div
@@ -320,25 +365,6 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate }: DoctorVi
                             />
                         </div>
 
-                        <div>
-                            <label className="block text-sm font-medium text-gray-400 mb-2">
-                                Price per Visit (₹)
-                            </label>
-                            <input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                value={formData.price_per_visit}
-                                onChange={(e) => setFormData({ ...formData, price_per_visit: parseFloat(e.target.value) })}
-                                className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
-                            />
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-gray-400 mb-2">
-                                Total Amount: ₹{formData.price_per_visit.toFixed(2)}
-                            </label>
-                        </div>
                     </div>
 
                     <div>
@@ -384,8 +410,6 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate }: DoctorVi
                             <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Date & Time</th>
                             <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Doctor</th>
                             <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Specialist</th>
-                            <th className="px-4 py-3 text-right text-sm font-medium text-gray-300">Price/Visit</th>
-                            <th className="px-4 py-3 text-right text-sm font-medium text-gray-300">Total</th>
                             <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Notes</th>
                             <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Created By</th>
                             <th className="px-4 py-3 text-center text-sm font-medium text-gray-300">Actions</th>
@@ -394,27 +418,22 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate }: DoctorVi
                     <tbody className="divide-y divide-gray-700">
                         {consultations.length === 0 ? (
                             <tr>
-                                <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
+                                <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
                                     No consultations recorded yet
                                 </td>
                             </tr>
                         ) : (
-                            consultations.map((consultation) => (
+                            consultations.map((consultation) => {
+                                return (
                                 <tr key={consultation.id} className="hover:bg-gray-700/50">
                                     <td className="px-4 py-3 text-sm text-white">
-                                        {new Date(consultation.consultation_date).toLocaleString()}
+                                        {formatConsultationDateIST(consultation.consultation_date)}
                                     </td>
                                     <td className="px-4 py-3 text-sm text-white">
                                         {consultation.doctor?.name}
                                     </td>
                                     <td className="px-4 py-3 text-sm text-gray-400">
                                         {consultation.doctor?.specialist || 'N/A'}
-                                    </td>
-                                    <td className="px-4 py-3 text-sm text-white text-right">
-                                        ₹{parseFloat(consultation.price_per_visit).toFixed(2)}
-                                    </td>
-                                    <td className="px-4 py-3 text-sm text-white text-right font-medium">
-                                        ₹{parseFloat(consultation.total_price).toFixed(2)}
                                     </td>
                                     <td className="px-4 py-3 text-sm text-gray-400">
                                         {consultation.notes || '-'}
@@ -433,7 +452,7 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate }: DoctorVi
                                                     <Edit2 className="h-4 w-4" />
                                                 </button>
                                                 <button
-                                                    onClick={() => handleDelete(consultation.id)}
+                                                    onClick={() => handleDelete(consultation.id, consultation)}
                                                     className="text-red-400 hover:text-red-300 transition-colors"
                                                     title="Delete"
                                                 >
@@ -443,7 +462,8 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate }: DoctorVi
                                         )}
                                     </td>
                                 </tr>
-                            ))
+                                );
+                            })
                         )}
                     </tbody>
                 </table>
