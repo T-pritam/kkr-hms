@@ -107,6 +107,9 @@ export default function BillingSettlementTab({
       const response = await fetch(`/api/patients/${patientId}/settlements/sync`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          billing_id: billing?.id,
+        }),
       });
 
       if (response.ok) {
@@ -321,7 +324,7 @@ export default function BillingSettlementTab({
       const response = await fetch(`/api/doctor-settlements/${settlementId}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ soft_delete: true }),
+        body: JSON.stringify({ soft_delete: false }),
       });
 
       if (response.ok) {

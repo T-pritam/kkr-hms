@@ -109,6 +109,7 @@ export async function POST(
       consultation_date: consultationDateUTC,
       visit_number: visitNumber,
       notes: body.notes || null,
+      billing_id: body.billing_id || null,
       created_by: authResult.user.id,
     };
 

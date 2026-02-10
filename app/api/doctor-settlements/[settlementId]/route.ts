@@ -28,31 +28,36 @@ export async function PUT(
     };
 
     // Handle pricing mode: price_per_visit or total_amount
+    // NOTE: total_amount is a GENERATED column (visit_count * amount_per_visit), cannot be updated directly
     if (body.pricing_mode === 'per_visit') {
-      // User provided price_per_visit, calculate total_amount
-      if (body.amount_per_visit !== undefined && body.visit_count !== undefined) {
-        updateData.amount_per_visit = body.amount_per_visit;
-        updateData.total_amount = body.amount_per_visit * body.visit_count;
-        updateData.visit_count = body.visit_count;
-      }
-    } else if (body.pricing_mode === 'total') {
-      // User provided total_amount, calculate amount_per_visit
-      if (body.total_amount !== undefined && body.visit_count !== undefined && body.visit_count > 0) {
-        updateData.total_amount = body.total_amount;
-        updateData.amount_per_visit = body.total_amount / body.visit_count;
-        updateData.visit_count = body.visit_count;
-      }
-    } else {
-      // Legacy mode: accept individual fields
+      // User provided price_per_visit, calculate visit_count if needed
       if (body.amount_per_visit !== undefined) {
         updateData.amount_per_visit = body.amount_per_visit;
-      }
-      if (body.total_amount !== undefined) {
-        updateData.total_amount = body.total_amount;
       }
       if (body.visit_count !== undefined) {
         updateData.visit_count = body.visit_count;
       }
+    } else if (body.pricing_mode === 'total') {
+      // User provided total_amount, calculate amount_per_visit from it
+      // total_amount = visit_count * amount_per_visit
+      // amount_per_visit = total_amount / visit_count
+      if (body.total_amount !== undefined && body.visit_count !== undefined && body.visit_count > 0) {
+        updateData.amount_per_visit = body.total_amount / body.visit_count;
+        updateData.visit_count = body.visit_count;
+      }
+      if (body.visit_count !== undefined && body.visit_count > 0 && body.amount_per_visit === undefined) {
+        // If only visit_count changed, amount_per_visit will be recalculated via generated column
+        updateData.visit_count = body.visit_count;
+      }
+    } else {
+      // Legacy mode: accept individual fields only
+      if (body.amount_per_visit !== undefined) {
+        updateData.amount_per_visit = body.amount_per_visit;
+      }
+      if (body.visit_count !== undefined) {
+        updateData.visit_count = body.visit_count;
+      }
+      // Never try to update total_amount directly - it's generated
     }
 
     // Handle settlement status separately from pricing

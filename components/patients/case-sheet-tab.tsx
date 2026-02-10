@@ -60,51 +60,87 @@ export default function CaseSheetTab({ patientId, billing }: CaseSheetTabProps) 
     }
   };
 
-  const uploadToR2 = async (file: File): Promise<{ url: string; filename: string } | null> => {
-    setUploading(true);
+  const handleViewPDF = async () => {
+    if (!caseSheet?.id) return;
+
     try {
-      // Get presigned URL from edge function
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/upload-case-sheet`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
-          },
-          body: JSON.stringify({
-            filename: file.name,
-            contentType: file.type,
-            patientId,
-            fileSize: file.size,
-          }),
-        }
+        `/api/patients/${patientId}/case-sheets/${caseSheet.id}/download`
       );
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to get upload URL');
+        alert(errorData.error || 'Failed to get download URL');
+        return;
       }
 
-      const { uploadUrl, publicUrl, filename } = await response.json();
+      const { downloadUrl } = await response.json();
+      window.open(downloadUrl, '_blank');
+    } catch (error) {
+      console.error('Error viewing PDF:', error);
+      alert('Failed to view PDF');
+    }
+  };
 
-      // Upload file to R2
-      const uploadResponse = await fetch(uploadUrl, {
-        method: 'PUT',
-        body: file,
-        headers: {
-          'Content-Type': file.type,
-        },
+  const handleDownloadPDF = async () => {
+    if (!caseSheet?.id) return;
+
+    try {
+      const response = await fetch(
+        `/api/patients/${patientId}/case-sheets/${caseSheet.id}/download`
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        alert(errorData.error || 'Failed to get download URL');
+        return;
+      }
+
+      const { downloadUrl, filename } = await response.json();
+      
+      // Create a temporary link and click it to download
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = filename || 'case-sheet.pdf';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Error downloading PDF:', error);
+      alert('Failed to download PDF');
+    }
+  };
+
+  const uploadToR2 = async (file: File): Promise<{ url: string; filename: string } | null> => {
+    setUploading(true);
+    try {
+      // Upload to backend API endpoint (avoids CORS issues)
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch(`/api/patients/${patientId}/case-sheets/upload`, {
+        method: 'POST',
+        body: formData,
       });
 
-      if (!uploadResponse.ok) {
-        throw new Error('Failed to upload file');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to upload file');
       }
 
-      return { url: publicUrl, filename };
+      const { url, filename } = await response.json();
+      return { url, filename };
     } catch (error) {
       console.error('Error uploading file:', error);
-      alert('Failed to upload file. Please try again.');
+      let errorMessage = 'Failed to upload file. Please try again.';
+      
+      if (error instanceof TypeError && error.message === 'Failed to fetch') {
+        errorMessage = 'Network error: Unable to reach the upload service. Please check your connection and try again.';
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      
+      alert(`Failed to upload file: ${errorMessage}`);
       return null;
     } finally {
       setUploading(false);
@@ -116,65 +152,109 @@ export default function CaseSheetTab({ patientId, billing }: CaseSheetTabProps) 
     setLoading(true);
 
     try {
-      let caseSheetUrl = caseSheet?.case_sheet_url || '';
-      let caseSheetFilename = caseSheet?.case_sheet_filename || '';
-
-      // Upload file if selected
-      if (formData.case_sheet_file) {
-        const uploadResult = await uploadToR2(formData.case_sheet_file);
-        if (uploadResult) {
-          caseSheetUrl = uploadResult.url;
-          caseSheetFilename = uploadResult.filename;
-        } else {
-          setLoading(false);
-          return;
-        }
-      }
-
       if (isEditing && caseSheet) {
         // Update existing case sheet
-        const response = await fetch(`/api/patients/${patientId}/case-sheets/${caseSheet.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            discharge_date: formData.discharge_date,
-            discharge_notes: formData.discharge_notes,
-            case_sheet_url: caseSheetUrl,
-            case_sheet_filename: caseSheetFilename,
-          }),
-        });
+        if (formData.case_sheet_file) {
+          // Use FormData for file upload through PATCH
+          const patchFormData = new FormData();
+          patchFormData.append('file', formData.case_sheet_file);
+          patchFormData.append('discharge_date', formData.discharge_date);
+          patchFormData.append('discharge_notes', formData.discharge_notes);
 
-        if (response.ok) {
-          await fetchCaseSheets();
-          setShowForm(false);
-          setIsEditing(false);
+          const response = await fetch(`/api/patients/${patientId}/case-sheets/${caseSheet.id}`, {
+            method: 'PATCH',
+            body: patchFormData,
+          });
+
+          if (response.ok) {
+            await fetchCaseSheets();
+            setShowForm(false);
+            setIsEditing(false);
+            setFormData({
+              discharge_date: '',
+              discharge_notes: '',
+              case_sheet_file: null,
+            });
+          } else {
+            const errorData = await response.json();
+            alert(errorData.error || 'Failed to update case sheet');
+          }
         } else {
-          alert('Failed to update case sheet');
+          // No file, just update metadata with JSON
+          const response = await fetch(`/api/patients/${patientId}/case-sheets/${caseSheet.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              discharge_date: formData.discharge_date,
+              discharge_notes: formData.discharge_notes,
+            }),
+          });
+
+          if (response.ok) {
+            await fetchCaseSheets();
+            setShowForm(false);
+            setIsEditing(false);
+            setFormData({
+              discharge_date: '',
+              discharge_notes: '',
+              case_sheet_file: null,
+            });
+          } else {
+            const errorData = await response.json();
+            alert(errorData.error || 'Failed to update case sheet');
+          }
         }
       } else if (!caseSheet) {
         // Create new case sheet
-        const response = await fetch(`/api/patients/${patientId}/case-sheets`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            patient_billing_id: billing?.id,
-            discharge_date: formData.discharge_date,
-            discharge_notes: formData.discharge_notes,
-            case_sheet_url: caseSheetUrl,
-            case_sheet_filename: caseSheetFilename,
-          }),
-        });
+        if (formData.case_sheet_file) {
+          // Use FormData for file upload through POST
+          const postFormData = new FormData();
+          postFormData.append('file', formData.case_sheet_file);
+          postFormData.append('discharge_date', formData.discharge_date);
+          postFormData.append('discharge_notes', formData.discharge_notes);
+          postFormData.append('patient_billing_id', billing?.id || '');
 
-        if (response.ok) {
-          await fetchCaseSheets();
-          setShowForm(false);
-          setFormData({
-            discharge_date: '',
-            discharge_notes: '',
-            case_sheet_file: null,
+          const response = await fetch(`/api/patients/${patientId}/case-sheets`, {
+            method: 'POST',
+            body: postFormData,
           });
+
+          if (response.ok) {
+            await fetchCaseSheets();
+            setShowForm(false);
+            setFormData({
+              discharge_date: '',
+              discharge_notes: '',
+              case_sheet_file: null,
+            });
+          } else {
+            const errorData = await response.json();
+            alert(errorData.error || 'Failed to save case sheet');
+          }
         } else {
-          alert('Failed to save case sheet');
+          // No file, use JSON
+          const response = await fetch(`/api/patients/${patientId}/case-sheets`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              patient_billing_id: billing?.id,
+              discharge_date: formData.discharge_date,
+              discharge_notes: formData.discharge_notes,
+            }),
+          });
+
+          if (response.ok) {
+            await fetchCaseSheets();
+            setShowForm(false);
+            setFormData({
+              discharge_date: '',
+              discharge_notes: '',
+              case_sheet_file: null,
+            });
+          } else {
+            const errorData = await response.json();
+            alert(errorData.error || 'Failed to save case sheet');
+          }
         }
       }
     } catch (error) {
@@ -345,15 +425,22 @@ export default function CaseSheetTab({ patientId, billing }: CaseSheetTabProps) 
               </div>
 
               {caseSheet.case_sheet_url && (
-                <a
-                  href={caseSheet.case_sheet_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors ml-4"
-                >
-                  <Download className="h-4 w-4" />
-                  Download PDF
-                </a>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleViewPDF()}
+                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors ml-4"
+                  >
+                    <FileText className="h-4 w-4" />
+                    View PDF
+                  </button>
+                  <button
+                    onClick={() => handleDownloadPDF()}
+                    className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors"
+                  >
+                    <Download className="h-4 w-4" />
+                    Download PDF
+                  </button>
+                </div>
               )}
             </div>
 

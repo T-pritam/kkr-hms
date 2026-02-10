@@ -173,6 +173,7 @@ export default function PatientDetailsModal({
               patientId={patientId}
               patientJoinDate={patientData?.date_of_join}
               billing={billing}
+              onCreateBilling={createBilling}
             />
           )}
           

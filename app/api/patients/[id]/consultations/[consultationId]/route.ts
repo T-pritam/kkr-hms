@@ -52,6 +52,7 @@ export async function PATCH(
     const updateData: any = {
       doctor_id: body.doctor_id !== undefined ? body.doctor_id : consultation.doctor_id,
       notes: body.notes !== undefined ? body.notes : consultation.notes,
+      billing_id: body.billing_id !== undefined ? body.billing_id : consultation.billing_id,
       updated_by: authResult.user.id,
       updated_at: new Date().toISOString(),
     };

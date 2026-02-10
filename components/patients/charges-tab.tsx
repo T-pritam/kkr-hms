@@ -20,6 +20,7 @@ export default function ChargesTab({ patientId, billing, onCreateBilling }: Char
     charge_type: '',
     description: '',
     amount: 0,
+    qty: 1,
     charge_date: new Date().toISOString().split('T')[0],
   });
 
@@ -91,6 +92,7 @@ export default function ChargesTab({ patientId, billing, onCreateBilling }: Char
       charge_type: '',
       description: '',
       amount: 0,
+      qty: 1,
       charge_date: new Date().toISOString().split('T')[0],
     });
   };
@@ -101,6 +103,7 @@ export default function ChargesTab({ patientId, billing, onCreateBilling }: Char
       charge_type: charge.charge_type,
       description: charge.description,
       amount: parseFloat(charge.amount),
+      qty: charge.qty || 1,
       charge_date: charge.charge_date,
     });
     setShowForm(true);
@@ -198,6 +201,20 @@ export default function ChargesTab({ patientId, billing, onCreateBilling }: Char
                 min="0.01"
                 value={formData.amount}
                 onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) })}
+                className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-400 mb-2">
+                Quantity *
+              </label>
+              <input
+                type="number"
+                required
+                min="1"
+                value={formData.qty}
+                onChange={(e) => setFormData({ ...formData, qty: parseInt(e.target.value) || 1 })}
                 className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
               />
             </div>
