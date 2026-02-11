@@ -27,21 +27,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true })
     }
 
-    // Generate reset token
+    // Generate secure reset token
     const resetToken = crypto.randomBytes(32).toString('hex')
-    const resetTokenExpiry = new Date(Date.now() + 3600000) // 1 hour
+    const resetTokenExpiry = new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
 
-    // Save reset token
-    await supabase
-      .from('users')
-      .update({
-        reset_token: resetToken,
-        reset_token_expiry: resetTokenExpiry.toISOString(),
+    // Save reset token to dedicated table (secure approach)
+    const { error: tokenError } = await supabase
+      .from('password_reset_tokens')
+      .insert({
+        user_id: user.id,
+        token_hash: crypto.createHash('sha256').update(resetToken).digest('hex'),
+        expires_at: resetTokenExpiry.toISOString(),
+        is_used: false,
       })
-      .eq('id', user.id)
+
+    if (tokenError) {
+      console.error('Error saving reset token:', tokenError)
+      return NextResponse.json({ success: true }) // Don't reveal error
+    }
 
     // Send email via Brevo Edge Function
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    console.log(baseUrl)
     const resetUrl = `${baseUrl}/change-password?token=${resetToken}`
     
     await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-reset-email`, {

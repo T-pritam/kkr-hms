@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { verifyToken, getAccessToken } from '@/lib/auth/jwt'
 import bcrypt from 'bcryptjs'
+import crypto from 'crypto'
 
 export async function POST(request: NextRequest) {
   try {
@@ -25,28 +26,45 @@ export async function POST(request: NextRequest) {
     let userId: string
 
     if (token) {
-      // Reset password flow - find user by token
-      const { data: user, error } = await supabase
-        .from('users')
-        .select('id, reset_token, reset_token_expiry')
-        .eq('reset_token', token)
+      // Reset password flow - validate token from password_reset_tokens table
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex')
+      
+      const { data: resetToken, error } = await supabase
+        .from('password_reset_tokens')
+        .select('user_id, expires_at, is_used')
+        .eq('token_hash', tokenHash)
         .single()
 
-      if (error || !user) {
+      if (error || !resetToken) {
         return NextResponse.json(
-          { error: 'Invalid or expired reset token' },
+          { error: 'Invalid reset token' },
           { status: 400 }
         )
       }
 
-      if (user.reset_token_expiry && new Date(user.reset_token_expiry) < new Date()) {
+      // Check if token has expired
+      if (new Date(resetToken.expires_at) < new Date()) {
         return NextResponse.json(
-          { error: 'Reset token has expired' },
+          { error: 'Reset token has expired. Please request a new one.' },
           { status: 400 }
         )
       }
 
-      userId = user.id
+      // Check if token was already used
+      if (resetToken.is_used) {
+        return NextResponse.json(
+          { error: 'Reset token has already been used' },
+          { status: 400 }
+        )
+      }
+
+      userId = resetToken.user_id
+
+      // Mark token as used
+      await supabase
+        .from('password_reset_tokens')
+        .update({ is_used: true })
+        .eq('token_hash', tokenHash)
     } else {
       // Change password flow for logged-in users
       const accessToken = await getAccessToken()
