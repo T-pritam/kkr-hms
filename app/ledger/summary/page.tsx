@@ -21,6 +21,8 @@ import {
 import { OpdEntryModal } from '@/components/ledger/opd-entry-modal'
 import { ExpenseEntryModal } from '@/components/ledger/expense-entry-modal'
 import { EditTransactionModal } from '@/components/ledger/edit-transaction-modal'
+import { AddPatientInstallmentModal } from '@/components/ledger/add-patient-installment-modal'
+import { useUser } from '@/hooks/use-user'
 
 interface Transaction {
   id: string
@@ -64,12 +66,16 @@ interface DailySummary {
 }
 
 export default function DailyLedgerSummaryPage() {
+
+  const { user } = useUser()
+
   const [selectedDate, setSelectedDate] = useState('')
   const [summary, setSummary] = useState<DailySummary | null>(null)
   const [loading, setLoading] = useState(false)
   const [showOpdModal, setShowOpdModal] = useState(false)
   const [showExpenseModal, setShowExpenseModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
+  const [showInstallmentModal, setShowInstallmentModal] = useState(false)
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null)
   const [userRole, setUserRole] = useState<string>('')
 
@@ -103,7 +109,7 @@ export default function DailyLedgerSummaryPage() {
   const fetchDailySummary = async () => {
     try {
       setLoading(true)
-      const response = await fetch(`/api/ledger/daily-summary/${selectedDate}`, {
+      const response = await fetch(`/api/ledger/daily-summary/${selectedDate}?user_id=${user?.id}`, {
         credentials: 'include'
       })
       const data = await response.json()
@@ -224,6 +230,10 @@ export default function DailyLedgerSummaryPage() {
                   <TrendingDown size={18} className="mr-2" />
                   Add Expense
                 </Button>
+                <Button onClick={() => setShowInstallmentModal(true)} variant="outline">
+                  <Plus size={18} className="mr-2" />
+                  Add Patient Installment
+                </Button>
                 <Button onClick={() => setShowOpdModal(true)}>
                   <Plus size={18} className="mr-2" />
                   Add OPD Entry
@@ -336,7 +346,7 @@ export default function DailyLedgerSummaryPage() {
                     {summary.transactions.map((txn) => (
                       <tr key={txn.id} className="border-b border-gray-800 hover:bg-gray-900/50">
                         <td className="py-3 px-4 text-gray-300 text-sm">
-                          {formatTime(txn.created_at)}
+                          {new Date(txn.created_at).toLocaleTimeString('en-GB', { hour12: false, hour: '2-digit', minute: '2-digit' })}
                         </td>
                         <td className="py-3 px-4">
                           <span className={`px-3 py-1 rounded-full text-xs border ${
@@ -348,7 +358,7 @@ export default function DailyLedgerSummaryPage() {
                           </span>
                         </td>
                         <td className="py-3 px-4 text-gray-300 text-sm capitalize">
-                          {txn.source}
+                          {txn.source} { txn.source == 'patient' ? `(${txn.patient?.name || 'Unknown'})` : '' }
                         </td>
                         <td className="py-3 px-4 text-white font-medium">
                           {formatCurrency(txn.amount)}
@@ -426,6 +436,13 @@ export default function DailyLedgerSummaryPage() {
       <ExpenseEntryModal
         isOpen={showExpenseModal}
         onClose={() => setShowExpenseModal(false)}
+        onSuccess={fetchDailySummary}
+        selectedDate={selectedDate}
+      />
+
+      <AddPatientInstallmentModal
+        isOpen={showInstallmentModal}
+        onClose={() => setShowInstallmentModal(false)}
         onSuccess={fetchDailySummary}
         selectedDate={selectedDate}
       />

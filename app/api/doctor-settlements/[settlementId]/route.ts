@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { verifyAuth } from '@/lib/auth/verify';
 
+// Complete improved PUT route with settled settlement handling
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ settlementId: string }> }
@@ -23,50 +24,160 @@ export async function PUT(
     const { settlementId } = await params;
     const body = await request.json();
 
-    const updateData: any = {
-      updated_by: authResult.user.id,
-    };
+    console.log('=== SETTLEMENT UPDATE ===');
+    console.log('Settlement ID:', settlementId);
+    console.log('Request body:', body);
 
-    // Handle pricing mode: price_per_visit or total_amount
-    // NOTE: total_amount is a GENERATED column (visit_count * amount_per_visit), cannot be updated directly
-    if (body.pricing_mode === 'per_visit') {
-      // User provided price_per_visit, calculate visit_count if needed
-      if (body.amount_per_visit !== undefined) {
-        updateData.amount_per_visit = body.amount_per_visit;
-      }
-      if (body.visit_count !== undefined) {
-        updateData.visit_count = body.visit_count;
-      }
-    } else if (body.pricing_mode === 'total') {
-      // User provided total_amount, calculate amount_per_visit from it
-      // total_amount = visit_count * amount_per_visit
-      // amount_per_visit = total_amount / visit_count
-      if (body.total_amount !== undefined && body.visit_count !== undefined && body.visit_count > 0) {
-        updateData.amount_per_visit = body.total_amount / body.visit_count;
-        updateData.visit_count = body.visit_count;
-      }
-      if (body.visit_count !== undefined && body.visit_count > 0 && body.amount_per_visit === undefined) {
-        // If only visit_count changed, amount_per_visit will be recalculated via generated column
-        updateData.visit_count = body.visit_count;
-      }
-    } else {
-      // Legacy mode: accept individual fields only
-      if (body.amount_per_visit !== undefined) {
-        updateData.amount_per_visit = body.amount_per_visit;
-      }
-      if (body.visit_count !== undefined) {
-        updateData.visit_count = body.visit_count;
-      }
-      // Never try to update total_amount directly - it's generated
+    // =====================================================
+    // Fetch current settlement
+    // =====================================================
+    const { data: currentSettlement, error: fetchError } = await supabase
+      .from('doctor_visit_settlements')
+      .select('*')
+      .eq('id', settlementId)
+      .single();
+
+    if (fetchError || !currentSettlement) {
+      console.error('Settlement not found:', fetchError);
+      return NextResponse.json(
+        { error: 'Settlement not found', details: fetchError?.message },
+        { status: 404 }
+      );
     }
 
-    // Handle settlement status separately from pricing
+    console.log('Current settlement:', {
+      id: currentSettlement.id,
+      settled: currentSettlement.settled,
+      amount_per_visit: currentSettlement.amount_per_visit,
+      visit_count: currentSettlement.visit_count,
+      total_amount: currentSettlement.total_amount,
+    });
+
+    // =====================================================
+    // Determine if this is a pricing update
+    // =====================================================
+    const isPricingModeRequest = body.pricing_mode !== undefined;
+    const hasPricingFieldUpdate = 
+      body.amount_per_visit !== undefined || 
+      body.visit_count !== undefined;
+    
+    const isPricingUpdate = isPricingModeRequest || hasPricingFieldUpdate || body.pricing_mode === 'total';
+
+    console.log('Is pricing update:', isPricingUpdate);
+    console.log('Settlement is settled:', currentSettlement.settled);
+
+    // =====================================================
+    // CRITICAL: If settlement is settled and we're updating pricing,
+    // we need to unsettle it first
+    // =====================================================
+    let wasSettled = false;
+    if (currentSettlement.settled === true && isPricingUpdate) {
+      console.log('⚠️  Settlement is settled. Unsettling for pricing update...');
+      
+      wasSettled = true;
+      const { error: unsetError } = await supabase
+        .from('doctor_visit_settlements')
+        .update({
+          settled: false,
+          settlement_date: null,
+          settlement_amount: null,
+          updated_by: authResult.user.id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', settlementId);
+
+      if (unsetError) {
+        console.error('Error unsettling:', unsetError);
+        throw unsetError;
+      }
+
+      console.log('✓ Settlement unsettled successfully');
+    }
+
+    // =====================================================
+    // Prepare update data
+    // =====================================================
+    const updateData: any = {
+      updated_by: authResult.user.id,
+      updated_at: new Date().toISOString(),
+    };
+
+    // Handle pricing updates
+    if (body.pricing_mode === 'per_visit') {
+      console.log('Pricing mode: per_visit');
+      
+      if (body.amount_per_visit !== undefined) {
+        const newAmount = parseFloat(body.amount_per_visit);
+        console.log(`amount_per_visit: ${currentSettlement.amount_per_visit} → ${newAmount}`);
+        updateData.amount_per_visit = newAmount;
+      }
+      
+      if (body.visit_count !== undefined) {
+        const newCount = parseInt(body.visit_count);
+        console.log(`visit_count: ${currentSettlement.visit_count} → ${newCount}`);
+        updateData.visit_count = newCount;
+      }
+    } else if (body.pricing_mode === 'total') {
+      console.log('Pricing mode: total');
+      
+      const totalAmount = parseFloat(body.total_amount);
+      const visitCount = parseInt(body.visit_count);
+      
+      if (isNaN(totalAmount) || isNaN(visitCount)) {
+        return NextResponse.json(
+          { error: 'Invalid total_amount or visit_count values' },
+          { status: 400 }
+        );
+      }
+      
+      if (visitCount <= 0) {
+        return NextResponse.json(
+          { error: 'visit_count must be greater than 0' },
+          { status: 400 }
+        );
+      }
+
+      const calculatedAmount = totalAmount / visitCount;
+      console.log(`Calculated amount_per_visit: ${totalAmount} / ${visitCount} = ${calculatedAmount}`);
+      
+      updateData.amount_per_visit = calculatedAmount;
+      updateData.visit_count = visitCount;
+    } else if (body.amount_per_visit !== undefined || body.visit_count !== undefined) {
+      console.log('Pricing mode: legacy (individual fields)');
+      
+      if (body.amount_per_visit !== undefined) {
+        const newAmount = parseFloat(body.amount_per_visit);
+        console.log(`amount_per_visit: ${currentSettlement.amount_per_visit} → ${newAmount}`);
+        updateData.amount_per_visit = newAmount;
+      }
+      
+      if (body.visit_count !== undefined) {
+        const newCount = parseInt(body.visit_count);
+        console.log(`visit_count: ${currentSettlement.visit_count} → ${newCount}`);
+        updateData.visit_count = newCount;
+      }
+    }
+
+    // =====================================================
+    // Handle settlement status
+    // =====================================================
     if (body.settled !== undefined) {
+      console.log(`Updating settled: ${currentSettlement.settled} → ${body.settled}`);
       updateData.settled = body.settled;
-      if (body.settled) {
-        updateData.settlement_date = body.settlement_date || new Date().toISOString();
-      } else {
-        // Unsettling: clear settlement fields
+      
+      if (body.settled === true) {
+        const settlementDate = body.settlement_date || new Date().toISOString();
+        console.log('Settlement date:', settlementDate);
+        updateData.settlement_date = settlementDate;
+        
+        // If not provided, use calculated total_amount as settlement_amount
+        if (body.settlement_amount === undefined && updateData.amount_per_visit) {
+          const newTotal = (updateData.visit_count || currentSettlement.visit_count) * updateData.amount_per_visit;
+          console.log('Auto-calculated settlement_amount:', newTotal);
+          updateData.settlement_amount = newTotal;
+        }
+      } else if (body.settled === false) {
+        console.log('Clearing settlement details');
         updateData.settlement_date = null;
         updateData.settlement_amount = null;
         updateData.payment_method = null;
@@ -74,26 +185,57 @@ export async function PUT(
       }
     }
 
+    // =====================================================
+    // Handle other settlement details
+    // =====================================================
     if (body.settlement_amount !== undefined) {
-      updateData.settlement_amount = body.settlement_amount;
+      const newAmount = parseFloat(body.settlement_amount);
+      console.log(`settlement_amount: ${currentSettlement.settlement_amount} → ${newAmount}`);
+      updateData.settlement_amount = newAmount;
     }
 
-    if (body.payment_method !== undefined) {
+    if (body.payment_method !== undefined && body.payment_method !== '') {
+      console.log(`payment_method: ${currentSettlement.payment_method} → ${body.payment_method}`);
       updateData.payment_method = body.payment_method;
     }
 
-    if (body.transaction_reference !== undefined) {
+    if (body.transaction_reference !== undefined && body.transaction_reference !== '') {
+      console.log(`transaction_reference: ${currentSettlement.transaction_reference} → ${body.transaction_reference}`);
       updateData.transaction_reference = body.transaction_reference;
     }
 
-    if (body.settlement_notes !== undefined) {
+    if (body.settlement_notes !== undefined && body.settlement_notes !== '') {
+      console.log(`settlement_notes: ${currentSettlement.settlement_notes} → ${body.settlement_notes}`);
       updateData.settlement_notes = body.settlement_notes;
     }
 
     if (body.settlement_type !== undefined) {
+      console.log(`settlement_type: ${currentSettlement.settlement_type} → ${body.settlement_type}`);
       updateData.settlement_type = body.settlement_type;
     }
 
+    // =====================================================
+    // Check if there's anything to update
+    // =====================================================
+    const meaningfulFields = Object.keys(updateData).filter(
+      k => k !== 'updated_by' && k !== 'updated_at'
+    );
+
+    if (meaningfulFields.length === 0 && !wasSettled) {
+      console.warn('No data to update');
+      return NextResponse.json(
+        { error: 'No data provided to update', data: currentSettlement },
+        { status: 400 }
+      );
+    }
+
+    console.log('Fields to update:', meaningfulFields);
+    console.log('Update payload:', updateData);
+
+    // =====================================================
+    // Execute the update
+    // =====================================================
+    console.log('Executing update...');
     const { data, error } = await supabase
       .from('doctor_visit_settlements')
       .update(updateData)
@@ -101,31 +243,65 @@ export async function PUT(
       .select(`
         *,
         doctor:doctors(id, name, specialist),
-        patient:patients(id, patient_id, name)
+        patient:patients(id, name)
       `)
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('Update error:', error);
+      throw error;
+    }
 
     if (!data) {
+      console.error('No data returned after update');
       return NextResponse.json(
-        { error: 'Settlement not found' },
+        { error: 'Settlement not found after update' },
         { status: 404 }
       );
+    }
+
+    console.log('✓ Update successful');
+    console.log('Updated settlement:', {
+      id: data.id,
+      settled: data.settled,
+      amount_per_visit: data.amount_per_visit,
+      visit_count: data.visit_count,
+      total_amount: data.total_amount,
+    });
+
+    // =====================================================
+    // Prepare response
+    // =====================================================
+    let message = 'Settlement updated successfully';
+    
+    if (wasSettled && isPricingUpdate) {
+      message = 'Settled settlement was unsettled and pricing updated. Call with settled: true to resettle.';
     }
 
     return NextResponse.json(
       {
         success: true,
         data,
-        message: 'Settlement updated successfully',
+        message,
+        metadata: {
+          wasSettled,
+          pricingUpdated: isPricingUpdate,
+          updatedFields: meaningfulFields,
+          needsResettle: wasSettled && isPricingUpdate,
+        },
       },
       { status: 200 }
     );
   } catch (error) {
+    console.error('=== ERROR ===');
     console.error('Error updating settlement:', error);
+    
     return NextResponse.json(
-      { error: 'Failed to update settlement', details: String(error) },
+      { 
+        error: 'Failed to update settlement', 
+        details: String(error),
+        message: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }

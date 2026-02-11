@@ -10,6 +10,7 @@ interface BillingSettlementTabProps {
   billing: any;
   onCreateBilling: () => void;
   onBillingUpdate: () => void;
+  onSettlementUpdate: () => void;
 }
 
 export default function BillingSettlementTab({
@@ -17,6 +18,7 @@ export default function BillingSettlementTab({
   billing,
   onCreateBilling,
   onBillingUpdate,
+  onSettlementUpdate,
 }: BillingSettlementTabProps) {
   const { user } = useUser();
   const [settlements, setSettlements] = useState<any[]>([]);
@@ -1008,7 +1010,7 @@ export default function BillingSettlementTab({
                 required
                 min="1"
                 value={editFormData.visit_count}
-                onChange={(e) => handlePriceChange('visit_count', parseInt(e.target.value) || 0)}
+                readOnly
                 className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
               />
             </div>

@@ -42,18 +42,77 @@ async function dumpDatabaseData(): Promise<Uint8Array> {
     for (const [tableName] of tables.rows as [string][]) {
       console.log(`Backing up: ${tableName}`);
 
-      // Get row count
+      // ========== SCHEMA: Get column definitions ==========
+      const columnsResult = await client.queryArray(
+        `SELECT 
+          column_name, 
+          data_type, 
+          character_maximum_length,
+          is_nullable, 
+          column_default
+         FROM information_schema.columns 
+         WHERE table_schema = 'public' AND table_name = $1
+         ORDER BY ordinal_position`,
+        [tableName]
+      );
+
+      // Build CREATE TABLE statement
+      sqlDump += `\n-- =============================================\n`;
+      sqlDump += `-- Table: ${tableName}\n`;
+      sqlDump += `-- =============================================\n`;
+      sqlDump += `DROP TABLE IF EXISTS "${tableName}" CASCADE;\n`;
+      sqlDump += `CREATE TABLE "${tableName}" (\n`;
+
+      const columnDefs: string[] = [];
+      for (const [colName, dataType, maxLength, nullable, defaultValue] of columnsResult.rows as [string, string, number | null, string, string | null][]) {
+        let colDef = `  "${colName}" ${dataType.toUpperCase()}`;
+        
+        // Add length for varchar/char types
+        if (maxLength && (dataType === 'character varying' || dataType === 'character')) {
+          colDef += `(${maxLength})`;
+        }
+        
+        // Add default value
+        if (defaultValue !== null) {
+          colDef += ` DEFAULT ${defaultValue}`;
+        }
+        
+        // Add NOT NULL constraint
+        if (nullable === 'NO') {
+          colDef += ' NOT NULL';
+        }
+        
+        columnDefs.push(colDef);
+      }
+
+      sqlDump += columnDefs.join(',\n') + '\n);\n';
+
+      // ========== PRIMARY KEY ==========
+      const pkResult = await client.queryArray(
+        `SELECT a.attname
+         FROM pg_index i
+         JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+         WHERE i.indrelid = $1::regclass AND i.indisprimary`,
+        [tableName]
+      );
+
+      if (pkResult.rows.length > 0) {
+        const pkColumns = pkResult.rows.map(row => `"${row[0]}"`).join(', ');
+        sqlDump += `ALTER TABLE "${tableName}" ADD PRIMARY KEY (${pkColumns});\n`;
+      }
+
+      // ========== DATA: Get row count ==========
       const countResult = await client.queryObject(
         `SELECT COUNT(*) as count FROM "${tableName}"`
       );
       const rowCount = Number(countResult.rows[0].count);
 
       if (rowCount === 0) {
-        console.log(`  └─ Skipping empty table`);
+        console.log(`  └─ Schema created, no data`);
         continue;
       }
 
-      console.log(`  └─ ${rowCount} rows`);
+      console.log(`  └─ Schema created, ${rowCount} rows`);
 
       // Get all data efficiently
       const data = await client.queryObject(`SELECT * FROM "${tableName}"`);
@@ -62,7 +121,7 @@ async function dumpDatabaseData(): Promise<Uint8Array> {
         const columnNames = Object.keys(data.rows[0]);
         const quotedColumns = columnNames.map(col => `"${col}"`).join(', ');
         
-        sqlDump += `\n-- Data for ${tableName} (${rowCount} rows)\n`;
+        sqlDump += `\n-- Data for ${tableName}\n`;
         
         // Build multi-row INSERT
         const batchSize = 100;
@@ -85,6 +144,71 @@ async function dumpDatabaseData(): Promise<Uint8Array> {
           sqlDump += `INSERT INTO "${tableName}" (${quotedColumns}) VALUES\n  ${valueRows};\n`;
         }
       }
+    }
+
+    // ========== FOREIGN KEYS ==========
+    sqlDump += `\n-- =============================================\n`;
+    sqlDump += `-- Foreign Key Constraints\n`;
+    sqlDump += `-- =============================================\n`;
+
+    const fkResult = await client.queryArray(
+      `SELECT
+        tc.table_name,
+        tc.constraint_name,
+        kcu.column_name,
+        ccu.table_name AS foreign_table_name,
+        ccu.column_name AS foreign_column_name,
+        rc.delete_rule,
+        rc.update_rule
+      FROM information_schema.table_constraints AS tc
+      JOIN information_schema.key_column_usage AS kcu
+        ON tc.constraint_name = kcu.constraint_name
+        AND tc.table_schema = kcu.table_schema
+      JOIN information_schema.constraint_column_usage AS ccu
+        ON ccu.constraint_name = tc.constraint_name
+        AND ccu.table_schema = tc.table_schema
+      JOIN information_schema.referential_constraints AS rc
+        ON rc.constraint_name = tc.constraint_name
+        AND rc.constraint_schema = tc.table_schema
+      WHERE tc.constraint_type = 'FOREIGN KEY'
+        AND tc.table_schema = 'public'
+      ORDER BY tc.table_name, tc.constraint_name`
+    );
+
+    for (const [tableName, constraintName, columnName, foreignTable, foreignColumn, deleteRule, updateRule] of fkResult.rows as [string, string, string, string, string, string, string][]) {
+      sqlDump += `ALTER TABLE "${tableName}" ADD CONSTRAINT "${constraintName}" `;
+      sqlDump += `FOREIGN KEY ("${columnName}") `;
+      sqlDump += `REFERENCES "${foreignTable}" ("${foreignColumn}")`;
+      
+      if (deleteRule !== 'NO ACTION') {
+        sqlDump += ` ON DELETE ${deleteRule}`;
+      }
+      if (updateRule !== 'NO ACTION') {
+        sqlDump += ` ON UPDATE ${updateRule}`;
+      }
+      
+      sqlDump += `;\n`;
+    }
+
+    // ========== INDEXES ==========
+    sqlDump += `\n-- =============================================\n`;
+    sqlDump += `-- Indexes\n`;
+    sqlDump += `-- =============================================\n`;
+
+    const indexResult = await client.queryArray(
+      `SELECT
+        schemaname,
+        tablename,
+        indexname,
+        indexdef
+      FROM pg_indexes
+      WHERE schemaname = 'public'
+        AND indexname NOT LIKE '%_pkey'
+      ORDER BY tablename, indexname`
+    );
+
+    for (const [, , , indexDef] of indexResult.rows as [string, string, string, string][]) {
+      sqlDump += `${indexDef};\n`;
     }
 
     console.log('Database dump completed successfully');
@@ -318,9 +442,13 @@ async function performBackup(): Promise<{
   const dumpData = await dumpDatabaseData();
   const compressedData = await compressData(dumpData);
 
-  const timestamp = new Date().toISOString();
-  const dateStr = timestamp.split('T')[0];
-  const timeStr = timestamp.split('T')[1].substring(0, 5).replace(':', '');
+  // Convert to IST (GMT+5:30)
+  const now = new Date();
+  const istOffset = 5.5 * 60 * 60 * 1000; // 5 hours 30 minutes in milliseconds
+  const istDate = new Date(now.getTime() + istOffset);
+  
+  const dateStr = istDate.toISOString().split('T')[0]; // YYYY-MM-DD
+  const timeStr = istDate.toISOString().split('T')[1].substring(0, 5).replace(':', ''); // HHMM
   const filename = `backup-${dateStr}-${timeStr}-${Date.now()}.sql.gz`;
 
   console.log(`\nUploading backup file...`);

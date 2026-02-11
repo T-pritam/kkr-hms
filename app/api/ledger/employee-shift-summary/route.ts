@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
       .select(`
         *,
         created_by_user:users!created_by(id, username),
-        patient:patients(id, name)
+        patient:patients!patient_id(patient_id, name)
       `)
       .eq('transaction_date', date)
       .order('created_at', { ascending: false })

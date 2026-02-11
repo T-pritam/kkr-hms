@@ -57,6 +57,7 @@ export async function GET(
         patient:patients(id, name)
       `)
       .eq('transaction_date', date)
+      .eq('created_by', payload.userId) // Ensure users only see their transactions
       .order('created_at', { ascending: false })
 
     if (error) {

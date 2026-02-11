@@ -36,6 +36,7 @@ export async function POST(
       .from('patient_consultations')
       .select('*')
       .eq('patient_id', patientId)
+      .eq('billing_id', billingId)
       .is('deleted_at', null)
       .order('consultation_date', { ascending: true });
 
@@ -62,6 +63,8 @@ export async function POST(
       {}
     );
 
+    console.log(`Found ${consultations.length} consultations for patient ${patientId} grouped by doctor:`, consultationsByDoctor);
+
     const createdSettlements = [];
     const updatedSettlements = [];
 
@@ -78,53 +81,25 @@ export async function POST(
         .eq('doctor_id', doctorId)
         .is('deleted_at', null)
         .order('created_at', { ascending: false });
+        console.log(`Existing settlements for patient ${patientId} and doctor ${doctorId}:`, existingSettlements);
 
       if (existingSettlements && existingSettlements.length > 0) {
-        // Find the unsettled settlement (most recent unsettled)
-        const unsettledSettlement = existingSettlements.find((s) => !s.settled);
-
-        if (unsettledSettlement) {
-          // Update the existing unsettled settlement with current visit count
-          const { error: updateError } = await supabase
-            .from('doctor_visit_settlements')
-            .update({
-              visit_count: visitCount,
-              updated_by: authResult.user.id,
-            })
-            .eq('id', unsettledSettlement.id);
-
-          if (updateError) throw updateError;
-
-          updatedSettlements.push({
-            id: unsettledSettlement.id,
-            doctor_id: doctorId,
+        const { error: updateError } = await supabase
+          .from('doctor_visit_settlements')
+          .update({
             visit_count: visitCount,
-            status: 'updated',
-          });
-        } else {
-          // All existing settlements are settled, create a new one
-          const { data: newSettlement, error: createError } = await supabase
-            .from('doctor_visit_settlements')
-            .insert({
-              patient_id: patientId,
-              doctor_id: doctorId,
-              visit_count: visitCount,
-              amount_per_visit: 0,
-              settlement_type: 'regular',
-              created_by: authResult.user.id,
-            })
-            .select()
-            .single();
+            updated_by: authResult.user.id,
+          })
+          .eq('id', existingSettlements[0].id);
 
-          if (createError) throw createError;
+        if (updateError) throw updateError;
 
-          createdSettlements.push({
-            id: newSettlement.id,
-            doctor_id: doctorId,
-            visit_count: visitCount,
-            status: 'created',
-          });
-        }
+        updatedSettlements.push({
+          id: existingSettlements[0].id,
+          doctor_id: doctorId,
+          visit_count: visitCount,
+          status: 'updated',
+        });
       } else {
         // No settlement exists for this patient-doctor pair, create new one
         const { data: newSettlement, error: createError } = await supabase
@@ -132,6 +107,7 @@ export async function POST(
           .insert({
             patient_id: patientId,
             doctor_id: doctorId,
+            patient_billing_id: billingId,
             visit_count: visitCount,
             amount_per_visit: 0,
             settlement_type: 'regular',

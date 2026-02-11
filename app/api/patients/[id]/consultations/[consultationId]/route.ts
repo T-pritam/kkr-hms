@@ -148,7 +148,7 @@ export async function DELETE(
         return NextResponse.json(
           {
             error: 'Cannot delete consultation with settled fees',
-            message: 'This consultation has been settled. Please unsettled it first or contact an administrator.',
+            message: 'This consultation has been settled. Please unsettled or delete it first or contact an administrator.',
             settlementFound: true,
           },
           { status: 409 }

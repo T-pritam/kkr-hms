@@ -152,7 +152,7 @@ export function EmployeeShiftDetailsModal({
                         </span>
                       </td>
                       <td className="py-3 px-4 text-gray-300 text-sm capitalize">
-                        {txn.source}
+                        {txn.source} { txn.source === 'patient' ? ` Installment (${txn.patient?.name || 'Unknown'})` : '' }
                       </td>
                       <td className="py-3 px-4 text-white font-medium">
                         {formatCurrency(txn.amount)}

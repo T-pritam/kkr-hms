@@ -158,9 +158,6 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
       <div className="flex justify-between items-center">
         <div>
           <h3 className="text-xl font-semibold text-white">Payment Installments</h3>
-          <p className="text-gray-400 mt-1">
-            Total Paid: ₹{parseFloat(billing.patient_paid_amount || 0).toFixed(2)} / Total: ₹{parseFloat(billing.total_charges || 0).toFixed(2)}
-          </p>
         </div>
         <button
           onClick={() => setShowForm(!showForm)}
