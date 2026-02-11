@@ -16,6 +16,50 @@ function ChangePasswordContent() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [isTokenValid, setIsTokenValid] = useState<boolean | null>(null)
+  const [isTokenExpired, setIsTokenExpired] = useState(false)
+
+  // Validate token on component mount
+  useEffect(() => {
+    if (token) {
+      validateToken()
+    } else {
+      setError('No reset token provided')
+      setIsTokenValid(false)
+    }
+  }, [token])
+
+  const validateToken = async () => {
+    try {
+      // Try to use the token - if it returns an error about expiry, we know it's expired
+      const response = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          newPassword: 'testtestt', // dummy password just to validate token
+          token,
+          check: true
+        }),
+      })
+
+      const data = await response.json()
+
+      if (data.error && data.error.includes('expired')) {
+        setIsTokenExpired(true)
+        setIsTokenValid(false)
+        setError(data.error)
+      } else if (!response.ok && data.error) {
+        setIsTokenValid(false)
+        setError(data.error)
+      } else {
+        // Don't proceed if validation passed - let user submit the form
+        setIsTokenValid(true)
+      }
+    } catch (err: any) {
+      setIsTokenValid(false)
+      setError('Failed to validate token')
+    }
+  }
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -28,11 +72,11 @@ function ChangePasswordContent() {
       return
     }
 
-    if (newPassword.length < 8) {
-      setError('Password must be at least 8 characters long')
-      setLoading(false)
-      return
-    }
+    // if (newPassword.length < 8) {
+    //   setError('Password must be at least 8 characters long')
+    //   setLoading(false)
+    //   return
+    // }
 
     try {
       const response = await fetch('/api/auth/change-password', {
@@ -41,6 +85,7 @@ function ChangePasswordContent() {
         body: JSON.stringify({
           newPassword,
           token,
+          check :false
         }),
       })
 
@@ -75,48 +120,112 @@ function ChangePasswordContent() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleChangePassword} className="space-y-4">
-            {error && (
-              <div className="p-3 rounded-md bg-red-900/20 border border-red-900 text-red-400 text-sm">
-                {error}
-              </div>
-            )}
-            
-            <div className="space-y-2">
-              <Label htmlFor="newPassword">New Password</Label>
-              <Input
-                id="newPassword"
-                type="password"
-                placeholder="••••••••"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                required
-                disabled={loading}
-              />
-              <p className="text-xs text-gray-400">Must be at least 8 characters</p>
+          {/* Loading state */}
+          {isTokenValid === null && (
+            <div className="text-center py-8">
+              <p className="text-gray-400">Validating reset link...</p>
             </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="confirmPassword">Confirm New Password</Label>
-              <Input
-                id="confirmPassword"
-                type="password"
-                placeholder="••••••••"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                disabled={loading}
-              /> || isExpired
-            </div>
+          )}
 
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={loading}
-            >
-              {loading ? 'Changing Password...' : 'Change Password'}
-            </Button>
-          </form>
+          {/* Token expired state */}
+          {isTokenExpired && (
+            <div className="space-y-4">
+              <div className="p-4 rounded-md bg-red-900/20 border border-red-900 text-red-400 text-sm">
+                <p className="font-medium mb-2">Reset Link Expired</p>
+                <p>{error}</p>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => router.push('/login')}
+                  className="w-full"
+                >
+                  Back to Login
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => router.push('/reset-password')}
+                  className="w-full"
+                >
+                  Request New Link
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Invalid token state */}
+          {isTokenValid === false && !isTokenExpired && (
+            <div className="space-y-4">
+              <div className="p-4 rounded-md bg-red-900/20 border border-red-900 text-red-400 text-sm">
+                <p className="font-medium mb-2">Invalid Reset Link</p>
+                <p>{error || 'The reset link is invalid or has already been used.'}</p>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => router.push('/login')}
+                  className="w-full"
+                >
+                  Back to Login
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => router.push('/reset-password')}
+                  className="w-full"
+                >
+                  Request New Link
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Valid token - show form */}
+          {isTokenValid && (
+            <form onSubmit={handleChangePassword} className="space-y-4">
+              {error && (
+                <div className="p-3 rounded-md bg-red-900/20 border border-red-900 text-red-400 text-sm">
+                  {error}
+                </div>
+              )}
+              
+              <div className="space-y-2">
+                <Label htmlFor="newPassword">New Password</Label>
+                <Input
+                  id="newPassword"
+                  type="password"
+                  placeholder="••••••••"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                  disabled={loading}
+                />
+                <p className="text-xs text-gray-400">Must be at least 8 characters</p>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="confirmPassword">Confirm New Password</Label>
+                <Input
+                  id="confirmPassword"
+                  type="password"
+                  placeholder="••••••••"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  disabled={loading}
+                />
+              </div>
+
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={loading}
+              >
+                {loading ? 'Changing Password...' : 'Change Password'}
+              </Button>
+            </form>
+          )}
         </CardContent>
       </Card>
     </div>

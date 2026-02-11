@@ -6,7 +6,7 @@ import crypto from 'crypto'
 
 export async function POST(request: NextRequest) {
   try {
-    const { newPassword, token } = await request.json()
+    const { newPassword, token, check } = await request.json()
 
     if (!newPassword) {
       return NextResponse.json(
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
       // Check if token has expired
       if (new Date(resetToken.expires_at) < new Date()) {
         return NextResponse.json(
-          { error: 'Reset token has expired. Please request a new one.' },
+          { error: 'Reset Link has expired. Please generate a new one.' },
           { status: 400 }
         )
       }
@@ -58,13 +58,14 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      userId = resetToken.user_id
+      if (check) {
+        return NextResponse.json(
+          { success: true, message: 'Token is valid' },
+          { status: 200 }
+        )
+      }
 
-      // Mark token as used
-      await supabase
-        .from('password_reset_tokens')
-        .update({ is_used: true })
-        .eq('token_hash', tokenHash)
+      userId = resetToken.user_id
     } else {
       // Change password flow for logged-in users
       const accessToken = await getAccessToken()
@@ -100,6 +101,13 @@ export async function POST(request: NextRequest) {
         updated_at: new Date().toISOString(),
       })
       .eq('id', userId)
+
+      await supabase
+        .from('password_reset_tokens')
+        .update({ is_used: true,
+          used_at: new Date().toISOString() })
+        .eq('user_id', userId)
+        .eq('token_hash', token ? crypto.createHash('sha256').update(token).digest('hex') : null)
 
     return NextResponse.json({ success: true })
   } catch (error) {
