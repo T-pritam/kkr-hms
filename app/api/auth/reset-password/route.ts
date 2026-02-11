@@ -41,7 +41,8 @@ export async function POST(request: NextRequest) {
       .eq('id', user.id)
 
     // Send email via Brevo Edge Function
-    const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL}/change-password?token=${resetToken}`
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    const resetUrl = `${baseUrl}/change-password?token=${resetToken}`
     
     await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-reset-email`, {
       method: 'POST',
@@ -53,6 +54,7 @@ export async function POST(request: NextRequest) {
         email: user.email,
         resetUrl,
         username: user.username,
+        baseUrl,
       }),
     })
 
