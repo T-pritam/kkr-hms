@@ -150,6 +150,12 @@ export async function PATCH(
     if (body.referral_settlement_notes !== undefined) {
       updateData.referral_settlement_notes = body.referral_settlement_notes;
     }
+    if (body.referral_settlement_payment_method !== undefined) {
+      updateData.referral_settlement_payment_method = body.referral_settlement_payment_method;
+    }
+    if (body.referral_settlement_transaction_ref !== undefined) {
+      updateData.referral_transaction_ref = body.referral_settlement_transaction_ref;
+    }
     if (body.referral_settled !== undefined) {
       updateData.referral_settled = body.referral_settled;
     }
@@ -170,10 +176,10 @@ export async function PATCH(
     if (error) throw error;
 
     // Update patient's referred_by if referral_id is provided
-    if (body.referral_id) {
+    if (body.referral_id !== undefined) {
       await supabase
         .from('patients')
-        .update({ referred_by: body.referral_id })
+        .update({ referred_by: body.referral_id }) // number OR null
         .eq('id', patientId);
     }
 

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Plus, Edit2, DollarSign } from 'lucide-react'
+import { X, Plus, Edit2, DollarSign, AlertCircle, CheckCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
@@ -27,7 +27,7 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
   const [salaryRecord, setSalaryRecord] = useState<any>(null)
   const [advances, setAdvances] = useState<Advance[]>([])
   const [isEditing, setIsEditing] = useState(false)
-  
+
   // Edit form state
   const [baseSalary, setBaseSalary] = useState('')
   const [daysPresent, setDaysPresent] = useState('')
@@ -38,12 +38,61 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
   const [advanceAmount, setAdvanceAmount] = useState('')
   const [advanceDate, setAdvanceDate] = useState(new Date().toISOString().split('T')[0])
   const [advanceRemarks, setAdvanceRemarks] = useState('')
+  const [validationLoading, setValidationLoading] = useState(false)
+  const [validation, setValidation] = useState<any>(null)
+  const [amountError, setAmountError] = useState('')
 
   useEffect(() => {
     if (isOpen && employeeId && selectedMonth) {
       fetchSalaryData()
+      fetchValidationRules()
     }
   }, [isOpen, employeeId, selectedMonth])
+
+  const fetchValidationRules = async () => {
+    try {
+      setValidationLoading(true)
+      const response = await fetch(
+        `/api/employees/${employeeId}/salary/advances/validation?month_year=${selectedMonth}`,
+        { credentials: 'include' }
+      )
+
+      if (response.ok) {
+        const data = await response.json()
+        setValidation(data.data)
+      } else {
+        console.error('Failed to fetch validation rules')
+      }
+    } catch (error) {
+      console.error('Error fetching validation rules:', error)
+    } finally {
+      setValidationLoading(false)
+    }
+  }
+
+  // Validate amount in real-time
+  useEffect(() => {
+    if (!advanceAmount || !validation) {
+      setAmountError('')
+      return
+    }
+
+    const numAmount = parseFloat(advanceAmount)
+
+    if (numAmount <= 0) {
+      setAmountError('Advance amount must be greater than 0')
+      return
+    }
+
+    if (numAmount > validation.max_allowed_advance) {
+      setAmountError(
+        `Advance cannot exceed ₹${validation.max_allowed_advance.toFixed(2)}`
+      )
+      return
+    }
+
+    setAmountError('')
+  }, [advanceAmount, validation])
 
   const fetchSalaryData = async () => {
     try {
@@ -53,15 +102,15 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
         credentials: 'include'
       })
       const data = await response.json()
-      
+
       if (response.ok && data.success && data.data) {
         const emp = data.data.find((e: any) => e.id === employeeId)
         if (emp) {
           setEmployeeData(emp)
-          
+
           // Always show advances from the employee object
           setAdvances(emp.advances || [])
-          
+
           if (emp.salary_record) {
             setSalaryRecord(emp.salary_record)
             setBaseSalary(emp.salary_record.base_salary.toString())
@@ -111,29 +160,29 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
       }
 
       setLoading(true)
-      const endpoint = salaryRecord 
+      const endpoint = salaryRecord
         ? `/api/employees/salary/${salaryRecord.id}`
         : `/api/employees/salary/monthly`
 
       const method = salaryRecord ? 'PATCH' : 'POST'
 
-      const body = salaryRecord 
+      const body = salaryRecord
         ? {
-            base_salary: base,
-            days_present: days,
-            ot_days: ot
-          }
+          base_salary: base,
+          days_present: days,
+          ot_days: ot
+        }
         : {
-            month_year: selectedMonth,
-            employees_data: [
-              {
-                employee_id: employeeId,
-                base_salary: base,
-                days_present: days,
-                ot_days: ot
-              }
-            ]
-          }
+          month_year: selectedMonth,
+          employees_data: [
+            {
+              employee_id: employeeId,
+              base_salary: base,
+              days_present: days,
+              ot_days: ot
+            }
+          ]
+        }
 
       const response = await fetch(endpoint, {
         method,
@@ -143,7 +192,7 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
       })
 
       const responseData = await response.json()
-      
+
       if (response.ok && responseData.success) {
         setIsEditing(false)
         await fetchSalaryData()
@@ -167,13 +216,22 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
         return
       }
 
+      if (amountError) {
+        alert(amountError)
+        return
+      }
+
+      if (validation && !validation.can_add_advance) {
+        alert(validation.validation_message || 'Cannot add advance at this time')
+        return
+      }
+
       setLoading(true)
-      const response = await fetch('/api/employees/advances', {
+      const response = await fetch(`/api/employees/${employeeId}/salary/advances`, {
         method: 'POST',
-        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
-          employee_id: employeeId,
           amount: parseFloat(advanceAmount),
           date_given: advanceDate,
           month_year: selectedMonth,
@@ -181,16 +239,19 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
         })
       })
 
+      const data = await response.json()
+
       if (response.ok) {
         await fetchSalaryData()
+        await fetchValidationRules()
         setShowAddAdvance(false)
         setAdvanceAmount('')
         setAdvanceRemarks('')
         setAdvanceDate(new Date().toISOString().split('T')[0])
+        setAmountError('')
         onSuccess()
       } else {
-        const errData = await response.json()
-        alert(errData.error || 'Failed to add advance')
+        alert(data.error || 'Failed to add advance')
       }
     } catch (err) {
       console.error('Error adding advance:', err)
@@ -231,18 +292,22 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
   }
 
   const totalAdvancesAmount = advances.reduce((sum, adv) => sum + parseFloat(adv.amount.toString()), 0)
-  
-  // Calculate final salary safely
+
+  // Calculate final salary correctly - final_salary from DB is already (calculated_salary - advances)
   let finalSalary = 0
+  let calculatedSalary = 0
+
   if (salaryRecord) {
-    // Use final_salary from database if available, otherwise use calculated_salary
-    finalSalary = parseFloat(salaryRecord.final_salary?.toString() || salaryRecord.calculated_salary?.toString() || '0') || 0
+    // Use final_salary from database (already deducted advances)
+    finalSalary = parseFloat(salaryRecord.final_salary?.toString() || '0') || 0
+    calculatedSalary = parseFloat(salaryRecord.calculated_salary?.toString() || '0') || 0
   } else {
     // Calculate based on form inputs
     const base = parseFloat(baseSalary) || 0
     const days = parseInt(daysPresent) || 0
     const ot = parseInt(otDays) || 0
-    finalSalary = base > 0 ? calculateSalary(base, days, ot) : 0
+    calculatedSalary = base > 0 ? calculateSalary(base, days, ot) : 0
+    finalSalary = calculatedSalary - totalAdvancesAmount
   }
 
   if (!isOpen || !employeeData) return null
@@ -306,7 +371,7 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
                 />
               </div>
               <div className="flex gap-2">
-                <Button 
+                <Button
                   onClick={handleCreateOrUpdateSalary}
                   disabled={loading}
                   className="flex-1 bg-green-600 hover:bg-green-700"
@@ -314,7 +379,14 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
                   Save
                 </Button>
                 <Button
-                  onClick={() => setIsEditing(false)}
+                  onClick={() => {
+                    if (salaryRecord) {
+                      setIsEditing(false)
+                    } else {
+                      onClose()
+                    }
+
+                  }}
                   variant="outline"
                   className="flex-1"
                 >
@@ -336,25 +408,41 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
                 <span className="text-gray-400">OT Days:</span>
                 <span className="text-white font-medium">{otDays}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-400">Final Salary:</span>
-                <span className="text-white font-medium">₹{(finalSalary + totalAdvancesAmount).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-400">Advances Total:</span>
-                <span className="text-white font-medium">₹{totalAdvancesAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+
+              {/* Salary Breakdown */}
+              <div className="border-t border-gray-700 pt-3 mt-3 space-y-2">
+                <div className="flex justify-between bg-gray-700/50 p-2 rounded">
+                  <span className="text-gray-300 font-medium">Calculated Salary:</span>
+                  <span className="text-white font-semibold">₹{calculatedSalary.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Advances Deducted:</span>
+                  <span className="text-orange-400 font-medium">-₹{totalAdvancesAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                </div>
+
               </div>
               <div className="border-t border-gray-700 pt-2 mt-2">
                 <div className="flex justify-between">
                   <span className="text-gray-400">Final Salary:</span>
-                  <span className="text-green-400 font-bold text-lg">₹{(finalSalary || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                  <div className="flex items-baseline gap-3">
+                    <span className={`text-xs font-semibold capitalize px-2.5 py-1 rounded-full border ${salaryRecord.status === 'settled'
+                        ? 'bg-green-900/30 text-green-400 border border-green-800'
+                        : 'bg-yellow-900/30 text-yellow-400 border border-yellow-800'
+                      }`}>
+                      {salaryRecord.status}
+                    </span>
+                    <span className="text-green-400 font-bold text-lg">
+                      ₹{(finalSalary || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
                 </div>
               </div>
+
               {salaryRecord && salaryRecord.status !== 'settled' && (
                 <Button
                   onClick={() => setIsEditing(true)}
                   variant="outline"
-                  className="w-full mt-2"
+                  className="w-full mt-3"
                 >
                   <Edit2 size={16} className="mr-2" />
                   Edit
@@ -382,6 +470,95 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
 
           {showAddAdvance && (
             <div className="space-y-3 bg-gray-800 p-4 rounded">
+              {/* Validation Info */}
+              {validationLoading ? (
+                <div className="bg-gray-700 rounded p-3 text-gray-300 text-sm">
+                  Loading validation details...
+                </div>
+              ) : validation ? (
+                <div className="space-y-2 bg-gray-700 rounded p-3">
+                  <div className="text-gray-300 text-xs uppercase tracking-wide font-semibold">
+                    Validation Status
+                  </div>
+
+                  {/* Scenario Badge */}
+                  <div className="flex items-start gap-2 flex-wrap">
+                    <span className="text-xs bg-blue-900 text-blue-200 px-2 py-1 rounded whitespace-nowrap">
+                      {validation.scenario.split(':')[0]}
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      {validation.scenario.split(':')[1]?.trim()}
+                    </span>
+                    {validation.status && (
+                      <span className={`text-xs px-2 py-1 rounded whitespace-nowrap font-semibold ${
+                        validation.status === 'settled' 
+                          ? 'bg-red-900 text-red-200' 
+                          : 'bg-green-900 text-green-200'
+                      }`}>
+                        {validation.status.charAt(0).toUpperCase() + validation.status.slice(1)}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Base/Calculated Salary */}
+                  <div className="grid grid-cols-2 gap-2 text-xs mt-2">
+                    <div>
+                      <div className="text-gray-400">Base Salary</div>
+                      <div className="text-white font-semibold">
+                        ₹{validation.base_salary.toFixed(2)}
+                      </div>
+                    </div>
+                    {validation.calculated_salary !== null && (
+                      <div>
+                        <div className="text-gray-400">Calculated Salary</div>
+                        <div className="text-white font-semibold">
+                          ₹{validation.calculated_salary.toFixed(2)}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Current Advances */}
+                  {validation.current_total_advances > 0 && (
+                    <div className="text-xs">
+                      <div className="text-gray-400">Total Advances</div>
+                      <div className="text-orange-400 font-semibold">
+                        -₹{validation.current_total_advances.toFixed(2)}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Status and Limit */}
+                  <div className="pt-2 border-t border-gray-600">
+                    {validation.can_add_advance ? (
+                      <div className="flex items-start gap-2">
+                        <CheckCircle size={14} className="text-green-500 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1">
+                          <div className="text-green-400 font-semibold text-xs">
+                            Can Add Advance
+                          </div>
+                          <div className="text-green-300 text-xs">
+                            Maximum: ₹{validation.max_allowed_advance.toFixed(2)}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-start gap-2">
+                        <AlertCircle size={14} className="text-red-500 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1">
+                          <div className="text-red-400 font-semibold text-xs">
+                            Cannot Add Advance
+                          </div>
+                          <div className="text-red-300 text-xs">
+                            {validation.validation_message}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+
               <div>
                 <label className="block text-sm text-gray-400 mb-1">Amount</label>
                 <Input
@@ -389,8 +566,14 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
                   value={advanceAmount}
                   onChange={(e) => setAdvanceAmount(e.target.value)}
                   placeholder="Enter advance amount"
-                  className="bg-gray-700 border-gray-600 text-white"
+                  className={`bg-gray-700 border-gray-600 text-white ${amountError ? 'border-red-500' : ''}`}
                 />
+                {amountError && (
+                  <div className="mt-1 flex items-start gap-1">
+                    <AlertCircle size={14} className="text-red-500 mt-0.5 flex-shrink-0" />
+                    <span className="text-red-400 text-xs">{amountError}</span>
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block text-sm text-gray-400 mb-1">Date Given</label>
@@ -414,13 +597,25 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
               <div className="flex gap-2">
                 <Button
                   onClick={handleAddAdvance}
-                  disabled={loading}
-                  className="flex-1 bg-green-600 hover:bg-green-700"
+                  disabled={
+                    loading ||
+                    validationLoading ||
+                    !validation?.can_add_advance ||
+                    !advanceAmount ||
+                    !!amountError
+                  }
+                  className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Add
                 </Button>
                 <Button
-                  onClick={() => setShowAddAdvance(false)}
+                  onClick={() => {
+                    setShowAddAdvance(false)
+                    setAdvanceAmount('')
+                    setAdvanceRemarks('')
+                    setAdvanceDate(new Date().toISOString().split('T')[0])
+                    setAmountError('')
+                  }}
                   variant="outline"
                   className="flex-1"
                 >
@@ -475,7 +670,7 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
               disabled={loading}
               className="flex-1 bg-green-600 hover:bg-green-700"
             >
-              Mark as Settled (₹{(finalSalary || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })})
+              Settle (₹{finalSalary.toLocaleString('en-IN', { maximumFractionDigits: 2 })})
             </Button>
           )}
         </div>

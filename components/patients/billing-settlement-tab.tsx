@@ -58,6 +58,12 @@ export default function BillingSettlementTab({
     visit_count: 0,
   });
   const [settlePricingComplete, setSettlePricingComplete] = useState(false);
+  const [showSettleReferralModal, setShowSettleReferralModal] = useState(false);
+  const [settleReferralData, setSettleReferralData] = useState({
+    payment_method: 'cash',
+    transaction_reference: '',
+    settlement_notes: '',
+  });
 
   useEffect(() => {
     fetchDoctors();
@@ -159,14 +165,14 @@ export default function BillingSettlementTab({
   const handlePriceChange = (field: 'amount_per_visit' | 'total_amount' | 'visit_count', value: number) => {
     setEditFormData(prev => {
       const updated = { ...prev, [field]: value };
-      
+
       // Auto-calculate based on pricing mode
       if (prev.pricing_mode === 'per_visit' && (field === 'amount_per_visit' || field === 'visit_count')) {
         updated.total_amount = updated.amount_per_visit * updated.visit_count;
       } else if (prev.pricing_mode === 'total' && (field === 'total_amount' || field === 'visit_count')) {
         updated.amount_per_visit = updated.visit_count > 0 ? updated.total_amount / updated.visit_count : 0;
       }
-      
+
       return updated;
     });
   };
@@ -174,14 +180,14 @@ export default function BillingSettlementTab({
   const handleSettlePriceChange = (field: 'amount_per_visit' | 'total_amount' | 'visit_count', value: number) => {
     setSettlePricingData(prev => {
       const updated = { ...prev, [field]: value };
-      
+
       // Auto-calculate based on pricing mode
       if (prev.pricing_mode === 'per_visit' && (field === 'amount_per_visit' || field === 'visit_count')) {
         updated.total_amount = updated.amount_per_visit * updated.visit_count;
       } else if (prev.pricing_mode === 'total' && (field === 'total_amount' || field === 'visit_count')) {
         updated.amount_per_visit = updated.visit_count > 0 ? updated.total_amount / updated.visit_count : 0;
       }
-      
+
       return updated;
     });
     // Update settlement amount automatically
@@ -234,7 +240,7 @@ export default function BillingSettlementTab({
   const handleUpdateSettlement = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingSettlement) return;
-    
+
     setLoading(true);
 
     try {
@@ -277,7 +283,7 @@ export default function BillingSettlementTab({
 
   const handleMarkAsSettled = async () => {
     if (!settleData.settlement_id) return;
-    
+
     setLoading(true);
 
     try {
@@ -319,7 +325,7 @@ export default function BillingSettlementTab({
 
   const handleDeleteSettlement = async (settlementId: string) => {
     if (!confirm('Are you sure you want to delete this settlement?')) return;
-    
+
     setLoading(true);
 
     try {
@@ -344,8 +350,10 @@ export default function BillingSettlementTab({
     }
   };
 
-  const handleUpdateCharges = async (e: React.FormEvent) => {
+  const handleSettleReferralCommission = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!billing?.referral?.id || billing?.referral_commission_amount <= 0) return;
+
     setLoading(true);
 
     try {
@@ -354,12 +362,49 @@ export default function BillingSettlementTab({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           billing_id: billing.id,
-          base_charge: chargesData.base_charge,
-          referral_id: chargesData.referral_id,
-          referral_commission_amount: chargesData.referral_commission_amount,
-          referral_settlement_notes: chargesData.referral_settlement_notes,
-          referral_settled: chargesData.referral_commission_amount > 0,
-          referral_settlement_date: chargesData.referral_commission_amount > 0 ? new Date().toISOString() : null,
+          referral_settlement_payment_method: settleReferralData.payment_method,
+          referral_settlement_transaction_ref: settleReferralData.transaction_reference,
+          referral_settlement_notes: settleReferralData.settlement_notes,
+        }),
+      });
+
+      if (response.ok) {
+        alert('Referral commission settlement recorded successfully');
+        onBillingUpdate();
+        setShowSettleReferralModal(false);
+        setSettleReferralData({
+          payment_method: 'cash',
+          transaction_reference: '',
+          settlement_notes: '',
+        });
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to settle referral commission');
+      }
+    } catch (error) {
+      console.error('Error settling referral commission:', error);
+      alert('Failed to settle referral commission');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateCharges = async (
+    e?: React.FormEvent | null,
+    isDelete = false
+  ) => {
+    if (e) e.preventDefault();
+    setLoading(true);
+
+    try {
+      const response = await fetch(`/api/patients/${patientId}/billing`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          billing_id: billing.id,
+          base_charge: isDelete ? 0 : chargesData.base_charge,
+          referral_id: isDelete ? null : chargesData.referral_id,
+          referral_commission_amount: isDelete ? 0 : chargesData.referral_commission_amount,
         }),
       });
 
@@ -461,18 +506,6 @@ export default function BillingSettlementTab({
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Referral Notes
-              </label>
-              <textarea
-                rows={2}
-                value={chargesData.referral_settlement_notes}
-                onChange={(e) => setChargesData({ ...chargesData, referral_settlement_notes: e.target.value })}
-                className="w-full bg-gray-600 text-white rounded-lg px-4 py-2 border border-gray-500 focus:border-blue-500 focus:outline-none"
-              />
-            </div>
-
             <div className="flex gap-2">
               <button
                 type="submit"
@@ -480,6 +513,14 @@ export default function BillingSettlementTab({
                 className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
               >
                 {loading ? 'Saving...' : 'Save Charges'}
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                onClick={() => handleUpdateCharges(null, true)}
+                className="bg-red-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+              >
+                {loading ? 'Deleting...' : 'Delete'}
               </button>
               <button
                 type="button"
@@ -548,6 +589,48 @@ export default function BillingSettlementTab({
           </div>
         </div>
       </div>
+
+      {/* Referral Commission Settlement */}
+      {billing.referral?.id && (
+        <div className="bg-gray-800 rounded-lg p-6">
+          <h3 className="text-xl font-semibold text-white mb-4">Referral Commission Settlement</h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="bg-gray-700 rounded-lg p-4">
+              <p className="text-gray-400 text-sm">Referral</p>
+              <p className="text-white font-medium">{billing.referral?.name || 'N/A'}</p>
+            </div>
+            <div className="bg-gray-700 rounded-lg p-4">
+              <p className="text-gray-400 text-sm">Commission Amount</p>
+              <p className="text-2xl font-bold text-white">
+                ₹{parseFloat(billing.referral_commission_amount || 0).toFixed(2)}
+              </p>
+            </div>
+            <div className="bg-gray-700 rounded-lg p-4">
+              <p className="text-gray-400 text-sm">Status</p>
+              {billing.referral_settled ? (
+                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-green-500/20 text-green-400 mt-2">
+                  <Check className="h-3 w-3" />
+                  Settled
+                </span>
+              ) : (
+                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-500/20 text-yellow-400 mt-2">
+                  Pending
+                </span>
+              )}
+            </div>
+          </div>
+
+          {!billing.referral_settled && (
+            <button
+              onClick={() => setShowSettleReferralModal(true)}
+              className="bg-orange-600 hover:bg-orange-700 text-white px-6 py-2 rounded-lg transition-colors"
+            >
+              Settle Referral Commission
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Doctor Visit Settlements */}
       <div>
@@ -716,7 +799,7 @@ export default function BillingSettlementTab({
               // STEP 1: Add Consultation Fee
               <div className="space-y-4">
                 <h5 className="text-lg font-semibold text-white">Add Consultation Fee</h5>
-                
+
                 {settlements.find(s => s.id === settleData.settlement_id) && (
                   <div className="bg-gray-700 rounded-lg p-4">
                     <p className="text-gray-400 text-sm mb-1">Doctor</p>
@@ -734,22 +817,20 @@ export default function BillingSettlementTab({
                     <button
                       type="button"
                       onClick={() => handleSettlePricingModeChange('per_visit')}
-                      className={`flex-1 py-2 px-3 rounded-lg font-medium transition-colors ${
-                        settlePricingData.pricing_mode === 'per_visit'
+                      className={`flex-1 py-2 px-3 rounded-lg font-medium transition-colors ${settlePricingData.pricing_mode === 'per_visit'
                           ? 'bg-blue-600 text-white'
                           : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                      }`}
+                        }`}
                     >
                       Price per Visit
                     </button>
                     <button
                       type="button"
                       onClick={() => handleSettlePricingModeChange('total')}
-                      className={`flex-1 py-2 px-3 rounded-lg font-medium transition-colors ${
-                        settlePricingData.pricing_mode === 'total'
+                      className={`flex-1 py-2 px-3 rounded-lg font-medium transition-colors ${settlePricingData.pricing_mode === 'total'
                           ? 'bg-blue-600 text-white'
                           : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                      }`}
+                        }`}
                     >
                       Total Price
                     </button>
@@ -958,7 +1039,7 @@ export default function BillingSettlementTab({
                 <X className="h-5 w-5" />
               </button>
             </div>
-            
+
             <div>
               <label className="block text-sm font-medium text-gray-400 mb-2">
                 Doctor
@@ -979,22 +1060,20 @@ export default function BillingSettlementTab({
                 <button
                   type="button"
                   onClick={() => handlePricingModeChange('per_visit')}
-                  className={`flex-1 py-2 px-3 rounded-lg font-medium transition-colors ${
-                    editFormData.pricing_mode === 'per_visit'
+                  className={`flex-1 py-2 px-3 rounded-lg font-medium transition-colors ${editFormData.pricing_mode === 'per_visit'
                       ? 'bg-blue-600 text-white'
                       : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  }`}
+                    }`}
                 >
                   Price per Visit
                 </button>
                 <button
                   type="button"
                   onClick={() => handlePricingModeChange('total')}
-                  className={`flex-1 py-2 px-3 rounded-lg font-medium transition-colors ${
-                    editFormData.pricing_mode === 'total'
+                  className={`flex-1 py-2 px-3 rounded-lg font-medium transition-colors ${editFormData.pricing_mode === 'total'
                       ? 'bg-blue-600 text-white'
                       : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  }`}
+                    }`}
                 >
                   Total Price
                 </button>
@@ -1097,6 +1176,94 @@ export default function BillingSettlementTab({
               <button
                 type="button"
                 onClick={() => setEditingSettlement(null)}
+                className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Settle Referral Commission Modal */}
+      {showSettleReferralModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <form onSubmit={handleSettleReferralCommission} className="bg-gray-800 rounded-lg p-6 w-full max-w-md space-y-4">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-xl font-semibold text-white">Settle Referral Commission</h4>
+              <button
+                type="button"
+                onClick={() => setShowSettleReferralModal(false)}
+                className="text-gray-400 hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="bg-gray-700 rounded-lg p-4 space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-400">Referral:</span>
+                <span className="text-white font-medium">{billing?.referral?.name}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-400">Commission Amount:</span>
+                <span className="text-white font-medium">₹{parseFloat(billing?.referral_commission_amount || 0).toFixed(2)}</span>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-400 mb-2">
+                Payment Method *
+              </label>
+              <select
+                required
+                value={settleReferralData.payment_method}
+                onChange={(e) => setSettleReferralData({ ...settleReferralData, payment_method: e.target.value })}
+                className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+              >
+                <option value="cash">CASH</option>
+                <option value="upi">UPI</option>
+                <option value="card">CARD</option>
+                <option value="bank_transfer">BANK TRANSFER</option>
+                <option value="cheque">CHEQUE</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-400 mb-2">
+                Transaction Reference
+              </label>
+              <input
+                type="text"
+                value={settleReferralData.transaction_reference}
+                onChange={(e) => setSettleReferralData({ ...settleReferralData, transaction_reference: e.target.value })}
+                className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-400 mb-2">
+                Notes
+              </label>
+              <textarea
+                rows={2}
+                value={settleReferralData.settlement_notes}
+                onChange={(e) => setSettleReferralData({ ...settleReferralData, settlement_notes: e.target.value })}
+                className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex-1 bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                {loading ? 'Recording...' : 'Record Settlement'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowSettleReferralModal(false)}
                 className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded-lg transition-colors"
               >
                 Cancel

@@ -24,7 +24,8 @@ export function ReferralSelect({ value, onChange, disabled }: ReferralSelectProp
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [loadingCreate, setLoadingCreate] = useState(false)
   const [error, setError] = useState('')
-  const [searchTerm, setSearchTerm] = useState('')
+  const [inputValue, setInputValue] = useState('')
+  const [isSearching, setIsSearching] = useState(false)
   const [newReferralData, setNewReferralData] = useState({
     name: '',
     phone: '',
@@ -36,15 +37,27 @@ export function ReferralSelect({ value, onChange, disabled }: ReferralSelectProp
     fetchReferrals()
   }, [])
 
+  // Sync input value when parent value changes
+  useEffect(() => {
+    if (!isSearching) {
+      const selectedReferral = referrals.find((r) => r.id === value)
+      setInputValue(selectedReferral?.name || '')
+    }
+  }, [value, referrals, isSearching])
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setShowDropdown(false)
+        setIsSearching(false)
+        // Reset input to show selected value
+        const selectedReferral = referrals.find((r) => r.id === value)
+        setInputValue(selectedReferral?.name || '')
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+  }, [value, referrals])
 
   const fetchReferrals = async () => {
     try {
@@ -84,7 +97,8 @@ export function ReferralSelect({ value, onChange, disabled }: ReferralSelectProp
       onChange(data.id)
       setNewReferralData({ name: '', phone: '' })
       setShowCreateModal(false)
-      setSearchTerm('')
+      setInputValue(data.name)
+      setIsSearching(false)
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -92,9 +106,31 @@ export function ReferralSelect({ value, onChange, disabled }: ReferralSelectProp
     }
   }
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newValue = e.target.value
+    setInputValue(newValue)
+    setIsSearching(true)
+    setShowDropdown(true)
+  }
+
+  const handleSelectReferral = (referralId: string) => {
+    onChange(referralId)
+    const selectedReferral = referrals.find((r) => r.id === referralId)
+    setInputValue(selectedReferral?.name || '')
+    setIsSearching(false)
+    setShowDropdown(false)
+  }
+
+  const handleClearSelection = () => {
+    onChange('')
+    setInputValue('')
+    setIsSearching(false)
+    inputRef.current?.focus()
+  }
+
   const selectedReferral = referrals.find((r) => r.id === value)
   const filteredReferrals = referrals.filter((referral) =>
-    referral.name.toLowerCase().includes(searchTerm.toLowerCase())
+    referral.name.toLowerCase().includes(inputValue.toLowerCase())
   )
 
   return (
@@ -107,15 +143,26 @@ export function ReferralSelect({ value, onChange, disabled }: ReferralSelectProp
             id="referred_by"
             type="text"
             placeholder="Select referral source"
-            value={searchTerm || selectedReferral?.name || ''}
-            onChange={(e) => {
-              setSearchTerm(e.target.value)
+            value={inputValue}
+            onChange={handleInputChange}
+            onFocus={() => {
               setShowDropdown(true)
+              setIsSearching(true)
             }}
-            onFocus={() => setShowDropdown(true)}
             className="flex h-10 w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
             disabled={disabled}
           />
+
+          {/* Clear button when something is selected */}
+          {value && !isSearching && (
+            <button
+              type="button"
+              onClick={handleClearSelection}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200"
+            >
+              <X size={18} />
+            </button>
+          )}
 
           {showDropdown && (
             <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-700 rounded-md shadow-lg z-10">
@@ -125,11 +172,7 @@ export function ReferralSelect({ value, onChange, disabled }: ReferralSelectProp
                     <button
                       key={referral.id}
                       type="button"
-                      onClick={() => {
-                        onChange(referral.id)
-                        setSearchTerm('')
-                        setShowDropdown(false)
-                      }}
+                      onClick={() => handleSelectReferral(referral.id)}
                       className="w-full text-left px-3 py-2 text-sm text-gray-100 hover:bg-gray-700 border-b border-gray-700 last:border-b-0"
                     >
                       {referral.name}
@@ -137,7 +180,7 @@ export function ReferralSelect({ value, onChange, disabled }: ReferralSelectProp
                     </button>
                   ))}
                 </div>
-              ) : searchTerm ? (
+              ) : inputValue ? (
                 <div className="px-3 py-2 text-sm text-gray-400">No results found</div>
               ) : null}
               <button

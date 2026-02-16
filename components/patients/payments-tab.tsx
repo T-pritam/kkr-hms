@@ -137,6 +137,8 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
     return user?.role === 'ADMIN' || installment.created_by === user?.id;
   };
 
+  console.log(user)
+
   if (!billing) {
     return (
       <div className="bg-gray-800 rounded-lg p-8 text-center">

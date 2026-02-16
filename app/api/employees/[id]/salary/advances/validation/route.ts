@@ -1,17 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { validateSalaryAdvance, isAdvanceAmountValid } from '@/lib/salary-advance-validation'
+import { validateSalaryAdvance } from '@/lib/salary-advance-validation'
 import { verifyToken, getAccessToken, getRefreshToken, setAuthCookies, generateAccessToken, generateRefreshToken } from '@/lib/auth/jwt'
 
-// POST - Add advance for an employee for a specific month
-export async function POST(
+/**
+ * GET /api/employees/[id]/salary/advances/validation
+ * Get validation rules and limits for adding salary advance
+ * 
+ * Query params:
+ * - month_year: YYYY-MM format (required)
+ */
+export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
     let accessToken = await getAccessToken()
     if (!accessToken) {
-      // Try to refresh token
       const refreshToken = await getRefreshToken()
       if (!refreshToken) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -22,14 +27,12 @@ export async function POST(
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
-      // Generate new access token
       accessToken = await generateAccessToken({
         userId: refreshPayload.userId,
         email: refreshPayload.email,
         role: refreshPayload.role
       })
 
-      // Optionally refresh the refresh token too
       const newRefreshToken = await generateRefreshToken({
         userId: refreshPayload.userId,
         email: refreshPayload.email,
@@ -41,7 +44,6 @@ export async function POST(
 
     const payload = await verifyToken(accessToken)
     if (!payload) {
-      // Token is expired or invalid, try to refresh
       const refreshToken = await getRefreshToken()
       if (!refreshToken) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -52,14 +54,12 @@ export async function POST(
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
-      // Generate new access token
       accessToken = await generateAccessToken({
         userId: refreshPayload.userId,
         email: refreshPayload.email,
         role: refreshPayload.role
       })
 
-      // Optionally refresh the refresh token too
       const newRefreshToken = await generateRefreshToken({
         userId: refreshPayload.userId,
         email: refreshPayload.email,
@@ -70,11 +70,12 @@ export async function POST(
     }
 
     const { id: employeeId } = await context.params
-    const { amount, date_given, month_year, remarks } = await request.json()
+    const { searchParams } = new URL(request.url)
+    const monthYear = searchParams.get('month_year')
 
-    if (!amount || !date_given || !month_year) {
+    if (!monthYear || !/^\d{4}-\d{2}$/.test(monthYear)) {
       return NextResponse.json(
-        { error: 'Amount, date, and month_year are required' },
+        { error: 'Invalid month_year format. Must be YYYY-MM' },
         { status: 400 }
       )
     }
@@ -98,21 +99,21 @@ export async function POST(
     // Get salary record for the month
     const { data: salaryRecord, error: salaryError } = await supabase
       .from('salary_payments')
-      .select('id, calculated_salary, total_advance, status, base_salary')
+      .select('id, calculated_salary, total_advance, status, base_salary, status')
       .eq('employee_id', employeeId)
-      .eq('month_year', month_year)
+      .eq('month_year', monthYear)
       .single()
 
     if (salaryError && salaryError.code !== 'PGRST116') {
       throw salaryError
     }
 
-    // Get all existing advances for the month
-    const { data: existingAdvances, error: advError } = await supabase
+    // Get all advances for the month
+    const { data: advances, error: advError } = await supabase
       .from('advances')
       .select('amount')
       .eq('employee_id', employeeId)
-      .eq('month_year', month_year)
+      .eq('month_year', monthYear)
 
     if (advError) throw advError
 
@@ -123,80 +124,39 @@ export async function POST(
       salaryRecord: salaryRecord ? {
         calculated_salary: parseFloat(salaryRecord.calculated_salary?.toString() || '0'),
         total_advance: parseFloat(salaryRecord.total_advance?.toString() || '0'),
-        status: salaryRecord.status || 'pending',
+        status: salaryRecord.status,
         settled_on: null
       } : null,
-      currentAdvances: existingAdvances || []
+      currentAdvances: advances || []
     }
 
-    // Check if salary is settled first
-    if (salaryRecord && salaryRecord.status === 'settled') {
-      return NextResponse.json(
-        { error: 'Salary is already settled. No further advances can be added.' },
-        { status: 400 }
-      )
-    }
-
-    // Validate the proposed advance amount
+    // Validate and get limits
     const validation = validateSalaryAdvance(salaryData)
-    
-    if (!validation.isAllowed) {
-      return NextResponse.json(
-        { error: validation.reason || 'Cannot add advance at this time' },
-        { status: 400 }
-      )
-    }
-
-    const proposedAmount = parseFloat(amount)
-    const amountValidation = isAdvanceAmountValid(salaryData, proposedAmount)
-    
-    if (!amountValidation.valid) {
-      return NextResponse.json(
-        { error: amountValidation.reason || 'Invalid advance amount' },
-        { status: 400 }
-      )
-    }
-
-    // Insert advance
-    const { data: advance, error: insertError } = await supabase
-      .from('advances')
-      .insert({
-        employee_id: employeeId,
-        amount: proposedAmount,
-        date_given,
-        month_year,
-        remarks: remarks || null
-      })
-      .select()
-      .single()
-
-    if (insertError) throw insertError
-
-    // Update total_advance and final_salary in salary_payments if record exists
-    if (salaryRecord) {
-      const currentTotal = parseFloat(salaryRecord.total_advance?.toString() || '0')
-      const newTotal = currentTotal + proposedAmount
-      const calculatedSalary = parseFloat(salaryRecord.calculated_salary?.toString() || '0')
-      const newFinalSalary = calculatedSalary - newTotal
-
-      await supabase
-        .from('salary_payments')
-        .update({
-          total_advance: newTotal,
-          final_salary: newFinalSalary
-        })
-        .eq('id', salaryRecord.id)
-    }
 
     return NextResponse.json({
       success: true,
-      message: 'Advance recorded successfully',
-      data: advance
+      data: {
+        employee_id: employeeId,
+        employee_name: employee.name,
+        month_year: monthYear,
+        base_salary: baseSalary,
+        has_salary_record: !!salaryRecord,
+        calculated_salary: salaryRecord?.calculated_salary ? parseFloat(salaryRecord.calculated_salary.toString()) : null,
+        current_total_advances: salaryData.currentAdvances.reduce(
+          (sum, adv) => sum + parseFloat(adv.amount.toString()),
+          0
+        ),
+        max_allowed_advance: validation.maxAllowedAdvance,
+        can_add_advance: validation.isAllowed,
+        validation_message: validation.reason,
+        status: salaryRecord?.status || null,
+        scenario: salaryRecord ? 'Salary Record Exists' : 'No Salary Record'
+      }
     })
   } catch (error: any) {
-    console.error('Error adding advance:', error)
+    console.error('Error validating advance:', error)
     return NextResponse.json(
-      { error: error.message || 'Failed to add advance' },
+      { error: error.message || 'Failed to validate advance' },
       { status: 500 }
     )
   }

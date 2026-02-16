@@ -233,7 +233,7 @@ export default function EmployeeSalaryPage() {
                           <td className="py-3 px-4 text-white font-medium">
                             {hasRecord ? (
                               <span className={salaryRecord.status === 'settled' ? 'text-green-400' : ''}>
-                                {formatCurrency(parseFloat(salaryRecord.final_salary))}
+                                {formatCurrency(parseFloat(salaryRecord.calculated_salary))}
                               </span>
                             ) : (
                               <span className="text-gray-500">Not Created</span>

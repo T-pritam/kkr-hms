@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -8,15 +9,14 @@ import { Plus, Edit, Trash2, Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { CreatePatientModal } from '@/components/patients/create-patient-modal'
 import { EditPatientModal } from '@/components/patients/edit-patient-modal'
-import PatientDetailsModal from '@/components/patients/patient-details-modal'
 import { TablePagination } from '@/components/ui/table-pagination'
 
 export default function PatientsPage() {
+  const router = useRouter()
   const [patients, setPatients] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [editModalOpen, setEditModalOpen] = useState(false)
-  const [detailsModalOpen, setDetailsModalOpen] = useState(false)
   const [selectedPatient, setSelectedPatient] = useState<any>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
@@ -149,10 +149,7 @@ export default function PatientsPage() {
                         <tr
                           key={patient.id}
                           className="border-b border-gray-800 hover:bg-gray-900/50 cursor-pointer"
-                          onClick={() => {
-                            setSelectedPatient(patient)
-                            setDetailsModalOpen(true)
-                          }}
+                          onClick={() => router.push(`/patients/${patient.id}`)}
                         >
                           <td className="py-3 px-4 text-blue-400 font-medium">{patient.patient_id}</td>
                           <td className="py-3 px-4 text-white flex items-center gap-2">
@@ -208,11 +205,8 @@ export default function PatientsPage() {
                   {patients.map((patient: any) => (
                     <div
                       key={patient.id}
-                      className="bg-gray-800/50 rounded-lg p-4 border border-gray-700 cursor-pointer hover:bg-gray-800 transition-colors cursor-pointer"
-                      onClick={() => {
-                        setSelectedPatient(patient)
-                        setDetailsModalOpen(true)
-                      }}
+                      className="bg-gray-800/50 rounded-lg p-4 border border-gray-700 cursor-pointer hover:bg-gray-800 transition-colors"
+                      onClick={() => router.push(`/patients/${patient.id}`)}
                     >
                       <div className="flex items-start justify-between mb-3">
                         <div>
@@ -304,16 +298,6 @@ export default function PatientsPage() {
         }}
         onSuccess={fetchPatients}
         patient={selectedPatient}
-      />
-
-      <PatientDetailsModal
-        isOpen={detailsModalOpen}
-        onClose={() => {
-          setDetailsModalOpen(false)
-          setSelectedPatient(null)
-        }}
-        patientId={selectedPatient?.id}
-        patientData={selectedPatient}
       />
     </DashboardLayout>
   )
