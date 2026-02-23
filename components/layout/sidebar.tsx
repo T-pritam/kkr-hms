@@ -15,6 +15,7 @@ import {
   ChevronDown,
   Menu,
   X,
+  FlaskConical,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 
@@ -28,6 +29,7 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [employeeOpen, setEmployeeOpen] = useState(false)
   const [ledgerOpen, setLedgerOpen] = useState(false)
+  const [labOpen, setLabOpen] = useState(false)
 
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' })
@@ -52,6 +54,15 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
       href: '/doctors',
       icon: Stethoscope,
       roles: ['ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST'],
+    },
+    {
+      name: 'Lab/Pathology',
+      icon: FlaskConical,
+      roles: ['ADMIN', 'DOCTOR', 'LAB_TECHNICIAN', 'RECEPTIONIST'],
+      submenu: [
+        { name: 'Test Catalog', href: '/lab/tests', roles: ['ADMIN', 'LAB_TECHNICIAN'] },
+        { name: 'Test Results', href: '/lab/results', roles: ['ADMIN', 'DOCTOR', 'LAB_TECHNICIAN', 'RECEPTIONIST'] },
+      ],
     },
     {
       name: 'Employees',
@@ -139,9 +150,13 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
 
                 if (hasSubmenu) {
                   const isOpen =
-                    item.name === 'Employees' ? employeeOpen : ledgerOpen
+                    item.name === 'Employees' ? employeeOpen : 
+                    item.name === 'Lab/Pathology' ? labOpen :
+                    ledgerOpen
                   const setIsOpen =
-                    item.name === 'Employees' ? setEmployeeOpen : setLedgerOpen
+                    item.name === 'Employees' ? setEmployeeOpen : 
+                    item.name === 'Lab/Pathology' ? setLabOpen :
+                    setLedgerOpen
 
                   const filteredSubmenu = item.submenu.filter((sub) =>
                     !sub.roles || sub.roles.includes(userRole)
