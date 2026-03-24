@@ -143,14 +143,14 @@ export function OpdEntryModal({
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-900 rounded-lg max-w-md w-full border border-gray-800">
+    <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50 p-4">
+      <div className="bg-surface rounded-lg max-w-md w-full border border-border">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-800">
-          <h2 className="text-xl font-bold text-white">
+        <div className="flex items-center justify-between p-6 border-b border-border">
+          <h2 className="text-xl font-bold text-foreground">
             {mode === 'edit' ? 'Edit OPD Entry' : 'Add OPD Entry'}
           </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white">
+          <button onClick={onClose} className="text-muted hover:text-foreground">
             <X size={20} />
           </button>
         </div>
@@ -200,7 +200,7 @@ export function OpdEntryModal({
               onChange={(e) =>
                 setFormData({ ...formData, payment_mode: e.target.value })
               }
-              className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white"
+              className="w-full px-3 py-2 bg-input border border-input-border rounded-md text-foreground"
             >
               <option value="cash">Cash</option>
               <option value="upi">UPI</option>
@@ -240,7 +240,7 @@ export function OpdEntryModal({
               onChange={(e) =>
                 setFormData({ ...formData, notes: e.target.value })
               }
-              className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white"
+              className="w-full px-3 py-2 bg-input border border-input-border rounded-md text-foreground"
             />
           </div>
 

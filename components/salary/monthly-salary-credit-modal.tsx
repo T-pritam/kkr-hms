@@ -155,12 +155,12 @@ export function MonthlySalaryCreditModal({ isOpen, onClose, onSuccess }: Monthly
   }, 0)
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-900 rounded-lg w-full max-w-6xl max-h-[90vh] overflow-y-auto border border-gray-800">
+    <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50 p-4">
+      <div className="bg-surface rounded-lg w-full max-w-6xl max-h-[90vh] overflow-y-auto border border-border">
         {/* Header */}
-        <div className="sticky top-0 bg-gray-900 border-b border-gray-800 p-6 flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-white">Monthly Salary Credit</h2>
-          <button onClick={handleClose} className="text-gray-400 hover:text-white">
+        <div className="sticky top-0 bg-surface border-b border-border p-6 flex items-center justify-between">
+          <h2 className="text-xl font-semibold text-foreground">Monthly Salary Credit</h2>
+          <button onClick={handleClose} className="text-muted hover:text-foreground">
             <X size={24} />
           </button>
         </div>
@@ -168,32 +168,32 @@ export function MonthlySalaryCreditModal({ isOpen, onClose, onSuccess }: Monthly
         <div className="p-6 space-y-6">
           {/* Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
-              <div className="flex items-center gap-2 text-gray-400 text-sm mb-2">
+            <div className="bg-surface-hover p-4 rounded-lg border border-input-border">
+              <div className="flex items-center gap-2 text-muted text-sm mb-2">
                 <Users size={16} />
                 Total Employees
               </div>
-              <div className="text-white text-2xl font-bold">{employees.length}</div>
+              <div className="text-foreground text-2xl font-bold">{employees.length}</div>
             </div>
-            <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
-              <div className="flex items-center gap-2 text-gray-400 text-sm mb-2">
+            <div className="bg-surface-hover p-4 rounded-lg border border-input-border">
+              <div className="flex items-center gap-2 text-muted text-sm mb-2">
                 <DollarSign size={16} />
                 Total Base Salary
               </div>
-              <div className="text-white text-2xl font-bold">₹{totalBaseSalary.toLocaleString('en-IN')}</div>
+              <div className="text-foreground text-2xl font-bold">₹{totalBaseSalary.toLocaleString('en-IN')}</div>
             </div>
-            <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700">
-              <div className="flex items-center gap-2 text-gray-400 text-sm mb-2">
+            <div className="bg-surface-hover p-4 rounded-lg border border-input-border">
+              <div className="flex items-center gap-2 text-muted text-sm mb-2">
                 <DollarSign size={16} />
                 Estimated Payout
               </div>
-              <div className="text-green-400 text-2xl font-bold">₹{estimatedPayout.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</div>
+              <div className="text-success-text text-2xl font-bold">₹{estimatedPayout.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</div>
             </div>
           </div>
 
           {/* Month Selection */}
-          <div className="flex items-center gap-4 p-4 bg-gray-800/50 rounded-lg border border-gray-700">
-            <div className="flex items-center gap-2 text-gray-400">
+          <div className="flex items-center gap-4 p-4 bg-surface-hover rounded-lg border border-input-border">
+            <div className="flex items-center gap-2 text-muted">
               <Calendar size={20} />
               <span>Select Month/Year:</span>
             </div>
@@ -207,23 +207,23 @@ export function MonthlySalaryCreditModal({ isOpen, onClose, onSuccess }: Monthly
               className="w-48"
             />
             <div className="flex items-center gap-2 ml-auto">
-              <span className="text-gray-400">Total Working Days:</span>
-              <span className="text-white font-semibold">{totalWorkingDays}</span>
+              <span className="text-muted">Total Working Days:</span>
+              <span className="text-foreground font-semibold">{totalWorkingDays}</span>
             </div>
           </div>
 
           {/* Employee Table */}
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gray-800 sticky top-0">
+              <thead className="bg-surface-hover sticky top-0">
                 <tr>
-                  <th className="text-left p-3 text-gray-400 text-sm font-medium">Employee Name</th>
-                  <th className="text-left p-3 text-gray-400 text-sm font-medium">Designation</th>
-                  <th className="text-left p-3 text-gray-400 text-sm font-medium">Base Salary</th>
-                  <th className="text-left p-3 text-gray-400 text-sm font-medium">Days Present (1-27)</th>
-                  <th className="text-left p-3 text-gray-400 text-sm font-medium">OT Days (0-3)</th>
-                  <th className="text-left p-3 text-gray-400 text-sm font-medium">Calculated Salary</th>
-                  <th className="text-left p-3 text-gray-400 text-sm font-medium">Status</th>
+                  <th className="text-left p-3 text-muted text-sm font-medium">Employee Name</th>
+                  <th className="text-left p-3 text-muted text-sm font-medium">Designation</th>
+                  <th className="text-left p-3 text-muted text-sm font-medium">Base Salary</th>
+                  <th className="text-left p-3 text-muted text-sm font-medium">Days Present (1-27)</th>
+                  <th className="text-left p-3 text-muted text-sm font-medium">OT Days (0-3)</th>
+                  <th className="text-left p-3 text-muted text-sm font-medium">Calculated Salary</th>
+                  <th className="text-left p-3 text-muted text-sm font-medium">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -234,14 +234,14 @@ export function MonthlySalaryCreditModal({ isOpen, onClose, onSuccess }: Monthly
                   const isSettled = employee.salary_record?.status === 'settled'
                   
                   return (
-                    <tr key={employee.id} className="border-t border-gray-800 hover:bg-gray-800/30">
-                      <td className="p-3 text-white">{employee.name}</td>
+                    <tr key={employee.id} className="border-t border-border hover:bg-surface-hover">
+                      <td className="p-3 text-foreground">{employee.name}</td>
                       <td className="p-3">
-                        <span className="px-2 py-1 bg-blue-900/30 text-blue-400 border border-blue-800 rounded text-xs">
+                        <span className="px-2 py-1 bg-info-subtle text-info border border-info/20 rounded text-xs">
                           {employee.designation}
                         </span>
                       </td>
-                      <td className="p-3 text-white">₹{employee.base_salary.toLocaleString('en-IN')}</td>
+                      <td className="p-3 text-foreground">₹{employee.base_salary.toLocaleString('en-IN')}</td>
                       <td className="p-3">
                         <Input
                           type="number"
@@ -264,20 +264,20 @@ export function MonthlySalaryCreditModal({ isOpen, onClose, onSuccess }: Monthly
                           disabled={isSettled}
                         />
                       </td>
-                      <td className="p-3 text-green-400 font-semibold">
+                      <td className="p-3 text-success-text font-semibold">
                         ₹{calcSalary.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                       </td>
                       <td className="p-3">
                         {hasRecord ? (
                           <span className={`px-2 py-1 rounded text-xs font-medium ${
                             isSettled
-                              ? 'bg-green-900/30 text-green-400 border border-green-800'
-                              : 'bg-yellow-900/30 text-yellow-400 border border-yellow-800'
+                              ? 'bg-success-subtle text-success-text border border-success/20'
+                              : 'bg-warning-subtle text-warning-text border border-warning/20'
                           }`}>
                             {isSettled ? 'Settled' : 'Pending'}
                           </span>
                         ) : (
-                          <span className="px-2 py-1 rounded text-xs font-medium bg-gray-800 text-gray-400 border border-gray-700">
+                          <span className="px-2 py-1 rounded text-xs font-medium bg-surface-hover text-muted border border-input-border">
                             New
                           </span>
                         )}
@@ -291,14 +291,14 @@ export function MonthlySalaryCreditModal({ isOpen, onClose, onSuccess }: Monthly
         </div>
 
         {/* Footer */}
-        <div className="sticky bottom-0 bg-gray-900 border-t border-gray-800 p-6 flex justify-between">
+        <div className="sticky bottom-0 bg-surface border-t border-border p-6 flex justify-between">
           <Button variant="outline" onClick={handleClose}>
             Cancel
           </Button>
           <Button
             onClick={handleCreateRecords}
             disabled={loading || !monthYear}
-            className="bg-orange-600 hover:bg-orange-700"
+            className="bg-primary hover:bg-primary-hover"
           >
             {loading ? 'Creating...' : 'Create Salary Records'}
           </Button>

@@ -145,15 +145,15 @@ export function PayAdvanceModal({ isOpen, onClose, employeeId, selectedMonth, em
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-900 rounded-lg w-full max-w-md border border-gray-800 max-h-[80vh] flex flex-col overflow-hidden overflow-y-auto">
+    <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50 p-4">
+      <div className="bg-surface rounded-lg w-full max-w-md border border-border max-h-[80vh] flex flex-col overflow-hidden overflow-y-auto">
         {/* Header */}
-        <div className="border-b border-gray-800 p-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-            <DollarSign size={20} className="text-orange-500" />
+        <div className="border-b border-border p-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+            <DollarSign size={20} className="text-primary" />
             Pay Advance
           </h2>
-          <button onClick={handleClose} className="text-gray-400 hover:text-white">
+          <button onClick={handleClose} className="text-muted hover:text-foreground">
             <X size={20} />
           </button>
         </div>
@@ -161,34 +161,34 @@ export function PayAdvanceModal({ isOpen, onClose, employeeId, selectedMonth, em
         {/* Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
-            <div className="text-gray-400 text-sm mb-2">Employee</div>
-            <div className="text-white font-medium">{employeeName}</div>
+            <div className="text-muted text-sm mb-2">Employee</div>
+            <div className="text-foreground font-medium">{employeeName}</div>
           </div>
 
           {/* Validation Info */}
           {validationLoading ? (
-            <div className="bg-gray-800 rounded p-3 text-gray-300 text-sm">
+            <div className="bg-surface-hover rounded p-3 text-foreground text-sm">
               Loading validation details...
             </div>
           ) : validation ? (
-            <div className="space-y-2 bg-gray-800 rounded p-3">
-              <div className="text-gray-400 text-xs uppercase tracking-wide font-semibold">
+            <div className="space-y-2 bg-surface-hover rounded p-3">
+              <div className="text-muted text-xs uppercase tracking-wide font-semibold">
                 Validation Status
               </div>
 
               {/* Scenario Badge */}
               <div className="flex items-start gap-2 flex-wrap">
-                <span className="text-xs bg-blue-900 text-blue-200 px-2 py-1 rounded whitespace-nowrap">
+                <span className="text-xs bg-info-subtle text-info px-2 py-1 rounded whitespace-nowrap">
                   {validation.scenario.split(':')[0]}
                 </span>
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-muted-foreground">
                   {validation.scenario.split(':')[1]?.trim()}
                 </span>
                 {validation.status && (
                   <span className={`text-xs px-2 py-1 rounded whitespace-nowrap font-semibold ${
                     validation.status === 'settled' 
-                      ? 'bg-red-900 text-red-200' 
-                      : 'bg-green-900 text-green-200'
+                      ? 'bg-destructive-subtle text-destructive' 
+                      : 'bg-success-subtle text-success-text'
                   }`}>
                     {validation.status.charAt(0).toUpperCase() + validation.status.slice(1)}
                   </span>
@@ -198,15 +198,15 @@ export function PayAdvanceModal({ isOpen, onClose, employeeId, selectedMonth, em
               {/* Base/Calculated Salary */}
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <div>
-                  <div className="text-gray-500 text-xs">Base Salary</div>
-                  <div className="text-white font-semibold">
+                  <div className="text-muted-foreground text-xs">Base Salary</div>
+                  <div className="text-foreground font-semibold">
                     ₹{validation.base_salary.toFixed(2)}
                   </div>
                 </div>
                 {validation.calculated_salary !== null && (
                   <div>
-                    <div className="text-gray-500 text-xs">Calculated Salary</div>
-                    <div className="text-white font-semibold">
+                    <div className="text-muted-foreground text-xs">Calculated Salary</div>
+                    <div className="text-foreground font-semibold">
                       ₹{validation.calculated_salary.toFixed(2)}
                     </div>
                   </div>
@@ -216,35 +216,35 @@ export function PayAdvanceModal({ isOpen, onClose, employeeId, selectedMonth, em
               {/* Current Advances */}
               {validation.current_total_advances > 0 && (
                 <div className="text-sm">
-                  <div className="text-gray-500 text-xs">Total Advances</div>
-                  <div className="text-orange-400 font-semibold">
+                  <div className="text-muted-foreground text-xs">Total Advances</div>
+                  <div className="text-primary font-semibold">
                     -₹{validation.current_total_advances.toFixed(2)}
                   </div>
                 </div>
               )}
 
               {/* Status and Limit */}
-              <div className="pt-2 border-t border-gray-700">
+              <div className="pt-2 border-t border-input-border">
                 {validation.can_add_advance ? (
                   <div className="flex items-start gap-2">
-                    <CheckCircle size={16} className="text-green-500 mt-0.5 flex-shrink-0" />
+                    <CheckCircle size={16} className="text-success-text mt-0.5 flex-shrink-0" />
                     <div className="flex-1">
-                      <div className="text-green-400 font-semibold text-sm">
+                      <div className="text-success-text font-semibold text-sm">
                         Can Add Advance
                       </div>
-                      <div className="text-green-300 text-xs">
+                      <div className="text-success-text text-xs">
                         Maximum: ₹{validation.max_allowed_advance.toFixed(2)}
                       </div>
                     </div>
                   </div>
                 ) : (
                   <div className="flex items-start gap-2">
-                    <AlertCircle size={16} className="text-red-500 mt-0.5 flex-shrink-0" />
+                    <AlertCircle size={16} className="text-destructive mt-0.5 flex-shrink-0" />
                     <div className="flex-1">
-                      <div className="text-red-400 font-semibold text-sm">
+                      <div className="text-destructive font-semibold text-sm">
                         Cannot Add Advance
                       </div>
-                      <div className="text-red-300 text-xs">
+                      <div className="text-destructive text-xs">
                         {validation.validation_message}
                       </div>
                     </div>
@@ -255,8 +255,8 @@ export function PayAdvanceModal({ isOpen, onClose, employeeId, selectedMonth, em
           ) : null}
 
           <div>
-            <label className="text-gray-400 text-sm flex items-center gap-1 mb-2">
-              Amount <span className="text-red-500">*</span>
+            <label className="text-muted text-sm flex items-center gap-1 mb-2">
+              Amount <span className="text-destructive">*</span>
             </label>
             <Input
               type="number"
@@ -264,20 +264,20 @@ export function PayAdvanceModal({ isOpen, onClose, employeeId, selectedMonth, em
               placeholder="₹ 10,000"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              className={amountError ? 'border-red-500' : ''}
+              className={amountError ? 'border-destructive' : ''}
               required
             />
             {amountError && (
               <div className="mt-1 flex items-start gap-1">
-                <AlertCircle size={14} className="text-red-500 mt-0.5 flex-shrink-0" />
-                <span className="text-red-400 text-xs">{amountError}</span>
+                <AlertCircle size={14} className="text-destructive mt-0.5 flex-shrink-0" />
+                <span className="text-destructive text-xs">{amountError}</span>
               </div>
             )}
           </div>
 
           <div>
-            <label className="text-gray-400 text-sm flex items-center gap-1 mb-2">
-              Date <span className="text-red-500">*</span>
+            <label className="text-muted text-sm flex items-center gap-1 mb-2">
+              Date <span className="text-destructive">*</span>
             </label>
             <Input
               type="date"
@@ -288,7 +288,7 @@ export function PayAdvanceModal({ isOpen, onClose, employeeId, selectedMonth, em
           </div>
 
           <div>
-            <label className="text-gray-400 text-sm mb-2 block">
+            <label className="text-muted text-sm mb-2 block">
               Month-Year
             </label>
             <Input
@@ -297,7 +297,7 @@ export function PayAdvanceModal({ isOpen, onClose, employeeId, selectedMonth, em
           </div>
 
           <div>
-            <label className="text-gray-400 text-sm mb-2 block">
+            <label className="text-muted text-sm mb-2 block">
               Remarks
             </label>
             <Input
@@ -326,7 +326,7 @@ export function PayAdvanceModal({ isOpen, onClose, employeeId, selectedMonth, em
                 !amount ||
                 !!amountError
               }
-              className="flex-1 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 bg-primary hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? 'Adding...' : 'Add Advance'}
             </Button>

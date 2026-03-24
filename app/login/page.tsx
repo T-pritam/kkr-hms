@@ -47,13 +47,13 @@ function LoginContent() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-black p-4">
-      <Card className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <Card className="w-full max-w-md animate-fadeIn">
         <CardHeader className="space-y-1">
           <div className="flex items-center justify-center mb-4">
             <div className="text-4xl font-bold">
-              <span className="text-orange-600">KKR</span>
-              <span className="text-white ml-2">Hospital Management</span>
+              <span className="text-primary">KKR</span>
+              <span className="text-foreground ml-2">HMS</span>
             </div>
           </div>
           <CardTitle className="text-2xl text-center">Login</CardTitle>
@@ -64,7 +64,7 @@ function LoginContent() {
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">
             {error && (
-              <div className="p-3 rounded-md bg-red-900/20 border border-red-900 text-red-400 text-sm">
+              <div className="p-3 rounded-lg bg-destructive-subtle border border-destructive/30 text-destructive text-sm">
                 {error}
               </div>
             )}
@@ -99,7 +99,7 @@ function LoginContent() {
               <button
                 type="button"
                 onClick={() => router.push('/reset-password')}
-                className="text-sm text-orange-500 hover:text-orange-400"
+                className="text-sm text-primary hover:text-primary-hover transition-colors"
               >
                 Forgot password?
               </button>

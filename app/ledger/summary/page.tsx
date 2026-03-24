@@ -179,13 +179,13 @@ export default function DailyLedgerSummaryPage() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'verified':
-        return 'bg-green-900/30 text-green-400 border-green-800'
+        return 'bg-success-subtle text-success-text border-success/20'
       case 'pending':
-        return 'bg-yellow-900/30 text-yellow-400 border-yellow-800'
+        return 'bg-warning-subtle text-warning-text border-warning/20'
       case 'day_closed':
-        return 'bg-purple-900/30 text-purple-400 border-purple-800'
+        return 'bg-accent-subtle text-accent border-accent/20'
       default:
-        return 'bg-gray-900/30 text-gray-400 border-gray-800'
+        return 'bg-surface text-muted border-border'
     }
   }
 
@@ -208,10 +208,10 @@ export default function DailyLedgerSummaryPage() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-white">
+            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">
               Daily Ledger Summary
             </h1>
-            <p className="text-gray-400 mt-1">
+            <p className="text-muted mt-1">
               Track daily financial transactions
             </p>
           </div>
@@ -247,16 +247,16 @@ export default function DailyLedgerSummaryPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-gray-400">
+              <CardTitle className="text-sm font-medium text-muted">
                 Total Credits
               </CardTitle>
-              <TrendingUp className="h-4 w-4 text-green-400" />
+              <TrendingUp className="h-4 w-4 text-success-text" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-400">
+              <div className="text-2xl font-bold text-success-text">
                 {formatCurrency(summary?.total_credits || 0)}
               </div>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 {summary?.credit_count || 0} transactions
               </p>
             </CardContent>
@@ -264,16 +264,16 @@ export default function DailyLedgerSummaryPage() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-gray-400">
+              <CardTitle className="text-sm font-medium text-muted">
                 Total Debits
               </CardTitle>
-              <TrendingDown className="h-4 w-4 text-red-400" />
+              <TrendingDown className="h-4 w-4 text-destructive" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-red-400">
+              <div className="text-2xl font-bold text-destructive">
                 {formatCurrency(summary?.total_debits || 0)}
               </div>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 {summary?.debit_count || 0} transactions
               </p>
             </CardContent>
@@ -281,16 +281,16 @@ export default function DailyLedgerSummaryPage() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-gray-400">
+              <CardTitle className="text-sm font-medium text-muted">
                 Net Balance
               </CardTitle>
-              <Wallet className="h-4 w-4 text-blue-400" />
+              <Wallet className="h-4 w-4 text-info" />
             </CardHeader>
             <CardContent>
-              <div className={`text-2xl font-bold ${(summary?.net_balance || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              <div className={`text-2xl font-bold ${(summary?.net_balance || 0) >= 0 ? 'text-success-text' : 'text-destructive'}`}>
                 {formatCurrency(summary?.net_balance || 0)}
               </div>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 {summary?.transaction_count || 0} total
               </p>
             </CardContent>
@@ -298,14 +298,14 @@ export default function DailyLedgerSummaryPage() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-gray-400">
+              <CardTitle className="text-sm font-medium text-muted">
                 Status
               </CardTitle>
-              <Calendar className="h-4 w-4 text-purple-400" />
+              <Calendar className="h-4 w-4 text-accent" />
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2">
-                <span className={`px-3 py-1 rounded-full text-xs border ${summary?.is_day_closed ? 'bg-purple-900/30 text-purple-400 border-purple-800' : 'bg-green-900/30 text-green-400 border-green-800'}`}>
+                <span className={`px-3 py-1 rounded-full text-xs border ${summary?.is_day_closed ? 'bg-accent-subtle text-accent border-accent/20' : 'bg-success-subtle text-success-text border-success/20'}`}>
                   {summary?.is_day_closed ? '🔒 CLOSED' : '✓ OPEN'}
                 </span>
               </div>
@@ -320,56 +320,56 @@ export default function DailyLedgerSummaryPage() {
           </CardHeader>
           <CardContent>
             {loading ? (
-              <div className="text-center py-12 text-gray-400">Loading...</div>
+              <div className="text-center py-12 text-muted">Loading...</div>
             ) : !summary?.transactions || summary.transactions.length === 0 ? (
-              <div className="text-center py-12 text-gray-400">
+              <div className="text-center py-12 text-muted">
                 No transactions for this date
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
-                    <tr className="border-b border-gray-800">
-                      <th className="py-3 px-4 text-left text-gray-400">Time</th>
-                      <th className="py-3 px-4 text-left text-gray-400">Type</th>
-                      <th className="py-3 px-4 text-left text-gray-400">Source</th>
-                      <th className="py-3 px-4 text-left text-gray-400">Amount</th>
-                      <th className="py-3 px-4 text-left text-gray-400">Mode</th>
-                      <th className="py-3 px-4 text-left text-gray-400">Reference</th>
-                      <th className="py-3 px-4 text-left text-gray-400">Description</th>
-                      <th className="py-3 px-4 text-left text-gray-400">Status</th>
-                      <th className="py-3 px-4 text-left text-gray-400">Created By</th>
-                      <th className="py-3 px-4 text-left text-gray-400">Actions</th>
+                    <tr className="border-b border-border">
+                      <th className="py-3 px-4 text-left text-muted">Time</th>
+                      <th className="py-3 px-4 text-left text-muted">Type</th>
+                      <th className="py-3 px-4 text-left text-muted">Source</th>
+                      <th className="py-3 px-4 text-left text-muted">Amount</th>
+                      <th className="py-3 px-4 text-left text-muted">Mode</th>
+                      <th className="py-3 px-4 text-left text-muted">Reference</th>
+                      <th className="py-3 px-4 text-left text-muted">Description</th>
+                      <th className="py-3 px-4 text-left text-muted">Status</th>
+                      <th className="py-3 px-4 text-left text-muted">Created By</th>
+                      <th className="py-3 px-4 text-left text-muted">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {summary.transactions.map((txn) => (
-                      <tr key={txn.id} className="border-b border-gray-800 hover:bg-gray-900/50">
-                        <td className="py-3 px-4 text-gray-300 text-sm">
+                      <tr key={txn.id} className="border-b border-border hover:bg-table-row-hover">
+                        <td className="py-3 px-4 text-foreground text-sm">
                           {new Date(txn.created_at).toLocaleTimeString('en-GB', { hour12: false, hour: '2-digit', minute: '2-digit' })}
                         </td>
                         <td className="py-3 px-4">
                           <span className={`px-3 py-1 rounded-full text-xs border ${
                             txn.transaction_type === 'credit'
-                              ? 'bg-green-900/30 text-green-400 border-green-800'
-                              : 'bg-red-900/30 text-red-400 border-red-800'
+                              ? 'bg-success-subtle text-success-text border-success/20'
+                              : 'bg-destructive-subtle text-destructive border-destructive/20'
                           }`}>
                             {txn.transaction_type.toUpperCase()}
                           </span>
                         </td>
-                        <td className="py-3 px-4 text-gray-300 text-sm capitalize">
+                        <td className="py-3 px-4 text-foreground text-sm capitalize">
                           {txn.source} { txn.source == 'patient' ? `(${txn.patient?.name || 'Unknown'})` : '' }
                         </td>
-                        <td className="py-3 px-4 text-white font-medium">
+                        <td className="py-3 px-4 text-foreground font-medium">
                           {formatCurrency(txn.amount)}
                         </td>
-                        <td className="py-3 px-4 text-gray-300 text-sm capitalize">
+                        <td className="py-3 px-4 text-foreground text-sm capitalize">
                           {txn.payment_mode.replace('_', ' ')}
                         </td>
-                        <td className="py-3 px-4 text-gray-300 text-sm">
+                        <td className="py-3 px-4 text-foreground text-sm">
                           {txn.reference_number || '-'}
                         </td>
-                        <td className="py-3 px-4 text-gray-300 text-sm max-w-xs truncate">
+                        <td className="py-3 px-4 text-foreground text-sm max-w-xs truncate">
                           {txn.description}
                         </td>
                         <td className="py-3 px-4">
@@ -378,7 +378,7 @@ export default function DailyLedgerSummaryPage() {
                             {txn.status.toUpperCase().replace('_', ' ')}
                           </span>
                         </td>
-                        <td className="py-3 px-4 text-gray-300 text-sm">
+                        <td className="py-3 px-4 text-foreground text-sm">
                           {txn.created_by_user?.username || 'Unknown'}
                         </td>
                         <td className="py-3 px-4">

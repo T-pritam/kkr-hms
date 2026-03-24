@@ -82,14 +82,14 @@ export default function LabTestsPage() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">
+            <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-2">
               Lab Tests Management
             </h1>
-            <p className="text-gray-400">Manage test catalog and parameters</p>
+            <p className="text-muted">Manage test catalog and parameters</p>
           </div>
           <Button
             onClick={() => setShowCreateModal(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
+            className="bg-info hover:bg-info-hover text-foreground"
           >
             <Plus className="mr-2" size={20} />
             Add New Test
@@ -99,13 +99,13 @@ export default function LabTestsPage() {
         {/* Filters */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted" size={20} />
             <Input
               type="text"
               placeholder="Search tests..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 bg-gray-900 border-gray-800 text-white"
+              className="pl-10 bg-surface border-border text-foreground"
             />
           </div>
         </div>
@@ -113,60 +113,60 @@ export default function LabTestsPage() {
         {/* Tests Table */}
         {loading ? (
           <div className="text-center py-12">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-            <p className="mt-2 text-gray-400">Loading tests...</p>
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-info"></div>
+            <p className="mt-2 text-muted">Loading tests...</p>
           </div>
         ) : tests.length === 0 ? (
-          <div className="text-center py-12 bg-gray-900 rounded-lg border border-gray-800">
-            <p className="text-gray-400">No tests found</p>
+          <div className="text-center py-12 bg-surface rounded-lg border border-border">
+            <p className="text-muted">No tests found</p>
           </div>
         ) : (
-          <div className="bg-gray-900 rounded-lg border border-gray-800 overflow-hidden">
+          <div className="bg-surface rounded-lg border border-border overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="bg-gray-800">
+                <thead className="bg-surface-hover">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
                       Test Name
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
                       Code
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
                       Category
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
                       Sample Type
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
                       Price
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
                       Status
                     </th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase">
+                    <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">
                       Actions
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-800">
+                <tbody className="divide-y divide-border">
                   {tests.map((test) => (
-                    <tr key={test.id} className="hover:bg-gray-800/50">
-                      <td className="px-4 py-3 text-white">{test.name}</td>
-                      <td className="px-4 py-3 text-gray-300">{test.code}</td>
+                    <tr key={test.id} className="hover:bg-table-row-hover">
+                      <td className="px-4 py-3 text-foreground">{test.name}</td>
+                      <td className="px-4 py-3 text-foreground">{test.code}</td>
                       <td className="px-4 py-3">
-                        <span className="px-2 py-1 bg-blue-600/20 text-blue-400 rounded text-sm">
+                        <span className="px-2 py-1 bg-info-subtle text-info rounded text-sm">
                           {test.category}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-gray-300">{test.sample_type}</td>
-                      <td className="px-4 py-3 text-gray-300">₹{test.price}</td>
+                      <td className="px-4 py-3 text-foreground">{test.sample_type}</td>
+                      <td className="px-4 py-3 text-foreground">₹{test.price}</td>
                       <td className="px-4 py-3">
                         <span
                           className={`px-2 py-1 rounded text-sm ${
                             test.is_active
-                              ? 'bg-green-600/20 text-green-400'
-                              : 'bg-red-600/20 text-red-400'
+                              ? 'bg-success-subtle text-success-text'
+                              : 'bg-destructive-subtle text-destructive'
                           }`}
                         >
                           {test.is_active ? 'Active' : 'Inactive'}
@@ -178,7 +178,7 @@ export default function LabTestsPage() {
                             onClick={() => setManagingParameters(test)}
                             variant="ghost"
                             size="sm"
-                            className="text-purple-400 hover:text-purple-300 hover:bg-purple-600/20"
+                            className="text-accent hover:text-accent hover:bg-accent-subtle"
                           >
                             <Settings size={16} />
                           </Button>
@@ -186,7 +186,7 @@ export default function LabTestsPage() {
                             onClick={() => setEditingTest(test)}
                             variant="ghost"
                             size="sm"
-                            className="text-blue-400 hover:text-blue-300 hover:bg-blue-600/20"
+                            className="text-info hover:text-info hover:bg-info-subtle"
                           >
                             <Edit size={16} />
                           </Button>
@@ -194,7 +194,7 @@ export default function LabTestsPage() {
                             onClick={() => handleDelete(test.id)}
                             variant="ghost"
                             size="sm"
-                            className="text-red-400 hover:text-red-300 hover:bg-red-600/20"
+                            className="text-destructive hover:text-destructive hover:bg-destructive-subtle"
                           >
                             <Trash2 size={16} />
                           </Button>

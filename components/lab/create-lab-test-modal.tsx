@@ -76,17 +76,17 @@ export function CreateLabTestModal({ isOpen, onClose, onSuccess }: CreateLabTest
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-900 rounded-lg p-4 sm:p-6 w-full max-w-2xl border border-gray-800 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50 p-4">
+      <div className="bg-surface rounded-lg p-4 sm:p-6 w-full max-w-2xl border border-border max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4 sm:mb-6">
-          <h2 className="text-xl sm:text-2xl font-bold text-white">Add New Lab Test</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white">
+          <h2 className="text-xl sm:text-2xl font-bold text-foreground">Add New Lab Test</h2>
+          <button onClick={onClose} className="text-muted hover:text-foreground">
             <X size={24} />
           </button>
         </div>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 rounded-lg text-red-400">
+          <div className="mb-4 p-3 bg-destructive-subtle border border-destructive/30 rounded-lg text-destructive">
             {error}
           </div>
         )}
@@ -94,7 +94,7 @@ export function CreateLabTestModal({ isOpen, onClose, onSuccess }: CreateLabTest
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="name" className="text-white">
+              <Label htmlFor="name" className="text-foreground">
                 Test Name *
               </Label>
               <Input
@@ -103,13 +103,13 @@ export function CreateLabTestModal({ isOpen, onClose, onSuccess }: CreateLabTest
                 required
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="bg-gray-800 border-gray-700 text-white"
+                className="bg-input border-input-border text-foreground"
                 placeholder="e.g., Complete Blood Count"
               />
             </div>
 
             <div>
-              <Label htmlFor="code" className="text-white">
+              <Label htmlFor="code" className="text-foreground">
                 Test Code *
               </Label>
               <Input
@@ -118,7 +118,7 @@ export function CreateLabTestModal({ isOpen, onClose, onSuccess }: CreateLabTest
                 required
                 value={formData.code}
                 onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
-                className="bg-gray-800 border-gray-700 text-white"
+                className="bg-input border-input-border text-foreground"
                 placeholder="e.g., CBC001"
               />
             </div>
@@ -126,7 +126,7 @@ export function CreateLabTestModal({ isOpen, onClose, onSuccess }: CreateLabTest
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="category" className="text-white">
+              <Label htmlFor="category" className="text-foreground">
                 Category *
               </Label>
               <select
@@ -134,7 +134,7 @@ export function CreateLabTestModal({ isOpen, onClose, onSuccess }: CreateLabTest
                 required
                 value={formData.category}
                 onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-white"
+                className="w-full bg-input border border-input-border rounded-md px-3 py-2 text-foreground"
               >
                 {categories.map((cat) => (
                   <option key={cat} value={cat}>
@@ -145,7 +145,7 @@ export function CreateLabTestModal({ isOpen, onClose, onSuccess }: CreateLabTest
             </div>
 
             <div>
-              <Label htmlFor="sample_type" className="text-white">
+              <Label htmlFor="sample_type" className="text-foreground">
                 Sample Type *
               </Label>
               <select
@@ -153,7 +153,7 @@ export function CreateLabTestModal({ isOpen, onClose, onSuccess }: CreateLabTest
                 required
                 value={formData.sample_type}
                 onChange={(e) => setFormData({ ...formData, sample_type: e.target.value })}
-                className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-white"
+                className="w-full bg-input border border-input-border rounded-md px-3 py-2 text-foreground"
               >
                 {sampleTypes.map((type) => (
                   <option key={type} value={type}>
@@ -165,7 +165,7 @@ export function CreateLabTestModal({ isOpen, onClose, onSuccess }: CreateLabTest
           </div>
 
           <div>
-            <Label htmlFor="price" className="text-white">
+            <Label htmlFor="price" className="text-foreground">
               Price (₹) *
             </Label>
             <Input
@@ -176,13 +176,13 @@ export function CreateLabTestModal({ isOpen, onClose, onSuccess }: CreateLabTest
               required
               value={formData.price}
               onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-              className="bg-gray-800 border-gray-700 text-white"
+              className="bg-input border-input-border text-foreground"
               placeholder="0.00"
             />
           </div>
 
           <div>
-            <Label htmlFor="description" className="text-white">
+            <Label htmlFor="description" className="text-foreground">
               Description
             </Label>
             <textarea
@@ -190,7 +190,7 @@ export function CreateLabTestModal({ isOpen, onClose, onSuccess }: CreateLabTest
               rows={3}
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-white"
+              className="w-full bg-input border border-input-border rounded-md px-3 py-2 text-foreground"
               placeholder="Brief description of the test..."
             />
           </div>
@@ -201,9 +201,9 @@ export function CreateLabTestModal({ isOpen, onClose, onSuccess }: CreateLabTest
               type="checkbox"
               checked={formData.is_active}
               onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-              className="w-4 h-4 bg-gray-800 border-gray-700 rounded"
+              className="w-4 h-4 bg-input border-input-border rounded"
             />
-            <Label htmlFor="is_active" className="text-white">
+            <Label htmlFor="is_active" className="text-foreground">
               Active
             </Label>
           </div>
@@ -213,14 +213,14 @@ export function CreateLabTestModal({ isOpen, onClose, onSuccess }: CreateLabTest
               type="button"
               onClick={onClose}
               variant="outline"
-              className="flex-1 border-gray-700 text-gray-300 hover:bg-gray-800"
+              className="flex-1 border-input-border text-foreground hover:bg-surface-hover"
             >
               Cancel
             </Button>
             <Button
               type="submit"
               disabled={loading}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+              className="flex-1 bg-info hover:bg-info-hover text-foreground"
             >
               {loading ? 'Creating...' : 'Create Test'}
             </Button>

@@ -94,8 +94,8 @@ export default function EmployeeDetailsPage() {
 
   const getStatusColor = (status: string) =>
     status === 'Active'
-      ? 'bg-green-900/30 text-green-400 border-green-800'
-      : 'bg-red-900/30 text-red-400 border-red-800'
+      ? 'bg-success-subtle text-success-text border-success/20'
+      : 'bg-destructive-subtle text-destructive border-destructive/20'
 
   return (
     <DashboardLayout>
@@ -103,10 +103,10 @@ export default function EmployeeDetailsPage() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-white">
+            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">
               Employee Management
             </h1>
-            <p className="text-gray-400 mt-1">
+            <p className="text-muted mt-1">
               Manage hospital employees
             </p>
           </div>
@@ -135,7 +135,7 @@ export default function EmployeeDetailsPage() {
               <div className="relative w-full sm:w-64">
                 <Search
                   size={18}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-muted"
                 />
                 <Input
                   placeholder="Search employees..."
@@ -149,11 +149,11 @@ export default function EmployeeDetailsPage() {
 
           <CardContent>
             {loading ? (
-              <div className="text-center py-12 text-gray-400">
+              <div className="text-center py-12 text-muted">
                 Loading...
               </div>
             ) : employees.length === 0 ? (
-              <div className="text-center py-12 text-gray-400">
+              <div className="text-center py-12 text-muted">
                 No employees found
               </div>
             ) : (
@@ -162,23 +162,23 @@ export default function EmployeeDetailsPage() {
                 <div className="hidden md:block overflow-x-auto">
                   <table className="w-full">
                     <thead>
-                      <tr className="border-b border-gray-800">
-                        <th className="py-3 px-4 text-left text-gray-400">
+                      <tr className="border-b border-border">
+                        <th className="py-3 px-4 text-left text-muted">
                           Name
                         </th>
-                        <th className="py-3 px-4 text-left text-gray-400">
+                        <th className="py-3 px-4 text-left text-muted">
                           Designation
                         </th>
-                        <th className="py-3 px-4 text-left text-gray-400">
+                        <th className="py-3 px-4 text-left text-muted">
                           Salary
                         </th>
-                        <th className="py-3 px-4 text-left text-gray-400">
+                        <th className="py-3 px-4 text-left text-muted">
                           Join Date
                         </th>
-                        <th className="py-3 px-4 text-left text-gray-400">
+                        <th className="py-3 px-4 text-left text-muted">
                           Status
                         </th>
-                        <th className="py-3 px-4 text-left text-gray-400">
+                        <th className="py-3 px-4 text-left text-muted">
                           Actions
                         </th>
                       </tr>
@@ -188,20 +188,20 @@ export default function EmployeeDetailsPage() {
                       {employees.map((emp) => (
                         <tr
                           key={emp.id}
-                          className="border-b border-gray-800 hover:bg-gray-900/50"
+                          className="border-b border-border hover:bg-table-row-hover"
                         >
-                          <td className="py-3 px-4 text-white">
+                          <td className="py-3 px-4 text-foreground">
                             {emp.name}
                           </td>
                           <td className="py-3 px-4">
-                            <span className="px-3 py-1 rounded-full text-xs border bg-blue-900/30 text-blue-400 border-blue-800">
+                            <span className="px-3 py-1 rounded-full text-xs border bg-info-subtle text-info border-info/20">
                               {emp.designation || 'N/A'}
                             </span>
                           </td>
-                          <td className="py-3 px-4 text-gray-300">
+                          <td className="py-3 px-4 text-foreground">
                             {formatCurrency(emp.base_salary)}
                           </td>
-                          <td className="py-3 px-4 text-gray-300">
+                          <td className="py-3 px-4 text-foreground">
                             {formatDate(emp.join_date)}
                           </td>
                           <td className="py-3 px-4">
@@ -243,14 +243,14 @@ export default function EmployeeDetailsPage() {
                   {employees.map((emp) => (
                     <div
                       key={emp.id}
-                      className="bg-gray-800/50 rounded-lg p-4 border border-gray-700"
+                      className="bg-surface-hover rounded-lg p-4 border border-input-border"
                     >
                       <div className="flex justify-between mb-3">
                         <div>
-                          <h3 className="text-white font-medium">
+                          <h3 className="text-foreground font-medium">
                             {emp.name}
                           </h3>
-                          <p className="text-sm text-gray-400 mt-1">
+                          <p className="text-sm text-muted mt-1">
                             {emp.designation || 'N/A'}
                           </p>
                         </div>
@@ -263,14 +263,14 @@ export default function EmployeeDetailsPage() {
 
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
-                          <span className="text-gray-400">Salary:</span>
-                          <span className="text-white">
+                          <span className="text-muted">Salary:</span>
+                          <span className="text-foreground">
                             {formatCurrency(emp.base_salary)}
                           </span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-gray-400">Join Date:</span>
-                          <span className="text-white">
+                          <span className="text-muted">Join Date:</span>
+                          <span className="text-foreground">
                             {formatDate(emp.join_date)}
                           </span>
                         </div>

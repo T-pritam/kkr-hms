@@ -92,18 +92,18 @@ export function CreatePatientModal({ isOpen, onClose, onSuccess }: CreatePatient
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-900 rounded-lg p-4 sm:p-6 w-full max-w-2xl border border-gray-800 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50 p-4">
+      <div className="bg-surface rounded-lg p-4 sm:p-6 w-full max-w-2xl border border-border max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4 sm:mb-6">
-          <h2 className="text-xl sm:text-2xl font-bold text-white">Add New Patient</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white">
+          <h2 className="text-xl sm:text-2xl font-bold text-foreground">Add New Patient</h2>
+          <button onClick={onClose} className="text-muted hover:text-foreground">
             <X size={24} />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <div className="p-3 rounded-md bg-red-900/20 border border-red-900 text-red-400 text-sm">
+            <div className="p-3 rounded-md bg-destructive-subtle border border-destructive/30 text-destructive text-sm">
               {error}
             </div>
           )}
@@ -184,7 +184,7 @@ export function CreatePatientModal({ isOpen, onClose, onSuccess }: CreatePatient
                 id="gender"
                 value={formData.gender}
                 onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
-                className="flex h-10 w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                className="flex h-10 w-full rounded-md border border-input-border bg-input px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 disabled={loading}
               >
                 <option value="Male">Male</option>
@@ -202,12 +202,12 @@ export function CreatePatientModal({ isOpen, onClose, onSuccess }: CreatePatient
               onChange={(e) => setFormData({ ...formData, address: e.target.value })}
               disabled={loading}
               placeholder="Enter address"
-              className="flex min-h-[80px] w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
+              className="flex min-h-[80px] w-full rounded-md border border-input-border bg-input px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             />
           </div>
 
-          <div className="border-t border-gray-700 pt-4">
-            <h3 className="text-lg font-semibold text-white mb-4">Emergency Contact</h3>
+          <div className="border-t border-input-border pt-4">
+            <h3 className="text-lg font-semibold text-foreground mb-4">Emergency Contact</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="emergency_contact_name">Name</Label>
@@ -233,8 +233,8 @@ export function CreatePatientModal({ isOpen, onClose, onSuccess }: CreatePatient
             </div>
           </div>
 
-          <div className="border-t border-gray-700 pt-4">
-            <h3 className="text-lg font-semibold text-white mb-4">Medical Information</h3>
+          <div className="border-t border-input-border pt-4">
+            <h3 className="text-lg font-semibold text-foreground mb-4">Medical Information</h3>
             
             <div className="space-y-4">
               <div className="space-y-2">
@@ -245,7 +245,7 @@ export function CreatePatientModal({ isOpen, onClose, onSuccess }: CreatePatient
                   onChange={(e) => setFormData({ ...formData, medical_history: e.target.value })}
                   disabled={loading}
                   placeholder="Enter medical history"
-                  className="flex min-h-[80px] w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  className="flex min-h-[80px] w-full rounded-md border border-input-border bg-input px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 />
               </div>
 
@@ -257,7 +257,7 @@ export function CreatePatientModal({ isOpen, onClose, onSuccess }: CreatePatient
                   onChange={(e) => setFormData({ ...formData, allergies: e.target.value })}
                   disabled={loading}
                   placeholder="Enter known allergies"
-                  className="flex min-h-[60px] w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  className="flex min-h-[60px] w-full rounded-md border border-input-border bg-input px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 />
               </div>
 
@@ -269,7 +269,7 @@ export function CreatePatientModal({ isOpen, onClose, onSuccess }: CreatePatient
                   onChange={(e) => setFormData({ ...formData, current_medications: e.target.value })}
                   disabled={loading}
                   placeholder="Enter current medications"
-                  className="flex min-h-[60px] w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  className="flex min-h-[60px] w-full rounded-md border border-input-border bg-input px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 />
               </div>
             </div>

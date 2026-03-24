@@ -83,56 +83,56 @@ Robert Brown,32000,Lab Technician`
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-900 rounded-lg p-4 sm:p-6 w-full max-w-2xl border border-gray-800 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50 p-4">
+      <div className="bg-surface rounded-lg p-4 sm:p-6 w-full max-w-2xl border border-border max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4 sm:mb-6">
-          <h2 className="text-xl sm:text-2xl font-bold text-white">Import Employees from CSV</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white">
+          <h2 className="text-xl sm:text-2xl font-bold text-foreground">Import Employees from CSV</h2>
+          <button onClick={onClose} className="text-muted hover:text-foreground">
             <X size={24} />
           </button>
         </div>
 
         {error && (
-          <div className="mb-4 p-3 rounded-md bg-red-900/20 border border-red-900 text-red-400 text-sm">
+          <div className="mb-4 p-3 rounded-md bg-destructive-subtle border border-destructive/30 text-destructive text-sm">
             {error}
           </div>
         )}
 
         {/* CSV Format Info */}
-        <div className="mb-6 p-4 rounded-lg bg-blue-900/20 border border-blue-800">
+        <div className="mb-6 p-4 rounded-lg bg-info-subtle border border-info/20">
           <div className="flex items-start gap-3">
-            <Info className="text-blue-400 mt-1 flex-shrink-0" size={20} />
+            <Info className="text-info mt-1 flex-shrink-0" size={20} />
             <div className="flex-1">
-              <h3 className="text-blue-400 font-semibold mb-2">CSV Format Requirements</h3>
-              <p className="text-blue-300 text-sm mb-3">
+              <h3 className="text-info font-semibold mb-2">CSV Format Requirements</h3>
+              <p className="text-info text-sm mb-3">
                 👉 Click "Download Template" button below to get the CSV format
               </p>
               
               <div className="space-y-2 text-sm">
-                <p className="text-gray-300">Your CSV file must contain these columns:</p>
-                <ul className="list-disc list-inside text-gray-400 space-y-1 ml-2">
+                <p className="text-foreground">Your CSV file must contain these columns:</p>
+                <ul className="list-disc list-inside text-muted space-y-1 ml-2">
                   <li>
-                    <span className="text-white font-medium">Name</span> - Employee name (required, non-empty)
+                    <span className="text-foreground font-medium">Name</span> - Employee name (required, non-empty)
                   </li>
                   <li>
-                    <span className="text-white font-medium">Salary</span> - Monthly salary as number (required, minimum ₹1000)
+                    <span className="text-foreground font-medium">Salary</span> - Monthly salary as number (required, minimum ₹1000)
                   </li>
                   <li>
-                    <span className="text-white font-medium">Role</span> - Employee designation (optional, defaults to "Nurse")
+                    <span className="text-foreground font-medium">Role</span> - Employee designation (optional, defaults to "Nurse")
                   </li>
                 </ul>
               </div>
 
               <div className="mt-4">
-                <p className="text-gray-300 text-sm font-semibold mb-2">Available Roles:</p>
-                <p className="text-gray-400 text-sm">
+                <p className="text-foreground text-sm font-semibold mb-2">Available Roles:</p>
+                <p className="text-muted text-sm">
                   Nurse, Wardboy, Compounder, OT Boy, Watchman, Cleaner, Lab Technician, Pharmacist
                 </p>
               </div>
 
-              <div className="mt-4 p-3 bg-gray-800/50 rounded border border-gray-700">
-                <p className="text-gray-300 text-sm font-semibold mb-1">Example CSV:</p>
-                <pre className="text-xs text-gray-400 font-mono">
+              <div className="mt-4 p-3 bg-surface-hover rounded border border-input-border">
+                <p className="text-foreground text-sm font-semibold mb-1">Example CSV:</p>
+                <pre className="text-xs text-muted font-mono">
 Name, Salary, Role
 John Doe, 25000, Nurse
 Jane Smith, 30000, Wardboy
@@ -144,8 +144,8 @@ Jane Smith, 30000, Wardboy
 
         {/* File Selection */}
         <div className="mb-6">
-          <h3 className="text-white font-semibold mb-3">Select CSV File:</h3>
-          <div className="border-2 border-dashed border-gray-700 rounded-lg p-6 text-center">
+          <h3 className="text-foreground font-semibold mb-3">Select CSV File:</h3>
+          <div className="border-2 border-dashed border-input-border rounded-lg p-6 text-center">
             <input
               ref={fileInputRef}
               type="file"
@@ -156,7 +156,7 @@ Jane Smith, 30000, Wardboy
             
             {selectedFile ? (
               <div className="space-y-3">
-                <div className="flex items-center justify-center gap-2 text-green-400">
+                <div className="flex items-center justify-center gap-2 text-success-text">
                   <Upload size={24} />
                   <span className="font-medium">{selectedFile.name}</span>
                 </div>
@@ -173,7 +173,7 @@ Jane Smith, 30000, Wardboy
               </div>
             ) : (
               <div className="space-y-3">
-                <Upload size={48} className="mx-auto text-gray-400" />
+                <Upload size={48} className="mx-auto text-muted" />
                 <div>
                   <Button
                     variant="outline"
@@ -182,7 +182,7 @@ Jane Smith, 30000, Wardboy
                     Click to Select CSV File
                   </Button>
                 </div>
-                <p className="text-sm text-gray-400">or drag and drop your CSV file here</p>
+                <p className="text-sm text-muted">or drag and drop your CSV file here</p>
               </div>
             )}
           </div>

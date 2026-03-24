@@ -66,19 +66,19 @@ export default function TestResultsPage() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending':
-        return 'bg-yellow-600/20 text-yellow-400'
+        return 'bg-warning-subtle text-warning-text'
       case 'collected':
-        return 'bg-blue-600/20 text-blue-400'
+        return 'bg-info-subtle text-info'
       case 'processing':
-        return 'bg-purple-600/20 text-purple-400'
+        return 'bg-accent-subtle text-accent'
       case 'completed':
-        return 'bg-green-600/20 text-green-400'
+        return 'bg-success-subtle text-success-text'
       case 'verified':
-        return 'bg-emerald-600/20 text-emerald-400'
+        return 'bg-success-subtle text-success-text'
       case 'cancelled':
-        return 'bg-red-600/20 text-red-400'
+        return 'bg-destructive-subtle text-destructive'
       default:
-        return 'bg-gray-600/20 text-gray-400'
+        return 'bg-surface-inset text-muted'
     }
   }
 
@@ -97,14 +97,14 @@ export default function TestResultsPage() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">
+            <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-2">
               Patient Test Results
             </h1>
-            <p className="text-gray-400">Manage test orders and results</p>
+            <p className="text-muted">Manage test orders and results</p>
           </div>
           <Button
             onClick={() => setShowCreateModal(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
+            className="bg-info hover:bg-info-hover text-foreground"
           >
             <Plus className="mr-2" size={20} />
             New Test Order
@@ -115,7 +115,7 @@ export default function TestResultsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div className="relative">
             <Search
-              className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+              className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted"
               size={20}
             />
             <Input
@@ -123,13 +123,13 @@ export default function TestResultsPage() {
               placeholder="Search by patient name, ID, or test..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 bg-gray-900 border-gray-800 text-white"
+              className="pl-10 bg-surface border-border text-foreground"
             />
           </div>
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="bg-gray-900 border border-gray-800 rounded-md px-4 py-2 text-white"
+            className="bg-surface border border-border rounded-md px-4 py-2 text-foreground"
           >
             <option value="">All Statuses</option>
             {statuses.map((status) => (
@@ -143,70 +143,70 @@ export default function TestResultsPage() {
         {/* Results Table */}
         {loading ? (
           <div className="text-center py-12">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-            <p className="mt-2 text-gray-400">Loading test results...</p>
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-info"></div>
+            <p className="mt-2 text-muted">Loading test results...</p>
           </div>
         ) : filteredResults.length === 0 ? (
-          <div className="text-center py-12 bg-gray-900 rounded-lg border border-gray-800">
-            <p className="text-gray-400">No test results found</p>
+          <div className="text-center py-12 bg-surface rounded-lg border border-border">
+            <p className="text-muted">No test results found</p>
           </div>
         ) : (
-          <div className="bg-gray-900 rounded-lg border border-gray-800 overflow-hidden">
+          <div className="bg-surface rounded-lg border border-border overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="bg-gray-800">
+                <thead className="bg-surface-hover">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
                       Date
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
                       Patient
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
                       Test
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
                       Category
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
                       Price
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">
+                    <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
                       Status
                     </th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase">
+                    <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">
                       Actions
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-800">
+                <tbody className="divide-y divide-border">
                   {filteredResults.map((result) => (
-                    <tr key={result.id} className="hover:bg-gray-800/50">
-                      <td className="px-4 py-3 text-gray-300">
+                    <tr key={result.id} className="hover:bg-table-row-hover">
+                      <td className="px-4 py-3 text-foreground">
                         {new Date(result.test_date).toLocaleDateString()}
                       </td>
                       <td className="px-4 py-3">
                         <div>
-                          <div className="text-white">
+                          <div className="text-foreground">
                             {result.patients?.name || result.patient_name}
                           </div>
-                          <div className="text-sm text-gray-400">
+                          <div className="text-sm text-muted">
                             {result.patients?.patient_id}
                           </div>
                         </div>
                       </td>
                       <td className="px-4 py-3">
                         <div>
-                          <div className="text-white">{result.lab_tests.name}</div>
-                          <div className="text-sm text-gray-400">{result.lab_tests.code}</div>
+                          <div className="text-foreground">{result.lab_tests.name}</div>
+                          <div className="text-sm text-muted">{result.lab_tests.code}</div>
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        <span className="px-2 py-1 bg-blue-600/20 text-blue-400 rounded text-sm">
+                        <span className="px-2 py-1 bg-info-subtle text-info rounded text-sm">
                           {result.lab_tests.category}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-gray-300">₹{result.final_price}</td>
+                      <td className="px-4 py-3 text-foreground">₹{result.final_price}</td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-1 rounded text-sm ${getStatusColor(result.status)}`}>
                           {result.status}
@@ -219,7 +219,7 @@ export default function TestResultsPage() {
                               onClick={() => setViewingResult(result)}
                               variant="ghost"
                               size="sm"
-                              className="text-green-400 hover:text-green-300 hover:bg-green-600/20"
+                              className="text-success-text hover:text-success-text hover:bg-success-subtle"
                             >
                               <FileText size={16} />
                             </Button>
@@ -229,7 +229,7 @@ export default function TestResultsPage() {
                               onClick={() => setSelectedResult(result)}
                               variant="ghost"
                               size="sm"
-                              className="text-blue-400 hover:text-blue-300 hover:bg-blue-600/20"
+                              className="text-info hover:text-info hover:bg-info-subtle"
                             >
                               <Edit size={16} />
                             </Button>
@@ -238,7 +238,7 @@ export default function TestResultsPage() {
                             onClick={() => setViewingResult(result)}
                             variant="ghost"
                             size="sm"
-                            className="text-purple-400 hover:text-purple-300 hover:bg-purple-600/20"
+                            className="text-accent hover:text-accent hover:bg-accent-subtle"
                           >
                             <Eye size={16} />
                           </Button>

@@ -122,28 +122,28 @@ export default function PatientDetailsModal({
   ];
 
   return (
-    <div className="fixed inset-0 bg-black  flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-900 rounded-lg shadow-xl w-full max-w-7xl flex flex-col">
+    <div className="fixed inset-0 bg-overlay  flex items-center justify-center z-50 p-4">
+      <div className="bg-surface rounded-lg shadow-xl w-full max-w-7xl flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-700">
+        <div className="flex items-center justify-between p-6 border-b border-input-border">
           <div>
-            <h2 className="text-2xl font-bold text-white">
+            <h2 className="text-2xl font-bold text-foreground">
               Patient Details: {patientData?.name || 'Loading...'}
             </h2>
-            <p className="text-gray-400 mt-1">
+            <p className="text-muted mt-1">
               ID: {patientData?.patient_id} | Joined: {patientData?.date_of_join}
             </p>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors"
+            className="text-muted hover:text-foreground transition-colors"
           >
             <X className="h-6 w-6" />
           </button>
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-gray-700 px-6 overflow-x-auto">
+        <div className="flex border-b border-input-border px-6 overflow-x-auto">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             return (
@@ -152,8 +152,8 @@ export default function PatientDetailsModal({
                 onClick={() => setActiveTab(tab.id)}
                 className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors whitespace-nowrap ${
                   activeTab === tab.id
-                    ? 'border-blue-500 text-blue-500'
-                    : 'border-transparent text-gray-400 hover:text-white'
+                    ? 'border-info text-info'
+                    : 'border-transparent text-muted hover:text-foreground'
                 }`}
               >
                 <Icon className="h-4 w-4" />

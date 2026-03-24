@@ -83,14 +83,14 @@ export function EmployeeShiftDetailsModal({
   if (!isOpen || !employee) return null
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-gray-900 rounded-lg max-w-4xl w-full border border-gray-800 my-8">
-        <div className="flex items-center justify-between p-6 border-b border-gray-800">
+    <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50 p-4 overflow-y-auto">
+      <div className="bg-surface rounded-lg max-w-4xl w-full border border-border my-8">
+        <div className="flex items-center justify-between p-6 border-b border-border">
           <div>
-            <h2 className="text-xl font-bold text-white">{employee.employeeName}</h2>
-            <p className="text-sm text-gray-400 mt-1">Settlement Date: {settlementDate}</p>
+            <h2 className="text-xl font-bold text-foreground">{employee.employeeName}</h2>
+            <p className="text-sm text-muted mt-1">Settlement Date: {settlementDate}</p>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-white">
+          <button onClick={onClose} className="text-muted hover:text-foreground">
             <X size={20} />
           </button>
         </div>
@@ -98,75 +98,75 @@ export function EmployeeShiftDetailsModal({
         <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
           {/* Summary Stats */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
-              <p className="text-sm text-gray-400">Total Credits</p>
-              <p className="text-2xl font-bold text-green-400 mt-1">
+            <div className="bg-surface-hover rounded-lg p-4 border border-input-border">
+              <p className="text-sm text-muted">Total Credits</p>
+              <p className="text-2xl font-bold text-success-text mt-1">
                 {formatCurrency(employee.totalCredits)}
               </p>
-              <p className="text-xs text-gray-500 mt-1">{employee.creditCount} transactions</p>
+              <p className="text-xs text-muted-foreground mt-1">{employee.creditCount} transactions</p>
             </div>
-            <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
-              <p className="text-sm text-gray-400">Total Debits</p>
-              <p className="text-2xl font-bold text-red-400 mt-1">
+            <div className="bg-surface-hover rounded-lg p-4 border border-input-border">
+              <p className="text-sm text-muted">Total Debits</p>
+              <p className="text-2xl font-bold text-destructive mt-1">
                 {formatCurrency(employee.totalDebits)}
               </p>
-              <p className="text-xs text-gray-500 mt-1">{employee.debitCount} transactions</p>
+              <p className="text-xs text-muted-foreground mt-1">{employee.debitCount} transactions</p>
             </div>
-            <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700">
-              <p className="text-sm text-gray-400">Net Balance</p>
-              <p className={`text-2xl font-bold mt-1 ${employee.netBalance >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+            <div className="bg-surface-hover rounded-lg p-4 border border-input-border">
+              <p className="text-sm text-muted">Net Balance</p>
+              <p className={`text-2xl font-bold mt-1 ${employee.netBalance >= 0 ? 'text-success-text' : 'text-destructive'}`}>
                 {formatCurrency(employee.netBalance)}
               </p>
-              <p className="text-xs text-gray-500 mt-1">{employee.transactionCount} total</p>
+              <p className="text-xs text-muted-foreground mt-1">{employee.transactionCount} total</p>
             </div>
           </div>
 
           {/* Transactions Table */}
           <div>
-            <h3 className="text-lg font-semibold text-white mb-3">All Transactions</h3>
-            <div className="overflow-x-auto border border-gray-800 rounded-lg">
+            <h3 className="text-lg font-semibold text-foreground mb-3">All Transactions</h3>
+            <div className="overflow-x-auto border border-border rounded-lg">
               <table className="w-full">
                 <thead>
-                  <tr className="bg-gray-800/50">
-                    <th className="py-3 px-4 text-left text-gray-400 text-sm">Time</th>
-                    <th className="py-3 px-4 text-left text-gray-400 text-sm">Type</th>
-                    <th className="py-3 px-4 text-left text-gray-400 text-sm">Source</th>
-                    <th className="py-3 px-4 text-left text-gray-400 text-sm">Amount</th>
-                    <th className="py-3 px-4 text-left text-gray-400 text-sm">Mode</th>
-                    <th className="py-3 px-4 text-left text-gray-400 text-sm">Status</th>
+                  <tr className="bg-surface-hover">
+                    <th className="py-3 px-4 text-left text-muted text-sm">Time</th>
+                    <th className="py-3 px-4 text-left text-muted text-sm">Type</th>
+                    <th className="py-3 px-4 text-left text-muted text-sm">Source</th>
+                    <th className="py-3 px-4 text-left text-muted text-sm">Amount</th>
+                    <th className="py-3 px-4 text-left text-muted text-sm">Mode</th>
+                    <th className="py-3 px-4 text-left text-muted text-sm">Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {employee.transactions.map((txn: any) => (
-                    <tr key={txn.id} className="border-t border-gray-800">
-                      <td className="py-3 px-4 text-gray-300 text-sm">
+                    <tr key={txn.id} className="border-t border-border">
+                      <td className="py-3 px-4 text-foreground text-sm">
                         {formatTime(txn.created_at)}
                       </td>
                       <td className="py-3 px-4">
                         <span className={`px-2 py-1 rounded-full text-xs border ${
                           txn.transaction_type === 'credit'
-                            ? 'bg-green-900/30 text-green-400 border-green-800'
-                            : 'bg-red-900/30 text-red-400 border-red-800'
+                            ? 'bg-success-subtle text-success-text border-success/20'
+                            : 'bg-destructive-subtle text-destructive border-destructive/20'
                         }`}>
                           {txn.transaction_type.toUpperCase()}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-gray-300 text-sm capitalize">
+                      <td className="py-3 px-4 text-foreground text-sm capitalize">
                         {txn.source} { txn.source === 'patient' ? ` Installment (${txn.patient?.name || 'Unknown'})` : '' }
                       </td>
-                      <td className="py-3 px-4 text-white font-medium">
+                      <td className="py-3 px-4 text-foreground font-medium">
                         {formatCurrency(txn.amount)}
                       </td>
-                      <td className="py-3 px-4 text-gray-300 text-sm capitalize">
+                      <td className="py-3 px-4 text-foreground text-sm capitalize">
                         {txn.payment_mode.replace('_', ' ')} { txn.reference_number && `(${txn.reference_number})` }
                       </td>
                       <td className="py-3 px-4">
                         <span className={`px-2 py-1 rounded-full text-xs border ${
                           txn.status === 'verified'
-                            ? 'bg-green-900/30 text-green-400 border-green-800'
+                            ? 'bg-success-subtle text-success-text border-success/20'
                             : txn.status === 'day_closed'
-                            ? 'bg-purple-900/30 text-purple-400 border-purple-800'
-                            : 'bg-yellow-900/30 text-yellow-400 border-yellow-800'
+                            ? 'bg-accent-subtle text-accent border-accent/20'
+                            : 'bg-warning-subtle text-warning-text border-warning/20'
                         }`}>
                           {txn.status === 'day_closed' && <Lock size={10} className="inline mr-1" />}
                           {txn.status.toUpperCase().replace('_', ' ')}
@@ -181,8 +181,8 @@ export function EmployeeShiftDetailsModal({
 
           {/* Settlement Form */}
           {!employee.isClosed && (
-            <div className="bg-yellow-900/10 border border-yellow-800/50 rounded-lg p-4">
-              <h3 className="text-lg font-semibold text-yellow-400 mb-3">Settlement</h3>
+            <div className="bg-warning-subtle border border-warning/20 rounded-lg p-4">
+              <h3 className="text-lg font-semibold text-warning-text mb-3">Settlement</h3>
               
               <div className="space-y-4">
                 <div>
@@ -193,14 +193,14 @@ export function EmployeeShiftDetailsModal({
                     onChange={(e) => setNotes(e.target.value)}
                     placeholder="Optional notes (e.g., payment method, remarks)"
                     rows={3}
-                    className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 mt-2"
+                    className="w-full px-3 py-2 bg-input border border-input-border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-ring mt-2"
                   />
                 </div>
 
                 <Button
                   onClick={handleSettlement}
                   disabled={loading}
-                  className="w-full bg-red-600 hover:bg-red-700"
+                  className="w-full bg-destructive hover:bg-destructive-hover"
                 >
                   {loading ? 'Processing...' : 'Mark as Paid'}
                 </Button>
@@ -209,10 +209,10 @@ export function EmployeeShiftDetailsModal({
           )}
 
           {employee.isClosed && (
-            <div className="bg-purple-900/10 border border-purple-800/50 rounded-lg p-4 text-center">
-              <Lock className="mx-auto h-12 w-12 text-purple-400 mb-2" />
-              <p className="text-purple-400 font-semibold">This employee day has been closed</p>
-              <p className="text-gray-400 text-sm mt-1">No further changes can be made</p>
+            <div className="bg-accent-subtle border border-accent/20 rounded-lg p-4 text-center">
+              <Lock className="mx-auto h-12 w-12 text-accent mb-2" />
+              <p className="text-accent font-semibold">This employee day has been closed</p>
+              <p className="text-muted text-sm mt-1">No further changes can be made</p>
             </div>
           )}
         </div>

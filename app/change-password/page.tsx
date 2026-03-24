@@ -105,13 +105,13 @@ function ChangePasswordContent() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-black p-4">
-      <Card className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <Card className="w-full max-w-md animate-fadeIn">
         <CardHeader className="space-y-1">
           <div className="flex items-center justify-center mb-4">
             <div className="text-4xl font-bold">
-              <span className="text-orange-600">KKR</span>
-              <span className="text-white ml-2">Hospital Management</span>
+              <span className="text-primary">KKR</span>
+              <span className="text-foreground ml-2">HMS</span>
             </div>
           </div>
           <CardTitle className="text-2xl text-center">Change Password</CardTitle>
@@ -123,14 +123,14 @@ function ChangePasswordContent() {
           {/* Loading state */}
           {isTokenValid === null && (
             <div className="text-center py-8">
-              <p className="text-gray-400">Validating reset link...</p>
+              <p className="text-muted">Validating reset link...</p>
             </div>
           )}
 
           {/* Token expired state */}
           {isTokenExpired && (
             <div className="space-y-4">
-              <div className="p-4 rounded-md bg-red-900/20 border border-red-900 text-red-400 text-sm">
+              <div className="p-4 rounded-lg bg-destructive-subtle border border-destructive/30 text-destructive text-sm">
                 <p className="font-medium mb-2">Reset Link Expired</p>
                 <p>{error}</p>
               </div>
@@ -157,7 +157,7 @@ function ChangePasswordContent() {
           {/* Invalid token state */}
           {isTokenValid === false && !isTokenExpired && (
             <div className="space-y-4">
-              <div className="p-4 rounded-md bg-red-900/20 border border-red-900 text-red-400 text-sm">
+              <div className="p-4 rounded-lg bg-destructive-subtle border border-destructive/30 text-destructive text-sm">
                 <p className="font-medium mb-2">Invalid Reset Link</p>
                 <p>{error || 'The reset link is invalid or has already been used.'}</p>
               </div>
@@ -185,7 +185,7 @@ function ChangePasswordContent() {
           {isTokenValid && (
             <form onSubmit={handleChangePassword} className="space-y-4">
               {error && (
-                <div className="p-3 rounded-md bg-red-900/20 border border-red-900 text-red-400 text-sm">
+                <div className="p-3 rounded-lg bg-destructive-subtle border border-destructive/30 text-destructive text-sm">
                   {error}
                 </div>
               )}
@@ -201,7 +201,7 @@ function ChangePasswordContent() {
                   required
                   disabled={loading}
                 />
-                <p className="text-xs text-gray-400">Must be at least 8 characters</p>
+                <p className="text-xs text-muted">Must be at least 8 characters</p>
               </div>
               
               <div className="space-y-2">

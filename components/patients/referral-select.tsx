@@ -149,7 +149,7 @@ export function ReferralSelect({ value, onChange, disabled }: ReferralSelectProp
               setShowDropdown(true)
               setIsSearching(true)
             }}
-            className="flex h-10 w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
+            className="flex h-10 w-full rounded-md border border-input-border bg-input px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             disabled={disabled}
           />
 
@@ -158,14 +158,14 @@ export function ReferralSelect({ value, onChange, disabled }: ReferralSelectProp
             <button
               type="button"
               onClick={handleClearSelection}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
             >
               <X size={18} />
             </button>
           )}
 
           {showDropdown && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-700 rounded-md shadow-lg z-10">
+            <div className="absolute top-full left-0 right-0 mt-1 bg-surface-hover border border-input-border rounded-md shadow-lg z-10">
               {filteredReferrals.length > 0 ? (
                 <div className="max-h-48 overflow-y-auto">
                   {filteredReferrals.map((referral) => (
@@ -173,15 +173,15 @@ export function ReferralSelect({ value, onChange, disabled }: ReferralSelectProp
                       key={referral.id}
                       type="button"
                       onClick={() => handleSelectReferral(referral.id)}
-                      className="w-full text-left px-3 py-2 text-sm text-gray-100 hover:bg-gray-700 border-b border-gray-700 last:border-b-0"
+                      className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-surface-inset border-b border-input-border last:border-b-0"
                     >
                       {referral.name}
-                      {referral.phone && <span className="text-gray-400 ml-2">- {referral.phone}</span>}
+                      {referral.phone && <span className="text-muted ml-2">- {referral.phone}</span>}
                     </button>
                   ))}
                 </div>
               ) : inputValue ? (
-                <div className="px-3 py-2 text-sm text-gray-400">No results found</div>
+                <div className="px-3 py-2 text-sm text-muted">No results found</div>
               ) : null}
               <button
                 type="button"
@@ -189,7 +189,7 @@ export function ReferralSelect({ value, onChange, disabled }: ReferralSelectProp
                   e.preventDefault()
                   setShowCreateModal(true)
                 }}
-                className="w-full text-left px-3 py-2 text-sm text-orange-500 hover:bg-gray-700 border-t border-gray-700 font-medium"
+                className="w-full text-left px-3 py-2 text-sm text-primary hover:bg-surface-inset border-t border-input-border font-medium"
               >
                 + Create New Referral
               </button>
@@ -199,24 +199,24 @@ export function ReferralSelect({ value, onChange, disabled }: ReferralSelectProp
       </div>
 
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-900 rounded-lg p-6 w-full max-w-md border border-gray-800">
+        <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50 p-4">
+          <div className="bg-surface rounded-lg p-6 w-full max-w-md border border-border">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-bold text-white">Create New Referral</h2>
+              <h2 className="text-xl font-bold text-foreground">Create New Referral</h2>
               <button
                 onClick={() => {
                   setShowCreateModal(false)
                   setError('')
                   setNewReferralData({ name: '', phone: '' })
                 }}
-                className="text-gray-400 hover:text-white"
+                className="text-muted hover:text-foreground"
               >
                 <X size={24} />
               </button>
             </div>
 
             {error && (
-              <div className="p-3 rounded-md bg-red-900/20 border border-red-900 text-red-400 text-sm mb-4">
+              <div className="p-3 rounded-md bg-destructive-subtle border border-destructive/30 text-destructive text-sm mb-4">
                 {error}
               </div>
             )}
@@ -266,7 +266,7 @@ export function ReferralSelect({ value, onChange, disabled }: ReferralSelectProp
                 <Button
                   type="button"
                   onClick={handleCreateReferral}
-                  className="flex-1 bg-orange-600 hover:bg-orange-700"
+                  className="flex-1 bg-primary hover:bg-primary-hover"
                   disabled={loadingCreate || !newReferralData.name}
                 >
                   {loadingCreate ? 'Creating...' : 'OK'}

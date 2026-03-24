@@ -18,6 +18,7 @@ import {
   FlaskConical,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
+import { ThemeToggle } from '@/components/ui/theme-toggle'
 
 interface SidebarProps {
   userRole?: string
@@ -119,7 +120,7 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
       {/* Mobile menu button */}
       <button
         onClick={() => setMobileOpen(!mobileOpen)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 rounded-md bg-gray-800 text-gray-100"
+        className="lg:hidden fixed top-4 left-4 z-50 p-2 rounded-lg bg-surface border border-border text-foreground shadow-md"
       >
         {mobileOpen ? <X size={24} /> : <Menu size={24} />}
       </button>
@@ -127,16 +128,16 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
       {/* Sidebar */}
       <div
         className={cn(
-          'fixed inset-y-0 left-0 z-40 w-64 bg-gray-950 border-r border-gray-800 transform transition-transform duration-200 ease-in-out lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-40 w-64 bg-sidebar border-r border-sidebar-border transform transition-transform duration-200 ease-in-out lg:translate-x-0',
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
         <div className="flex flex-col h-full">
           {/* Logo */}
-          <div className="flex items-center justify-center h-20 border-b border-gray-800">
+          <div className="flex items-center justify-center h-20 border-b border-sidebar-border">
             <h1 className="text-2xl font-bold">
-              <span className="text-orange-600">KKR</span>{' '}
-              <span className="text-white">Hospital Management</span>
+              <span className="text-primary">KKR</span>{' '}
+              <span className="text-foreground">HMS</span>
             </h1>
           </div>
 
@@ -167,8 +168,8 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
                       <button
                         onClick={() => setIsOpen(!isOpen)}
                         className={cn(
-                          'flex items-center justify-between w-full px-4 py-3 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors',
-                          isOpen && 'bg-gray-800 text-white'
+                          'flex items-center justify-between w-full px-4 py-3 rounded-lg text-muted hover:bg-sidebar-hover hover:text-foreground transition-colors',
+                          isOpen && 'bg-sidebar-hover text-foreground'
                         )}
                       >
                         <div className="flex items-center gap-3">
@@ -191,9 +192,9 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
                                 href={subItem.href}
                                 onClick={() => setMobileOpen(false)}
                                 className={cn(
-                                  'flex items-center px-4 py-2 rounded-lg text-sm text-gray-400 hover:bg-gray-800 hover:text-white transition-colors',
+                                  'flex items-center px-4 py-2 rounded-lg text-sm text-muted hover:bg-sidebar-hover hover:text-foreground transition-colors',
                                   pathname === subItem.href &&
-                                    'bg-orange-600 text-white hover:bg-orange-700'
+                                    'bg-sidebar-active text-primary font-medium'
                                 )}
                               >
                                 {subItem.name}
@@ -212,8 +213,8 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
                       href={item.href!}
                       onClick={() => setMobileOpen(false)}
                       className={cn(
-                        'flex items-center gap-3 px-4 py-3 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors',
-                        isActive && 'bg-orange-600 text-white hover:bg-orange-700'
+                        'flex items-center gap-3 px-4 py-3 rounded-lg text-muted hover:bg-sidebar-hover hover:text-foreground transition-colors',
+                        isActive && 'bg-sidebar-active text-primary font-medium'
                       )}
                     >
                       <Icon size={20} />
@@ -225,11 +226,14 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
             </ul>
           </nav>
 
-          {/* Logout */}
-          <div className="border-t border-gray-800 p-3">
+          {/* Theme Toggle + Logout */}
+          <div className="border-t border-sidebar-border p-3 space-y-2">
+            <div className="flex items-center justify-center px-2">
+              <ThemeToggle className="w-full justify-center" />
+            </div>
             <button
               onClick={handleLogout}
-              className="flex items-center gap-3 w-full px-4 py-3 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
+              className="flex items-center gap-3 w-full px-4 py-3 rounded-lg text-muted hover:bg-destructive-subtle hover:text-destructive transition-colors"
             >
               <LogOut size={20} />
               <span className="font-medium">Logout</span>
@@ -241,7 +245,7 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
       {/* Overlay for mobile */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-30 lg:hidden"
+          className="fixed inset-0 bg-overlay backdrop-blur-sm z-30 lg:hidden"
           onClick={() => setMobileOpen(false)}
         />
       )}

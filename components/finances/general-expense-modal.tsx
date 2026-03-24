@@ -223,45 +223,45 @@ export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-900 rounded-lg w-full max-w-2xl border border-gray-800 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50 p-4">
+      <div className="bg-surface rounded-lg w-full max-w-2xl border border-border max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-800 sticky top-0 bg-gray-900">
-          <h2 className="text-xl font-bold text-white">
+        <div className="flex items-center justify-between p-6 border-b border-border sticky top-0 bg-surface">
+          <h2 className="text-xl font-bold text-foreground">
             {showAddForm ? (editingId ? 'Edit Expense' : 'Add New Expense') : 'General Expenses'}
           </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white">
+          <button onClick={onClose} className="text-muted hover:text-foreground">
             <X size={20} />
           </button>
         </div>
 
         <div className="p-6 space-y-6">
           {/* Form - Always Visible */}
-          <form onSubmit={handleSubmit} className="space-y-5 border-b border-gray-800 pb-6">
+          <form onSubmit={handleSubmit} className="space-y-5 border-b border-border pb-6">
             {/* Expense Type */}
             <div>
-              <label className="flex items-center text-sm font-medium text-orange-500 mb-2">
+              <label className="flex items-center text-sm font-medium text-primary mb-2">
                 <span className="mr-1">*</span>Expense Type
               </label>
               <div className="relative">
                 <button
                   type="button"
                   onClick={() => setShowTypeDropdown(!showTypeDropdown)}
-                  className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-gray-400 text-left focus:outline-none focus:border-orange-600 flex items-center justify-between hover:border-gray-600 transition-colors"
+                  className="w-full px-4 py-2.5 bg-input border border-input-border rounded-lg text-muted text-left focus:outline-none focus:border-ring flex items-center justify-between hover:border-border transition-colors"
                 >
                   <span>{formData.expense_type || 'Select or type expense type'}</span>
-                  <Search size={18} className="text-gray-500" />
+                  <Search size={18} className="text-muted-foreground" />
                 </button>
 
                 {showTypeDropdown && (
-                  <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 border border-orange-600 rounded-lg shadow-lg z-10 max-h-64 overflow-y-auto">
-                    <div className="sticky top-0 p-2 bg-gray-800 border-b border-gray-700">
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-input border border-primary rounded-lg shadow-lg z-10 max-h-64 overflow-y-auto">
+                    <div className="sticky top-0 p-2 bg-input border-b border-input-border">
                       <input
                         type="text"
                         placeholder="Search expense type..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm placeholder-gray-500 focus:outline-none focus:border-orange-600"
+                        className="w-full px-3 py-2 bg-surface-inset border border-border rounded text-foreground text-sm placeholder-muted-foreground focus:outline-none focus:border-ring"
                       />
                     </div>
                     <div className="max-h-48 overflow-y-auto">
@@ -274,7 +274,7 @@ export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense
                             setShowTypeDropdown(false)
                             setSearchTerm('')
                           }}
-                          className="w-full text-left px-4 py-2.5 text-gray-300 hover:bg-gray-700 transition-colors"
+                          className="w-full text-left px-4 py-2.5 text-foreground hover:bg-surface-hover transition-colors"
                         >
                           {type}
                         </button>
@@ -287,11 +287,11 @@ export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense
 
             {/* Amount */}
             <div>
-              <label className="flex items-center text-sm font-medium text-orange-500 mb-2">
+              <label className="flex items-center text-sm font-medium text-primary mb-2">
                 <span className="mr-1">*</span>Amount
               </label>
               <div className="relative">
-                <span className="absolute left-4 top-2.5 text-gray-500 text-lg">₹</span>
+                <span className="absolute left-4 top-2.5 text-muted-foreground text-lg">₹</span>
                 <input
                   type="number"
                   step="0.01"
@@ -299,14 +299,14 @@ export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense
                   onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
                   placeholder="Enter expense amount"
                   disabled={loading}
-                  className="w-full px-4 py-2.5 pl-8 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-orange-600 disabled:opacity-50"
+                  className="w-full px-4 py-2.5 pl-8 bg-input border border-input-border rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:border-ring disabled:opacity-50"
                 />
               </div>
             </div>
 
             {/* Expense Date */}
             <div>
-              <label className="flex items-center text-sm font-medium text-orange-500 mb-2">
+              <label className="flex items-center text-sm font-medium text-primary mb-2">
                 <span className="mr-1">*</span>Expense Date
               </label>
               <input
@@ -314,13 +314,13 @@ export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense
                 value={formData.expense_date}
                 onChange={(e) => setFormData({ ...formData, expense_date: e.target.value })}
                 disabled={loading}
-                className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-orange-600 disabled:opacity-50"
+                className="w-full px-4 py-2.5 bg-input border border-input-border rounded-lg text-foreground focus:outline-none focus:border-ring disabled:opacity-50"
               />
             </div>
 
             {/* Remarks */}
             <div>
-              <label className="text-sm font-medium text-gray-400 mb-2 block">
+              <label className="text-sm font-medium text-muted mb-2 block">
                 Remarks (Optional)
               </label>
               <textarea
@@ -329,7 +329,7 @@ export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense
                 placeholder="Invoice number, vendor details, etc."
                 disabled={loading}
                 rows={3}
-                className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-orange-600 disabled:opacity-50 resize-none"
+                className="w-full px-4 py-2.5 bg-input border border-input-border rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:border-ring disabled:opacity-50 resize-none"
               />
             </div>
 
@@ -339,14 +339,14 @@ export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense
                 type="button"
                 onClick={handleCancel}
                 disabled={loading}
-                className="px-6 bg-gray-700 hover:bg-gray-600 text-white"
+                className="px-6 bg-surface-inset hover:bg-surface-hover text-foreground"
               >
                 Cancel
               </Button>
               <Button
                 type="submit"
                 disabled={loading}
-                className="px-6 bg-orange-600 hover:bg-orange-700 text-white"
+                className="px-6 bg-primary hover:bg-primary-hover text-foreground"
               >
                 {loading ? 'Saving...' : editingId ? 'Update' : 'Create'}
               </Button>

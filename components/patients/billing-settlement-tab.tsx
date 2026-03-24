@@ -430,11 +430,11 @@ export default function BillingSettlementTab({
 
   if (!billing) {
     return (
-      <div className="bg-gray-800 rounded-lg p-8 text-center">
-        <p className="text-gray-400 mb-4">No billing record found for this patient</p>
+      <div className="bg-surface-hover rounded-lg p-8 text-center">
+        <p className="text-muted mb-4">No billing record found for this patient</p>
         <button
           onClick={onCreateBilling}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition-colors"
+          className="bg-info hover:bg-info-hover text-foreground px-6 py-2 rounded-lg transition-colors"
         >
           Create Billing Record
         </button>
@@ -447,9 +447,9 @@ export default function BillingSettlementTab({
   return (
     <div className="space-y-6">
       {/* Billing Summary */}
-      <div className="bg-gray-800 rounded-lg p-6">
+      <div className="bg-surface-hover rounded-lg p-6">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-xl font-semibold text-white">Billing Summary</h3>
+          <h3 className="text-xl font-semibold text-foreground">Billing Summary</h3>
           {isAdmin && (
             <button
               onClick={() => {
@@ -461,7 +461,7 @@ export default function BillingSettlementTab({
                   referral_id: billing.referral?.id || '',
                 });
               }}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+              className="flex items-center gap-2 bg-info hover:bg-info-hover text-foreground px-4 py-2 rounded-lg transition-colors"
             >
               <Plus className="h-4 w-4" />
               Set Charges
@@ -470,9 +470,9 @@ export default function BillingSettlementTab({
         </div>
 
         {showChargesForm && isAdmin && (
-          <form onSubmit={handleUpdateCharges} className="bg-gray-700 rounded-lg p-4 mb-4 space-y-4">
+          <form onSubmit={handleUpdateCharges} className="bg-surface-inset rounded-lg p-4 mb-4 space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-foreground mb-2">
                 Base Charge (₹)
               </label>
               <input
@@ -481,7 +481,7 @@ export default function BillingSettlementTab({
                 min="0"
                 value={chargesData.base_charge}
                 onChange={(e) => setChargesData({ ...chargesData, base_charge: parseFloat(e.target.value) })}
-                className="w-full bg-gray-600 text-white rounded-lg px-4 py-2 border border-gray-500 focus:border-blue-500 focus:outline-none"
+                className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
               />
             </div>
 
@@ -493,7 +493,7 @@ export default function BillingSettlementTab({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-foreground mb-2">
                 Referral Commission (₹)
               </label>
               <input
@@ -502,7 +502,7 @@ export default function BillingSettlementTab({
                 min="0"
                 value={chargesData.referral_commission_amount}
                 onChange={(e) => setChargesData({ ...chargesData, referral_commission_amount: parseFloat(e.target.value) })}
-                className="w-full bg-gray-600 text-white rounded-lg px-4 py-2 border border-gray-500 focus:border-blue-500 focus:outline-none"
+                className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
               />
             </div>
 
@@ -510,7 +510,7 @@ export default function BillingSettlementTab({
               <button
                 type="submit"
                 disabled={loading}
-                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+                className="bg-success hover:bg-success-hover text-foreground px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
               >
                 {loading ? 'Saving...' : 'Save Charges'}
               </button>
@@ -518,14 +518,14 @@ export default function BillingSettlementTab({
                 type="submit"
                 disabled={loading}
                 onClick={() => handleUpdateCharges(null, true)}
-                className="bg-red-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+                className="bg-destructive hover:bg-success-hover text-foreground px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
               >
                 {loading ? 'Deleting...' : 'Delete'}
               </button>
               <button
                 type="button"
                 onClick={() => setShowChargesForm(false)}
-                className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg transition-colors"
+                className="bg-surface-inset hover:bg-surface-inset text-foreground px-4 py-2 rounded-lg transition-colors"
               >
                 Cancel
               </button>
@@ -534,56 +534,56 @@ export default function BillingSettlementTab({
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-gray-700 rounded-lg p-4">
-            <p className="text-gray-400 text-sm">Base Charge</p>
-            <p className="text-2xl font-bold text-white">
+          <div className="bg-surface-inset rounded-lg p-4">
+            <p className="text-muted text-sm">Base Charge</p>
+            <p className="text-2xl font-bold text-foreground">
               ₹{parseFloat(billing.base_charge || 0).toFixed(2)}
             </p>
           </div>
-          <div className="bg-gray-700 rounded-lg p-4">
-            <p className="text-gray-400 text-sm">Referral Person</p>
-            <p className="text-sm text-white">
+          <div className="bg-surface-inset rounded-lg p-4">
+            <p className="text-muted text-sm">Referral Person</p>
+            <p className="text-sm text-foreground">
               {billing.referral?.name || 'Not set'}
             </p>
             {billing.referral?.phone && (
-              <p className="text-xs text-gray-400 mt-1">
+              <p className="text-xs text-muted mt-1">
                 {billing.referral.phone}
               </p>
             )}
           </div>
-          <div className="bg-gray-700 rounded-lg p-4">
-            <p className="text-gray-400 text-sm">Referral Commission</p>
-            <p className="text-2xl font-bold text-white">
+          <div className="bg-surface-inset rounded-lg p-4">
+            <p className="text-muted text-sm">Referral Commission</p>
+            <p className="text-2xl font-bold text-foreground">
               ₹{parseFloat(billing.referral_commission_amount || 0).toFixed(2)}
             </p>
           </div>
-          <div className="bg-gray-700 rounded-lg p-4">
-            <p className="text-gray-400 text-sm">Doctor Fees</p>
-            <p className="text-2xl font-bold text-white">
+          <div className="bg-surface-inset rounded-lg p-4">
+            <p className="text-muted text-sm">Doctor Fees</p>
+            <p className="text-2xl font-bold text-foreground">
               ₹{parseFloat(billing.total_doctor_fees || 0).toFixed(2)}
             </p>
           </div>
-          <div className="bg-gray-700 rounded-lg p-4">
-            <p className="text-gray-400 text-sm">Other Charges</p>
-            <p className="text-2xl font-bold text-white">
+          <div className="bg-surface-inset rounded-lg p-4">
+            <p className="text-muted text-sm">Other Charges</p>
+            <p className="text-2xl font-bold text-foreground">
               ₹{parseFloat(billing.patient_charges_total || 0).toFixed(2)}
             </p>
           </div>
-          <div className="bg-blue-700 rounded-lg p-4">
-            <p className="text-blue-200 text-sm">Total Charges</p>
-            <p className="text-2xl font-bold text-white">
+          <div className="bg-info rounded-lg p-4">
+            <p className="text-info-foreground text-sm">Total Charges</p>
+            <p className="text-2xl font-bold text-foreground">
               ₹{parseFloat(billing.total_charges || 0).toFixed(2)}
             </p>
           </div>
-          <div className="bg-green-700 rounded-lg p-4">
-            <p className="text-green-200 text-sm">Total Paid</p>
-            <p className="text-2xl font-bold text-white">
+          <div className="bg-success rounded-lg p-4">
+            <p className="text-success-foreground text-sm">Total Paid</p>
+            <p className="text-2xl font-bold text-foreground">
               ₹{parseFloat(billing.patient_paid_amount || 0).toFixed(2)}
             </p>
           </div>
-          <div className="bg-orange-700 rounded-lg p-4">
-            <p className="text-orange-200 text-sm">Balance</p>
-            <p className="text-2xl font-bold text-white">
+          <div className="bg-primary rounded-lg p-4">
+            <p className="text-primary-foreground text-sm">Balance</p>
+            <p className="text-2xl font-bold text-foreground">
               ₹{(parseFloat(billing.total_charges || 0) - parseFloat(billing.patient_paid_amount || 0)).toFixed(2)}
             </p>
           </div>
@@ -592,29 +592,29 @@ export default function BillingSettlementTab({
 
       {/* Referral Commission Settlement */}
       {billing.referral?.id && (
-        <div className="bg-gray-800 rounded-lg p-6">
-          <h3 className="text-xl font-semibold text-white mb-4">Referral Commission Settlement</h3>
+        <div className="bg-surface-hover rounded-lg p-6">
+          <h3 className="text-xl font-semibold text-foreground mb-4">Referral Commission Settlement</h3>
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <div className="bg-gray-700 rounded-lg p-4">
-              <p className="text-gray-400 text-sm">Referral</p>
-              <p className="text-white font-medium">{billing.referral?.name || 'N/A'}</p>
+            <div className="bg-surface-inset rounded-lg p-4">
+              <p className="text-muted text-sm">Referral</p>
+              <p className="text-foreground font-medium">{billing.referral?.name || 'N/A'}</p>
             </div>
-            <div className="bg-gray-700 rounded-lg p-4">
-              <p className="text-gray-400 text-sm">Commission Amount</p>
-              <p className="text-2xl font-bold text-white">
+            <div className="bg-surface-inset rounded-lg p-4">
+              <p className="text-muted text-sm">Commission Amount</p>
+              <p className="text-2xl font-bold text-foreground">
                 ₹{parseFloat(billing.referral_commission_amount || 0).toFixed(2)}
               </p>
             </div>
-            <div className="bg-gray-700 rounded-lg p-4">
-              <p className="text-gray-400 text-sm">Status</p>
+            <div className="bg-surface-inset rounded-lg p-4">
+              <p className="text-muted text-sm">Status</p>
               {billing.referral_settled ? (
-                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-green-500/20 text-green-400 mt-2">
+                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-success-subtle text-success-text mt-2">
                   <Check className="h-3 w-3" />
                   Settled
                 </span>
               ) : (
-                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-500/20 text-yellow-400 mt-2">
+                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-warning-subtle text-warning-text mt-2">
                   Pending
                 </span>
               )}
@@ -624,7 +624,7 @@ export default function BillingSettlementTab({
           {!billing.referral_settled && (
             <button
               onClick={() => setShowSettleReferralModal(true)}
-              className="bg-orange-600 hover:bg-orange-700 text-white px-6 py-2 rounded-lg transition-colors"
+              className="bg-primary hover:bg-primary-hover text-foreground px-6 py-2 rounded-lg transition-colors"
             >
               Settle Referral Commission
             </button>
@@ -635,13 +635,13 @@ export default function BillingSettlementTab({
       {/* Doctor Visit Settlements */}
       <div>
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-xl font-semibold text-white">Doctor Visit Settlements</h3>
+          <h3 className="text-xl font-semibold text-foreground">Doctor Visit Settlements</h3>
           <div className="flex gap-2">
             {isAdmin && (
               <button
                 onClick={handleSyncDoctorVisits}
                 disabled={syncing}
-                className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+                className="flex items-center gap-2 bg-success hover:bg-success-hover text-foreground px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
               >
                 {syncing ? 'Syncing...' : '🔄 Sync Doctor Visits'}
               </button>
@@ -649,57 +649,57 @@ export default function BillingSettlementTab({
           </div>
         </div>
 
-        <div className="bg-gray-800 rounded-lg overflow-hidden">
+        <div className="bg-surface-hover rounded-lg overflow-hidden">
           <table className="w-full">
-            <thead className="bg-gray-700">
+            <thead className="bg-surface-inset">
               <tr>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Patient</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Doctor</th>
-                <th className="px-4 py-3 text-center text-sm font-medium text-gray-300">Visits</th>
-                <th className="px-4 py-3 text-right text-sm font-medium text-gray-300">Per Visit</th>
-                <th className="px-4 py-3 text-right text-sm font-medium text-gray-300">Total</th>
-                <th className="px-4 py-3 text-center text-sm font-medium text-gray-300">Status</th>
-                <th className="px-4 py-3 text-center text-sm font-medium text-gray-300">Actions</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Patient</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Doctor</th>
+                <th className="px-4 py-3 text-center text-sm font-medium text-foreground">Visits</th>
+                <th className="px-4 py-3 text-right text-sm font-medium text-foreground">Per Visit</th>
+                <th className="px-4 py-3 text-right text-sm font-medium text-foreground">Total</th>
+                <th className="px-4 py-3 text-center text-sm font-medium text-foreground">Status</th>
+                <th className="px-4 py-3 text-center text-sm font-medium text-foreground">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-700">
+            <tbody className="divide-y divide-input-border">
               {settlements.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
+                  <td colSpan={7} className="px-4 py-8 text-center text-muted">
                     No settlements created yet
                   </td>
                 </tr>
               ) : (
                 settlements.map((settlement) => (
-                  <tr key={settlement.id} className="hover:bg-gray-700/50">
-                    <td className="px-4 py-3 text-sm text-white">
+                  <tr key={settlement.id} className="hover:bg-table-row-hover">
+                    <td className="px-4 py-3 text-sm text-foreground">
                       {settlement.patient?.name || 'N/A'}
                     </td>
-                    <td className="px-4 py-3 text-sm text-white">
+                    <td className="px-4 py-3 text-sm text-foreground">
                       {settlement.doctor?.name}
                       {settlement.doctor?.specialist && (
-                        <span className="text-gray-400 text-xs block">
+                        <span className="text-muted text-xs block">
                           {settlement.doctor.specialist}
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-sm text-white text-center">
+                    <td className="px-4 py-3 text-sm text-foreground text-center">
                       {settlement.visit_count}
                     </td>
-                    <td className="px-4 py-3 text-sm text-white text-right">
+                    <td className="px-4 py-3 text-sm text-foreground text-right">
                       ₹{parseFloat(settlement.amount_per_visit).toFixed(2)}
                     </td>
-                    <td className="px-4 py-3 text-sm text-white text-right font-medium">
+                    <td className="px-4 py-3 text-sm text-foreground text-right font-medium">
                       ₹{parseFloat(settlement.total_amount).toFixed(2)}
                     </td>
                     <td className="px-4 py-3 text-center">
                       {settlement.settled ? (
-                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-green-500/20 text-green-400">
+                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-success-subtle text-success-text">
                           <Check className="h-3 w-3" />
                           Settled
                         </span>
                       ) : (
-                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-500/20 text-yellow-400">
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-warning-subtle text-warning-text">
                           Pending
                         </span>
                       )}
@@ -710,7 +710,7 @@ export default function BillingSettlementTab({
                           <>
                             <button
                               onClick={() => handleEditSettlement(settlement)}
-                              className="text-blue-400 hover:text-blue-300 text-sm font-medium"
+                              className="text-info hover:text-info text-sm font-medium"
                               title="Edit"
                             >
                               Edit
@@ -735,7 +735,7 @@ export default function BillingSettlementTab({
                                   });
                                   setShowSettleModal(true);
                                 }}
-                                className="text-green-400 hover:text-green-300 text-sm font-medium"
+                                className="text-success-text hover:text-success-text text-sm font-medium"
                                 title="Settle"
                               >
                                 Settle
@@ -743,7 +743,7 @@ export default function BillingSettlementTab({
                             )}
                             <button
                               onClick={() => handleDeleteSettlement(settlement.id)}
-                              className="text-red-400 hover:text-red-300 text-sm font-medium"
+                              className="text-destructive hover:text-destructive text-sm font-medium"
                               title="Delete"
                             >
                               Delete
@@ -751,7 +751,7 @@ export default function BillingSettlementTab({
                           </>
                         )}
                         {!isAdmin && settlement.settled && (
-                          <div className="text-xs text-gray-400">
+                          <div className="text-xs text-muted">
                             {new Date(settlement.settlement_date).toLocaleDateString()}
                             <br />
                             ₹{parseFloat(settlement.settlement_amount).toFixed(2)}
@@ -769,10 +769,10 @@ export default function BillingSettlementTab({
 
       {/* Mark as Settled Modal */}
       {showSettleModal && settleData.settlement_id && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50 p-4">
+          <div className="bg-surface-hover rounded-lg p-6 w-full max-w-2xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
-              <h4 className="text-xl font-semibold text-white">
+              <h4 className="text-xl font-semibold text-foreground">
                 {!settlePricingComplete ? 'Set Consultation Fee' : 'Complete Settlement'}
               </h4>
               <button
@@ -789,7 +789,7 @@ export default function BillingSettlementTab({
                     settlement_type: 'regular',
                   });
                 }}
-                className="text-gray-400 hover:text-white"
+                className="text-muted hover:text-foreground"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -798,19 +798,19 @@ export default function BillingSettlementTab({
             {!settlePricingComplete ? (
               // STEP 1: Add Consultation Fee
               <div className="space-y-4">
-                <h5 className="text-lg font-semibold text-white">Add Consultation Fee</h5>
+                <h5 className="text-lg font-semibold text-foreground">Add Consultation Fee</h5>
 
                 {settlements.find(s => s.id === settleData.settlement_id) && (
-                  <div className="bg-gray-700 rounded-lg p-4">
-                    <p className="text-gray-400 text-sm mb-1">Doctor</p>
-                    <p className="text-white font-medium">
+                  <div className="bg-surface-inset rounded-lg p-4">
+                    <p className="text-muted text-sm mb-1">Doctor</p>
+                    <p className="text-foreground font-medium">
                       {settlements.find(s => s.id === settleData.settlement_id)?.doctor?.name}
                     </p>
                   </div>
                 )}
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-2">
+                  <label className="block text-sm font-medium text-muted mb-2">
                     Pricing Mode
                   </label>
                   <div className="flex gap-2">
@@ -818,8 +818,8 @@ export default function BillingSettlementTab({
                       type="button"
                       onClick={() => handleSettlePricingModeChange('per_visit')}
                       className={`flex-1 py-2 px-3 rounded-lg font-medium transition-colors ${settlePricingData.pricing_mode === 'per_visit'
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                          ? 'bg-info text-foreground'
+                          : 'bg-surface-inset text-foreground hover:bg-surface-hover'
                         }`}
                     >
                       Price per Visit
@@ -828,8 +828,8 @@ export default function BillingSettlementTab({
                       type="button"
                       onClick={() => handleSettlePricingModeChange('total')}
                       className={`flex-1 py-2 px-3 rounded-lg font-medium transition-colors ${settlePricingData.pricing_mode === 'total'
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                          ? 'bg-info text-foreground'
+                          : 'bg-surface-inset text-foreground hover:bg-surface-hover'
                         }`}
                     >
                       Total Price
@@ -838,7 +838,7 @@ export default function BillingSettlementTab({
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-2">
+                  <label className="block text-sm font-medium text-muted mb-2">
                     Visit Count *
                   </label>
                   <input
@@ -847,13 +847,13 @@ export default function BillingSettlementTab({
                     readOnly
                     value={settlePricingData.visit_count}
                     onChange={(e) => handleSettlePriceChange('visit_count', parseInt(e.target.value) || 0)}
-                    className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                    className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
                   />
                 </div>
 
                 {settlePricingData.pricing_mode === 'per_visit' ? (
                   <div>
-                    <label className="block text-sm font-medium text-gray-400 mb-2">
+                    <label className="block text-sm font-medium text-muted mb-2">
                       Amount Per Visit (₹) *
                     </label>
                     <input
@@ -863,12 +863,12 @@ export default function BillingSettlementTab({
                       min="0"
                       value={settlePricingData.amount_per_visit}
                       onChange={(e) => handleSettlePriceChange('amount_per_visit', parseFloat(e.target.value) || 0)}
-                      className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                      className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
                     />
                   </div>
                 ) : (
                   <div>
-                    <label className="block text-sm font-medium text-gray-400 mb-2">
+                    <label className="block text-sm font-medium text-muted mb-2">
                       Total Amount (₹) *
                     </label>
                     <input
@@ -878,19 +878,19 @@ export default function BillingSettlementTab({
                       min="0"
                       value={settlePricingData.total_amount}
                       onChange={(e) => handleSettlePriceChange('total_amount', parseFloat(e.target.value) || 0)}
-                      className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                      className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
                     />
                   </div>
                 )}
 
-                <div className="bg-blue-700 rounded-lg p-3 space-y-1">
+                <div className="bg-info rounded-lg p-3 space-y-1">
                   <div className="flex justify-between text-sm">
-                    <span className="text-blue-200">Price per Visit:</span>
-                    <span className="text-white font-medium">₹{settlePricingData.amount_per_visit.toFixed(2)}</span>
+                    <span className="text-info-foreground">Price per Visit:</span>
+                    <span className="text-foreground font-medium">₹{settlePricingData.amount_per_visit.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-blue-200">Total Amount:</span>
-                    <span className="text-white font-bold text-lg">₹{settlePricingData.total_amount.toFixed(2)}</span>
+                    <span className="text-info-foreground">Total Amount:</span>
+                    <span className="text-foreground font-bold text-lg">₹{settlePricingData.total_amount.toFixed(2)}</span>
                   </div>
                 </div>
 
@@ -899,7 +899,7 @@ export default function BillingSettlementTab({
                     type="button"
                     onClick={handleConfirmSettlePricing}
                     disabled={loading}
-                    className="flex-1 bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg transition-colors disabled:opacity-50"
+                    className="flex-1 bg-success hover:bg-success-hover text-foreground px-6 py-2 rounded-lg transition-colors disabled:opacity-50"
                   >
                     {loading ? 'Saving...' : 'Confirm & Continue to Settlement'}
                   </button>
@@ -917,7 +917,7 @@ export default function BillingSettlementTab({
                         settlement_type: 'regular',
                       });
                     }}
-                    className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded-lg transition-colors"
+                    className="bg-surface-inset hover:bg-surface-inset text-foreground px-6 py-2 rounded-lg transition-colors"
                   >
                     Cancel
                   </button>
@@ -927,25 +927,25 @@ export default function BillingSettlementTab({
               // STEP 2: Complete Settlement
               <div className="space-y-4">
                 {/* Fee Summary */}
-                <div className="bg-gray-700 rounded-lg p-4 space-y-2">
-                  <h5 className="text-lg font-semibold text-white mb-3">Consultation Fee Summary</h5>
+                <div className="bg-surface-inset rounded-lg p-4 space-y-2">
+                  <h5 className="text-lg font-semibold text-foreground mb-3">Consultation Fee Summary</h5>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-400">Price per Visit:</span>
-                    <span className="text-white font-medium">₹{settlePricingData.amount_per_visit.toFixed(2)}</span>
+                    <span className="text-muted">Price per Visit:</span>
+                    <span className="text-foreground font-medium">₹{settlePricingData.amount_per_visit.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-400">Visit Count:</span>
-                    <span className="text-white font-medium">{settlePricingData.visit_count}</span>
+                    <span className="text-muted">Visit Count:</span>
+                    <span className="text-foreground font-medium">{settlePricingData.visit_count}</span>
                   </div>
-                  <div className="border-t border-gray-600 pt-2 mt-2 flex justify-between">
-                    <span className="text-white font-semibold">Total Amount:</span>
-                    <span className="text-blue-400 font-bold text-lg">₹{settlePricingData.total_amount.toFixed(2)}</span>
+                  <div className="border-t border-border pt-2 mt-2 flex justify-between">
+                    <span className="text-foreground font-semibold">Total Amount:</span>
+                    <span className="text-info font-bold text-lg">₹{settlePricingData.total_amount.toFixed(2)}</span>
                   </div>
                 </div>
 
                 {/* Settlement Form */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-2">
+                  <label className="block text-sm font-medium text-muted mb-2">
                     Settlement Amount (₹) *
                   </label>
                   <input
@@ -955,20 +955,20 @@ export default function BillingSettlementTab({
                     min="0"
                     value={settleData.settlement_amount}
                     onChange={(e) => setSettleData({ ...settleData, settlement_amount: parseFloat(e.target.value) })}
-                    className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                    className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
                   />
-                  <p className="text-xs text-gray-400 mt-1">Should match total amount: ₹{settlePricingData.total_amount.toFixed(2)}</p>
+                  <p className="text-xs text-muted mt-1">Should match total amount: ₹{settlePricingData.total_amount.toFixed(2)}</p>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-2">
+                  <label className="block text-sm font-medium text-muted mb-2">
                     Payment Method *
                   </label>
                   <select
                     required
                     value={settleData.payment_method}
                     onChange={(e) => setSettleData({ ...settleData, payment_method: e.target.value })}
-                    className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                    className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
                   >
                     <option value="cash">CASH</option>
                     <option value="upi">UPI</option>
@@ -979,26 +979,26 @@ export default function BillingSettlementTab({
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-2">
+                  <label className="block text-sm font-medium text-muted mb-2">
                     Transaction Reference
                   </label>
                   <input
                     type="text"
                     value={settleData.transaction_reference}
                     onChange={(e) => setSettleData({ ...settleData, transaction_reference: e.target.value })}
-                    className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                    className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-2">
+                  <label className="block text-sm font-medium text-muted mb-2">
                     Notes
                   </label>
                   <textarea
                     rows={2}
                     value={settleData.settlement_notes}
                     onChange={(e) => setSettleData({ ...settleData, settlement_notes: e.target.value })}
-                    className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                    className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
                   />
                 </div>
 
@@ -1007,14 +1007,14 @@ export default function BillingSettlementTab({
                     type="button"
                     onClick={handleMarkAsSettled}
                     disabled={loading}
-                    className="flex-1 bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg transition-colors disabled:opacity-50"
+                    className="flex-1 bg-success hover:bg-success-hover text-foreground px-6 py-2 rounded-lg transition-colors disabled:opacity-50"
                   >
                     {loading ? 'Processing...' : 'Mark as Settled'}
                   </button>
                   <button
                     type="button"
                     onClick={() => setSettlePricingComplete(false)}
-                    className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded-lg transition-colors"
+                    className="bg-surface-inset hover:bg-surface-inset text-foreground px-6 py-2 rounded-lg transition-colors"
                   >
                     Back
                   </button>
@@ -1027,33 +1027,33 @@ export default function BillingSettlementTab({
 
       {/* Edit Settlement Modal */}
       {editingSettlement && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <form onSubmit={handleUpdateSettlement} className="bg-gray-800 rounded-lg p-6 w-full max-w-md space-y-4">
+        <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50 p-4">
+          <form onSubmit={handleUpdateSettlement} className="bg-surface-hover rounded-lg p-6 w-full max-w-md space-y-4">
             <div className="flex items-center justify-between mb-4">
-              <h4 className="text-xl font-semibold text-white">Edit Settlement</h4>
+              <h4 className="text-xl font-semibold text-foreground">Edit Settlement</h4>
               <button
                 type="button"
                 onClick={() => setEditingSettlement(null)}
-                className="text-gray-400 hover:text-white"
+                className="text-muted hover:text-foreground"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">
+              <label className="block text-sm font-medium text-muted mb-2">
                 Doctor
               </label>
               <input
                 type="text"
                 disabled
                 value={editingSettlement.doctor?.name || ''}
-                className="w-full bg-gray-700 text-gray-500 rounded-lg px-4 py-2 border border-gray-600 cursor-not-allowed"
+                className="w-full bg-surface-inset text-muted-foreground rounded-lg px-4 py-2 border border-border cursor-not-allowed"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">
+              <label className="block text-sm font-medium text-muted mb-2">
                 Pricing Mode
               </label>
               <div className="flex gap-2">
@@ -1061,8 +1061,8 @@ export default function BillingSettlementTab({
                   type="button"
                   onClick={() => handlePricingModeChange('per_visit')}
                   className={`flex-1 py-2 px-3 rounded-lg font-medium transition-colors ${editFormData.pricing_mode === 'per_visit'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      ? 'bg-info text-foreground'
+                      : 'bg-surface-inset text-foreground hover:bg-surface-hover'
                     }`}
                 >
                   Price per Visit
@@ -1071,8 +1071,8 @@ export default function BillingSettlementTab({
                   type="button"
                   onClick={() => handlePricingModeChange('total')}
                   className={`flex-1 py-2 px-3 rounded-lg font-medium transition-colors ${editFormData.pricing_mode === 'total'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      ? 'bg-info text-foreground'
+                      : 'bg-surface-inset text-foreground hover:bg-surface-hover'
                     }`}
                 >
                   Total Price
@@ -1081,7 +1081,7 @@ export default function BillingSettlementTab({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">
+              <label className="block text-sm font-medium text-muted mb-2">
                 Visit Count *
               </label>
               <input
@@ -1090,13 +1090,13 @@ export default function BillingSettlementTab({
                 min="1"
                 value={editFormData.visit_count}
                 readOnly
-                className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
               />
             </div>
 
             {editFormData.pricing_mode === 'per_visit' ? (
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-2">
+                <label className="block text-sm font-medium text-muted mb-2">
                   Amount Per Visit (₹) *
                 </label>
                 <input
@@ -1106,12 +1106,12 @@ export default function BillingSettlementTab({
                   min="0"
                   value={editFormData.amount_per_visit}
                   onChange={(e) => handlePriceChange('amount_per_visit', parseFloat(e.target.value) || 0)}
-                  className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                  className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
                 />
               </div>
             ) : (
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-2">
+                <label className="block text-sm font-medium text-muted mb-2">
                   Total Amount (₹) *
                 </label>
                 <input
@@ -1121,30 +1121,30 @@ export default function BillingSettlementTab({
                   min="0"
                   value={editFormData.total_amount}
                   onChange={(e) => handlePriceChange('total_amount', parseFloat(e.target.value) || 0)}
-                  className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                  className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
                 />
               </div>
             )}
 
-            <div className="bg-gray-700 rounded-lg p-3 space-y-1">
+            <div className="bg-surface-inset rounded-lg p-3 space-y-1">
               <div className="flex justify-between text-sm">
-                <span className="text-gray-400">Price per Visit:</span>
-                <span className="text-white font-medium">₹{editFormData.amount_per_visit.toFixed(2)}</span>
+                <span className="text-muted">Price per Visit:</span>
+                <span className="text-foreground font-medium">₹{editFormData.amount_per_visit.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-gray-400">Total Amount:</span>
-                <span className="text-white font-medium">₹{editFormData.total_amount.toFixed(2)}</span>
+                <span className="text-muted">Total Amount:</span>
+                <span className="text-foreground font-medium">₹{editFormData.total_amount.toFixed(2)}</span>
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">
+              <label className="block text-sm font-medium text-muted mb-2">
                 Settlement Type
               </label>
               <select
                 value={editFormData.settlement_type}
                 onChange={(e) => setEditFormData({ ...editFormData, settlement_type: e.target.value })}
-                className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
               >
                 <option value="regular">REGULAR</option>
                 <option value="partial">PARTIAL</option>
@@ -1154,14 +1154,14 @@ export default function BillingSettlementTab({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">
+              <label className="block text-sm font-medium text-muted mb-2">
                 Notes
               </label>
               <textarea
                 rows={2}
                 value={editFormData.notes}
                 onChange={(e) => setEditFormData({ ...editFormData, notes: e.target.value })}
-                className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
               />
             </div>
 
@@ -1169,14 +1169,14 @@ export default function BillingSettlementTab({
               <button
                 type="submit"
                 disabled={loading}
-                className="flex-1 bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg transition-colors disabled:opacity-50"
+                className="flex-1 bg-success hover:bg-success-hover text-foreground px-6 py-2 rounded-lg transition-colors disabled:opacity-50"
               >
                 {loading ? 'Updating...' : 'Update Settlement'}
               </button>
               <button
                 type="button"
                 onClick={() => setEditingSettlement(null)}
-                className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded-lg transition-colors"
+                className="bg-surface-inset hover:bg-surface-inset text-foreground px-6 py-2 rounded-lg transition-colors"
               >
                 Cancel
               </button>
@@ -1187,39 +1187,39 @@ export default function BillingSettlementTab({
 
       {/* Settle Referral Commission Modal */}
       {showSettleReferralModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <form onSubmit={handleSettleReferralCommission} className="bg-gray-800 rounded-lg p-6 w-full max-w-md space-y-4">
+        <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50 p-4">
+          <form onSubmit={handleSettleReferralCommission} className="bg-surface-hover rounded-lg p-6 w-full max-w-md space-y-4">
             <div className="flex items-center justify-between mb-4">
-              <h4 className="text-xl font-semibold text-white">Settle Referral Commission</h4>
+              <h4 className="text-xl font-semibold text-foreground">Settle Referral Commission</h4>
               <button
                 type="button"
                 onClick={() => setShowSettleReferralModal(false)}
-                className="text-gray-400 hover:text-white"
+                className="text-muted hover:text-foreground"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="bg-gray-700 rounded-lg p-4 space-y-2">
+            <div className="bg-surface-inset rounded-lg p-4 space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-gray-400">Referral:</span>
-                <span className="text-white font-medium">{billing?.referral?.name}</span>
+                <span className="text-muted">Referral:</span>
+                <span className="text-foreground font-medium">{billing?.referral?.name}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-gray-400">Commission Amount:</span>
-                <span className="text-white font-medium">₹{parseFloat(billing?.referral_commission_amount || 0).toFixed(2)}</span>
+                <span className="text-muted">Commission Amount:</span>
+                <span className="text-foreground font-medium">₹{parseFloat(billing?.referral_commission_amount || 0).toFixed(2)}</span>
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">
+              <label className="block text-sm font-medium text-muted mb-2">
                 Payment Method *
               </label>
               <select
                 required
                 value={settleReferralData.payment_method}
                 onChange={(e) => setSettleReferralData({ ...settleReferralData, payment_method: e.target.value })}
-                className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
               >
                 <option value="cash">CASH</option>
                 <option value="upi">UPI</option>
@@ -1230,26 +1230,26 @@ export default function BillingSettlementTab({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">
+              <label className="block text-sm font-medium text-muted mb-2">
                 Transaction Reference
               </label>
               <input
                 type="text"
                 value={settleReferralData.transaction_reference}
                 onChange={(e) => setSettleReferralData({ ...settleReferralData, transaction_reference: e.target.value })}
-                className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">
+              <label className="block text-sm font-medium text-muted mb-2">
                 Notes
               </label>
               <textarea
                 rows={2}
                 value={settleReferralData.settlement_notes}
                 onChange={(e) => setSettleReferralData({ ...settleReferralData, settlement_notes: e.target.value })}
-                className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
               />
             </div>
 
@@ -1257,14 +1257,14 @@ export default function BillingSettlementTab({
               <button
                 type="submit"
                 disabled={loading}
-                className="flex-1 bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg transition-colors disabled:opacity-50 cursor-pointer"
+                className="flex-1 bg-success hover:bg-success-hover text-foreground px-6 py-2 rounded-lg transition-colors disabled:opacity-50 cursor-pointer"
               >
                 {loading ? 'Recording...' : 'Record Settlement'}
               </button>
               <button
                 type="button"
                 onClick={() => setShowSettleReferralModal(false)}
-                className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded-lg transition-colors"
+                className="bg-surface-inset hover:bg-surface-inset text-foreground px-6 py-2 rounded-lg transition-colors"
               >
                 Cancel
               </button>

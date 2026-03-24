@@ -68,10 +68,10 @@ export default function DoctorsPage() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-white">
+            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">
               Doctor Management
             </h1>
-            <p className="text-gray-400 mt-1 text-sm sm:text-base">
+            <p className="text-muted mt-1 text-sm sm:text-base">
               Manage hospital doctors
             </p>
           </div>
@@ -93,7 +93,7 @@ export default function DoctorsPage() {
               <div className="relative w-full sm:w-64">
                 <Search
                   size={18}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-muted"
                 />
                 <Input
                   placeholder="Search doctors..."
@@ -107,9 +107,9 @@ export default function DoctorsPage() {
 
           <CardContent>
             {loading ? (
-              <div className="text-center py-12 text-gray-400">Loading...</div>
+              <div className="text-center py-12 text-muted">Loading...</div>
             ) : doctors.length === 0 ? (
-              <div className="text-center py-12 text-gray-400">
+              <div className="text-center py-12 text-muted">
                 No doctors found.
               </div>
             ) : (
@@ -118,20 +118,20 @@ export default function DoctorsPage() {
                 <div className="hidden md:block overflow-x-auto">
                   <table className="w-full">
                     <thead>
-                      <tr className="border-b border-gray-800">
-                        <th className="py-3 px-4 text-left text-gray-400">
+                      <tr className="border-b border-border">
+                        <th className="py-3 px-4 text-left text-muted">
                           Name
                         </th>
-                        <th className="py-3 px-4 text-left text-gray-400">
+                        <th className="py-3 px-4 text-left text-muted">
                           Specialist
                         </th>
-                        <th className="py-3 px-4 text-left text-gray-400">
+                        <th className="py-3 px-4 text-left text-muted">
                           Mobile
                         </th>
-                        <th className="py-3 px-4 text-left text-gray-400">
+                        <th className="py-3 px-4 text-left text-muted">
                           Created At
                         </th>
-                        <th className="py-3 px-4 text-left text-gray-400">
+                        <th className="py-3 px-4 text-left text-muted">
                           Actions
                         </th>
                       </tr>
@@ -141,18 +141,18 @@ export default function DoctorsPage() {
                       {doctors.map((doctor) => (
                         <tr
                           key={doctor.id}
-                          className="border-b border-gray-800 hover:bg-gray-900/50"
+                          className="border-b border-border hover:bg-table-row-hover"
                         >
-                          <td className="py-3 px-4 text-white">
+                          <td className="py-3 px-4 text-foreground">
                             {doctor.name}
                           </td>
-                          <td className="py-3 px-4 text-gray-300">
+                          <td className="py-3 px-4 text-foreground">
                             {doctor.specialist || 'N/A'}
                           </td>
-                          <td className="py-3 px-4 text-gray-300">
+                          <td className="py-3 px-4 text-foreground">
                             {doctor.mobile || 'N/A'}
                           </td>
-                          <td className="py-3 px-4 text-gray-300">
+                          <td className="py-3 px-4 text-foreground">
                             {formatDate(doctor.created_at)}
                           </td>
                           <td className="py-3 px-4">
@@ -187,14 +187,14 @@ export default function DoctorsPage() {
                   {doctors.map((doctor) => (
                     <div
                       key={doctor.id}
-                      className="bg-gray-800/50 rounded-lg p-4 border border-gray-700"
+                      className="bg-surface-elevated rounded-lg p-4 border border-input-border"
                     >
                       <div className="flex justify-between mb-3">
                         <div>
-                          <h3 className="text-white font-medium">
+                          <h3 className="text-foreground font-medium">
                             {doctor.name}
                           </h3>
-                          <p className="text-sm text-gray-400 mt-1">
+                          <p className="text-sm text-muted mt-1">
                             {doctor.specialist || 'N/A'}
                           </p>
                         </div>
@@ -202,14 +202,14 @@ export default function DoctorsPage() {
 
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
-                          <span className="text-gray-400">Mobile:</span>
-                          <span className="text-white">
+                          <span className="text-muted">Mobile:</span>
+                          <span className="text-foreground">
                             {doctor.mobile || 'N/A'}
                           </span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-gray-400">Created:</span>
-                          <span className="text-white">
+                          <span className="text-muted">Created:</span>
+                          <span className="text-foreground">
                             {formatDate(doctor.created_at)}
                           </span>
                         </div>

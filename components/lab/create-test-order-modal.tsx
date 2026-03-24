@@ -167,17 +167,17 @@ export function CreateTestOrderModal({ isOpen, onClose, onSuccess }: CreateTestO
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-900 rounded-lg p-4 sm:p-6 w-full max-w-2xl border border-gray-800 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50 p-4">
+      <div className="bg-surface rounded-lg p-4 sm:p-6 w-full max-w-2xl border border-border max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4 sm:mb-6">
-          <h2 className="text-xl sm:text-2xl font-bold text-white">Create Test Order</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white">
+          <h2 className="text-xl sm:text-2xl font-bold text-foreground">Create Test Order</h2>
+          <button onClick={onClose} className="text-muted hover:text-foreground">
             <X size={24} />
           </button>
         </div>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 rounded-lg text-red-400">
+          <div className="mb-4 p-3 bg-destructive-subtle border border-destructive/30 rounded-lg text-destructive">
             {error}
           </div>
         )}
@@ -185,12 +185,12 @@ export function CreateTestOrderModal({ isOpen, onClose, onSuccess }: CreateTestO
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Patient Search */}
           <div className="relative">
-            <Label htmlFor="patient" className="text-white">
+            <Label htmlFor="patient" className="text-foreground">
               Search Patient *
             </Label>
             <div className="relative">
               <Search
-                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted"
                 size={20}
               />
               <Input
@@ -199,22 +199,22 @@ export function CreateTestOrderModal({ isOpen, onClose, onSuccess }: CreateTestO
                 value={patientSearch}
                 onChange={(e) => setPatientSearch(e.target.value)}
                 onFocus={() => patientSearch.length > 2 && setShowPatientList(true)}
-                className="pl-10 bg-gray-800 border-gray-700 text-white"
+                className="pl-10 bg-input border-input-border text-foreground"
                 placeholder="Type patient name or ID..."
                 required
               />
             </div>
 
             {showPatientList && patients.length > 0 && (
-              <div className="absolute z-10 w-full mt-1 bg-gray-800 border border-gray-700 rounded-lg max-h-60 overflow-y-auto">
+              <div className="absolute z-10 w-full mt-1 bg-surface-hover border border-input-border rounded-lg max-h-60 overflow-y-auto">
                 {patients.map((patient) => (
                   <div
                     key={patient.id}
                     onClick={() => selectPatient(patient)}
-                    className="px-4 py-3 hover:bg-gray-700 cursor-pointer border-b border-gray-700 last:border-0"
+                    className="px-4 py-3 hover:bg-surface-hover cursor-pointer border-b border-input-border last:border-0"
                   >
-                    <div className="text-white font-medium">{patient.name}</div>
-                    <div className="text-sm text-gray-400">
+                    <div className="text-foreground font-medium">{patient.name}</div>
+                    <div className="text-sm text-muted">
                       {patient.patient_id} | {patient.phone}
                     </div>
                   </div>
@@ -225,7 +225,7 @@ export function CreateTestOrderModal({ isOpen, onClose, onSuccess }: CreateTestO
 
           {/* Test Selection */}
           <div>
-            <Label htmlFor="test" className="text-white">
+            <Label htmlFor="test" className="text-foreground">
               Select Test *
             </Label>
             <select
@@ -233,7 +233,7 @@ export function CreateTestOrderModal({ isOpen, onClose, onSuccess }: CreateTestO
               required
               value={formData.test_id}
               onChange={(e) => handleTestChange(e.target.value)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-white"
+              className="w-full bg-input border border-input-border rounded-md px-3 py-2 text-foreground"
             >
               <option value="">Select a test...</option>
               {tests.map((test) => (
@@ -246,7 +246,7 @@ export function CreateTestOrderModal({ isOpen, onClose, onSuccess }: CreateTestO
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="test_date" className="text-white">
+              <Label htmlFor="test_date" className="text-foreground">
                 Test Date *
               </Label>
               <Input
@@ -255,12 +255,12 @@ export function CreateTestOrderModal({ isOpen, onClose, onSuccess }: CreateTestO
                 required
                 value={formData.test_date}
                 onChange={(e) => setFormData({ ...formData, test_date: e.target.value })}
-                className="bg-gray-800 border-gray-700 text-white"
+                className="bg-input border-input-border text-foreground"
               />
             </div>
 
             <div>
-              <Label htmlFor="price" className="text-white">
+              <Label htmlFor="price" className="text-foreground">
                 Price (₹) *
               </Label>
               <Input
@@ -270,13 +270,13 @@ export function CreateTestOrderModal({ isOpen, onClose, onSuccess }: CreateTestO
                 required
                 value={formData.price}
                 onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                className="bg-gray-800 border-gray-700 text-white"
+                className="bg-input border-input-border text-foreground"
               />
             </div>
           </div>
 
           <div>
-            <Label htmlFor="discount" className="text-white">
+            <Label htmlFor="discount" className="text-foreground">
               Discount (₹)
             </Label>
             <Input
@@ -286,13 +286,13 @@ export function CreateTestOrderModal({ isOpen, onClose, onSuccess }: CreateTestO
               min="0"
               value={formData.discount}
               onChange={(e) => setFormData({ ...formData, discount: e.target.value })}
-              className="bg-gray-800 border-gray-700 text-white"
+              className="bg-input border-input-border text-foreground"
             />
           </div>
 
           {formData.price && (
-            <div className="p-3 bg-blue-600/10 border border-blue-600/50 rounded-lg">
-              <div className="text-blue-400">
+            <div className="p-3 bg-info-subtle border border-info/20 rounded-lg">
+              <div className="text-info">
                 Final Price: ₹
                 {(parseFloat(formData.price) - parseFloat(formData.discount || '0')).toFixed(2)}
               </div>
@@ -300,7 +300,7 @@ export function CreateTestOrderModal({ isOpen, onClose, onSuccess }: CreateTestO
           )}
 
           <div>
-            <Label htmlFor="notes" className="text-white">
+            <Label htmlFor="notes" className="text-foreground">
               Notes
             </Label>
             <textarea
@@ -308,7 +308,7 @@ export function CreateTestOrderModal({ isOpen, onClose, onSuccess }: CreateTestO
               rows={2}
               value={formData.notes}
               onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-              className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-white"
+              className="w-full bg-input border border-input-border rounded-md px-3 py-2 text-foreground"
               placeholder="Any additional notes..."
             />
           </div>
@@ -318,14 +318,14 @@ export function CreateTestOrderModal({ isOpen, onClose, onSuccess }: CreateTestO
               type="button"
               onClick={onClose}
               variant="outline"
-              className="flex-1 border-gray-700 text-gray-300 hover:bg-gray-800"
+              className="flex-1 border-input-border text-foreground hover:bg-surface-hover"
             >
               Cancel
             </Button>
             <Button
               type="submit"
               disabled={loading}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+              className="flex-1 bg-info hover:bg-info-hover text-foreground"
             >
               {loading ? 'Creating...' : 'Create Order'}
             </Button>

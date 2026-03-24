@@ -89,10 +89,10 @@ export default function EmployeeShiftPage() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-white">
+            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">
               Employee Shift Settlement
             </h1>
-            <p className="text-gray-400 mt-1">
+            <p className="text-muted mt-1">
               Manage employee-wise daily transactions (Admin Only)
             </p>
           </div>
@@ -115,13 +115,13 @@ export default function EmployeeShiftPage() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-gray-400">
+              <CardTitle className="text-sm font-medium text-muted">
                 Total Credits
               </CardTitle>
-              <TrendingUp className="h-4 w-4 text-green-400" />
+              <TrendingUp className="h-4 w-4 text-success-text" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-400">
+              <div className="text-2xl font-bold text-success-text">
                 {formatCurrency(totalCreditsAllEmployees)}
               </div>
             </CardContent>
@@ -129,13 +129,13 @@ export default function EmployeeShiftPage() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-gray-400">
+              <CardTitle className="text-sm font-medium text-muted">
                 Total Debits
               </CardTitle>
-              <TrendingDown className="h-4 w-4 text-red-400" />
+              <TrendingDown className="h-4 w-4 text-destructive" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-red-400">
+              <div className="text-2xl font-bold text-destructive">
                 {formatCurrency(totalDebitsAllEmployees)}
               </div>
             </CardContent>
@@ -143,13 +143,13 @@ export default function EmployeeShiftPage() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-gray-400">
+              <CardTitle className="text-sm font-medium text-muted">
                 Net Balance
               </CardTitle>
-              <DollarSign className="h-4 w-4 text-blue-400" />
+              <DollarSign className="h-4 w-4 text-info" />
             </CardHeader>
             <CardContent>
-              <div className={`text-2xl font-bold ${netBalanceAllEmployees >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              <div className={`text-2xl font-bold ${netBalanceAllEmployees >= 0 ? 'text-success-text' : 'text-destructive'}`}>
                 {formatCurrency(netBalanceAllEmployees)}
               </div>
             </CardContent>
@@ -163,9 +163,9 @@ export default function EmployeeShiftPage() {
           </CardHeader>
           <CardContent>
             {loading ? (
-              <div className="text-center py-12 text-gray-400">Loading...</div>
+              <div className="text-center py-12 text-muted">Loading...</div>
             ) : !data?.employeeSummaries || data.employeeSummaries.length === 0 ? (
-              <div className="text-center py-12 text-gray-400">
+              <div className="text-center py-12 text-muted">
                 <AlertCircle className="mx-auto h-12 w-12 mb-4" />
                 <p>No employee transactions for this date</p>
               </div>
@@ -175,39 +175,39 @@ export default function EmployeeShiftPage() {
                 <div className="hidden md:block overflow-x-auto">
                   <table className="w-full">
                     <thead>
-                      <tr className="border-b border-gray-800">
-                        <th className="py-3 px-4 text-left text-gray-400">Employee Name</th>
-                        <th className="py-3 px-4 text-left text-gray-400">Credits (₹)</th>
-                        <th className="py-3 px-4 text-left text-gray-400">Debits (₹)</th>
-                        <th className="py-3 px-4 text-left text-gray-400">Balance (₹)</th>
-                        <th className="py-3 px-4 text-left text-gray-400">Transactions</th>
-                        <th className="py-3 px-4 text-left text-gray-400">Status</th>
-                        <th className="py-3 px-4 text-left text-gray-400">Actions</th>
+                      <tr className="border-b border-border">
+                        <th className="py-3 px-4 text-left text-muted">Employee Name</th>
+                        <th className="py-3 px-4 text-left text-muted">Credits (₹)</th>
+                        <th className="py-3 px-4 text-left text-muted">Debits (₹)</th>
+                        <th className="py-3 px-4 text-left text-muted">Balance (₹)</th>
+                        <th className="py-3 px-4 text-left text-muted">Transactions</th>
+                        <th className="py-3 px-4 text-left text-muted">Status</th>
+                        <th className="py-3 px-4 text-left text-muted">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {data.employeeSummaries.map((emp) => (
-                        <tr key={emp.employeeId} className="border-b border-gray-800 hover:bg-gray-900/50">
-                          <td className="py-3 px-4 text-white font-medium">
+                        <tr key={emp.employeeId} className="border-b border-border hover:bg-table-row-hover">
+                          <td className="py-3 px-4 text-foreground font-medium">
                             {emp.employeeName}
                           </td>
-                          <td className="py-3 px-4 text-green-400">
+                          <td className="py-3 px-4 text-success-text">
                             {formatCurrency(emp.totalCredits)}
                           </td>
-                          <td className="py-3 px-4 text-red-400">
+                          <td className="py-3 px-4 text-destructive">
                             {formatCurrency(emp.totalDebits)}
                           </td>
-                          <td className={`py-3 px-4 font-bold ${emp.netBalance >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          <td className={`py-3 px-4 font-bold ${emp.netBalance >= 0 ? 'text-success-text' : 'text-destructive'}`}>
                             {formatCurrency(emp.netBalance)}
                           </td>
-                          <td className="py-3 px-4 text-gray-300">
+                          <td className="py-3 px-4 text-foreground">
                             {emp.transactionCount}
                           </td>
                           <td className="py-3 px-4">
                             <span className={`px-3 py-1 rounded-full text-xs border ${
                               emp.isClosed
-                                ? 'bg-purple-900/30 text-purple-400 border-purple-800'
-                                : 'bg-yellow-900/30 text-yellow-400 border-yellow-800'
+                                ? 'bg-accent-subtle text-accent border-accent/20'
+                                : 'bg-warning-subtle text-warning-text border-warning/20'
                             }`}>
                               {emp.isClosed ? (
                                 <>
@@ -243,19 +243,19 @@ export default function EmployeeShiftPage() {
                   {data.employeeSummaries.map((emp) => (
                     <div
                       key={emp.employeeId}
-                      className="bg-gray-800/50 rounded-lg p-4 border border-gray-700"
+                      className="bg-surface-hover rounded-lg p-4 border border-input-border"
                     >
                       <div className="flex justify-between items-start mb-3">
                         <div>
-                          <h3 className="text-white font-medium">{emp.employeeName}</h3>
-                          <p className="text-sm text-gray-400 mt-1">
+                          <h3 className="text-foreground font-medium">{emp.employeeName}</h3>
+                          <p className="text-sm text-muted mt-1">
                             {emp.transactionCount} transactions
                           </p>
                         </div>
                         <span className={`px-2 py-1 rounded-full text-xs border ${
                           emp.isClosed
-                            ? 'bg-purple-900/30 text-purple-400 border-purple-800'
-                            : 'bg-yellow-900/30 text-yellow-400 border-yellow-800'
+                            ? 'bg-accent-subtle text-accent border-accent/20'
+                            : 'bg-warning-subtle text-warning-text border-warning/20'
                         }`}>
                           {emp.isClosed ? '🔒 CLOSED' : 'PENDING'}
                         </span>
@@ -263,20 +263,20 @@ export default function EmployeeShiftPage() {
 
                       <div className="space-y-2 text-sm mb-4">
                         <div className="flex justify-between">
-                          <span className="text-gray-400">Credits:</span>
-                          <span className="text-green-400 font-medium">
+                          <span className="text-muted">Credits:</span>
+                          <span className="text-success-text font-medium">
                             {formatCurrency(emp.totalCredits)}
                           </span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-gray-400">Debits:</span>
-                          <span className="text-red-400 font-medium">
+                          <span className="text-muted">Debits:</span>
+                          <span className="text-destructive font-medium">
                             {formatCurrency(emp.totalDebits)}
                           </span>
                         </div>
-                        <div className="flex justify-between border-t border-gray-700 pt-2">
-                          <span className="text-gray-400 font-medium">Balance:</span>
-                          <span className={`font-bold ${emp.netBalance >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        <div className="flex justify-between border-t border-input-border pt-2">
+                          <span className="text-muted font-medium">Balance:</span>
+                          <span className={`font-bold ${emp.netBalance >= 0 ? 'text-success-text' : 'text-destructive'}`}>
                             {formatCurrency(emp.netBalance)}
                           </span>
                         </div>

@@ -81,8 +81,8 @@ export default function PatientsPage() {
 
   const getStatusColor = (status: string) => {
     return status === 'Active'
-      ? 'bg-green-900/30 text-green-400 border-green-800'
-      : 'bg-gray-900/30 text-gray-400 border-gray-800'
+      ? 'bg-success-subtle text-success-text border-success/20'
+      : 'bg-surface text-muted border-border'
   }
 
   return (
@@ -90,8 +90,8 @@ export default function PatientsPage() {
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-white">Patient Management</h1>
-            <p className="text-gray-400 mt-1 text-sm sm:text-base">Manage patient records</p>
+            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Patient Management</h1>
+            <p className="text-muted mt-1 text-sm sm:text-base">Manage patient records</p>
           </div>
           <div className="flex gap-2 w-full sm:w-auto">
             <Button
@@ -110,7 +110,7 @@ export default function PatientsPage() {
               <span className="text-base sm:text-lg">Total {totalPatients} patients</span>
               <div className="flex items-center gap-2 w-full sm:w-auto">
                 <div className="relative flex-1 sm:flex-none">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted" size={18} />
                   <Input
                     placeholder="Search patients..."
                     value={searchTerm}
@@ -123,9 +123,9 @@ export default function PatientsPage() {
           </CardHeader>
           <CardContent>
             {loading ? (
-              <div className="text-center py-12 text-gray-400">Loading...</div>
+              <div className="text-center py-12 text-muted">Loading...</div>
             ) : patients.length === 0 ? (
-              <div className="text-center py-12 text-gray-400">
+              <div className="text-center py-12 text-muted">
                 No patients found. {searchTerm && 'Try a different search term or '}Click "Add Patient" to create a new record.
               </div>
             ) : (
@@ -134,36 +134,36 @@ export default function PatientsPage() {
                 <div className="hidden md:block overflow-x-auto">
                   <table className="w-full">
                     <thead>
-                      <tr className="border-b border-gray-800">
-                        <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Patient ID</th>
-                        <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Name</th>
-                        <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Gender</th>
-                        <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Date of Join</th>
-                        <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Phone</th>
-                        <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Status</th>
-                        <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">Actions</th>
+                      <tr className="border-b border-border">
+                        <th className="text-left py-3 px-4 text-sm font-medium text-muted">Patient ID</th>
+                        <th className="text-left py-3 px-4 text-sm font-medium text-muted">Name</th>
+                        <th className="text-left py-3 px-4 text-sm font-medium text-muted">Gender</th>
+                        <th className="text-left py-3 px-4 text-sm font-medium text-muted">Date of Join</th>
+                        <th className="text-left py-3 px-4 text-sm font-medium text-muted">Phone</th>
+                        <th className="text-left py-3 px-4 text-sm font-medium text-muted">Status</th>
+                        <th className="text-left py-3 px-4 text-sm font-medium text-muted">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {patients.map((patient: any) => (
                         <tr
                           key={patient.id}
-                          className="border-b border-gray-800 hover:bg-gray-900/50 cursor-pointer"
+                          className="border-b border-border hover:bg-table-row-hover cursor-pointer"
                           onClick={() => router.push(`/patients/${patient.id}`)}
                         >
-                          <td className="py-3 px-4 text-blue-400 font-medium">{patient.patient_id}</td>
-                          <td className="py-3 px-4 text-white flex items-center gap-2">
+                          <td className="py-3 px-4 text-info font-medium">{patient.patient_id}</td>
+                          <td className="py-3 px-4 text-foreground flex items-center gap-2">
                             {patient.name}
                           </td>
                           <td className="py-3 px-4">
-                            <span className="px-3 py-1 rounded-full text-xs font-medium border bg-blue-900/30 text-blue-400 border-blue-800">
+                            <span className="px-3 py-1 rounded-full text-xs font-medium border bg-info-subtle text-info border-info/20">
                               {patient.gender}
                             </span>
                           </td>
-                          <td className="py-3 px-4 text-gray-300">
+                          <td className="py-3 px-4 text-foreground">
                             {patient.date_of_join ? new Date(patient.date_of_join).toLocaleDateString() : 'N/A'}
                           </td>
-                          <td className="py-3 px-4 text-gray-300">{patient.phone || 'N/A'}</td>
+                          <td className="py-3 px-4 text-foreground">{patient.phone || 'N/A'}</td>
                           <td className="py-3 px-4">
                             <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(patient.status)}`}>
                               {patient.status}
@@ -205,13 +205,13 @@ export default function PatientsPage() {
                   {patients.map((patient: any) => (
                     <div
                       key={patient.id}
-                      className="bg-gray-800/50 rounded-lg p-4 border border-gray-700 cursor-pointer hover:bg-gray-800 transition-colors"
+                      className="bg-surface-elevated rounded-lg p-4 border border-input-border cursor-pointer hover:bg-surface-hover transition-colors"
                       onClick={() => router.push(`/patients/${patient.id}`)}
                     >
                       <div className="flex items-start justify-between mb-3">
                         <div>
-                          <div className="text-blue-400 font-medium text-sm">{patient.patient_id}</div>
-                          <h3 className="text-white font-medium mt-1">{patient.name}</h3>
+                          <div className="text-info font-medium text-sm">{patient.patient_id}</div>
+                          <h3 className="text-foreground font-medium mt-1">{patient.name}</h3>
                         </div>
                         <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(patient.status)}`}>
                           {patient.status}
@@ -219,18 +219,18 @@ export default function PatientsPage() {
                       </div>
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
-                          <span className="text-gray-400">Gender:</span>
-                          <span className="text-white">{patient.gender}</span>
+                          <span className="text-muted">Gender:</span>
+                          <span className="text-foreground">{patient.gender}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-gray-400">Date of Join:</span>
-                          <span className="text-white">
+                          <span className="text-muted">Date of Join:</span>
+                          <span className="text-foreground">
                             {patient.date_of_join ? new Date(patient.date_of_join).toLocaleDateString() : 'N/A'}
                           </span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-gray-400">Phone:</span>
-                          <span className="text-white">{patient.phone || 'N/A'}</span>
+                          <span className="text-muted">Phone:</span>
+                          <span className="text-foreground">{patient.phone || 'N/A'}</span>
                         </div>
                       </div>
                       <div className="flex gap-2 mt-4">

@@ -6,8 +6,8 @@ export default async function EmployeeLedgerPage() {
     <DashboardLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold text-white">Employee Shift Schedule</h1>
-          <p className="text-gray-400 mt-1">Track employee work schedules and shifts</p>
+          <h1 className="text-3xl font-bold text-foreground">Employee Shift Schedule</h1>
+          <p className="text-muted mt-1">Track employee work schedules and shifts</p>
         </div>
 
         <Card>
@@ -15,7 +15,7 @@ export default async function EmployeeLedgerPage() {
             <CardTitle>Employee Schedules</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-center py-12 text-gray-400">
+            <div className="text-center py-12 text-muted">
               No employee shift records found.
             </div>
           </CardContent>

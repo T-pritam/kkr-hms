@@ -65,13 +65,13 @@ export function EditUserModal({ isOpen, onClose, onSuccess, user }: EditUserModa
   if (!isOpen || !user) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-900 rounded-lg p-4 sm:p-6 w-full max-w-md border border-gray-800 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50 p-4">
+      <div className="bg-surface rounded-lg p-4 sm:p-6 w-full max-w-md border border-border max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4 sm:mb-6">
-          <h2 className="text-xl sm:text-2xl font-bold text-white">Edit User</h2>
+          <h2 className="text-xl sm:text-2xl font-bold text-foreground">Edit User</h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white"
+            className="text-muted hover:text-foreground"
           >
             <X size={24} />
           </button>
@@ -79,7 +79,7 @@ export function EditUserModal({ isOpen, onClose, onSuccess, user }: EditUserModa
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <div className="p-3 rounded-md bg-red-900/20 border border-red-900 text-red-400 text-sm">
+            <div className="p-3 rounded-md bg-destructive-subtle border border-destructive/30 text-destructive text-sm">
               {error}
             </div>
           )}
@@ -119,14 +119,14 @@ export function EditUserModal({ isOpen, onClose, onSuccess, user }: EditUserModa
               onChange={(e) =>
                 setFormData({ ...formData, role: e.target.value })
               }
-              className="flex h-10 w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
+              className="flex h-10 w-full rounded-md border border-input-border bg-input px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               disabled={loading}
             >
               <option value="RECEPTIONIST">Receptionist</option>
               <option value="NURSE">Nurse</option>
               <option value="DOCTOR">Doctor</option>
             </select>
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-muted">
               Note: Admin role cannot be modified
             </p>
           </div>
@@ -139,7 +139,7 @@ export function EditUserModal({ isOpen, onClose, onSuccess, user }: EditUserModa
               onChange={(e) =>
                 setFormData({ ...formData, status: e.target.value })
               }
-              className="flex h-10 w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
+              className="flex h-10 w-full rounded-md border border-input-border bg-input px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               disabled={loading}
             >
               <option value="ACTIVE">Active</option>

@@ -141,11 +141,11 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
 
   if (!billing) {
     return (
-      <div className="bg-gray-800 rounded-lg p-8 text-center">
-        <p className="text-gray-400 mb-4">No billing record found for this patient</p>
+      <div className="bg-surface-hover rounded-lg p-8 text-center">
+        <p className="text-muted mb-4">No billing record found for this patient</p>
         <button
           onClick={onCreateBilling}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition-colors"
+          className="bg-info hover:bg-info-hover text-foreground px-6 py-2 rounded-lg transition-colors"
         >
           Create Billing Record
         </button>
@@ -159,11 +159,11 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h3 className="text-xl font-semibold text-white">Payment Installments</h3>
+          <h3 className="text-xl font-semibold text-foreground">Payment Installments</h3>
         </div>
         <button
           onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+          className="flex items-center gap-2 bg-info hover:bg-info-hover text-foreground px-4 py-2 rounded-lg transition-colors"
         >
           <Plus className="h-4 w-4" />
           Add Payment
@@ -171,10 +171,10 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
       </div>
 
       {showForm && (
-        <form onSubmit={handleSubmit} className="bg-gray-800 rounded-lg p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="bg-surface-hover rounded-lg p-6 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">
+              <label className="block text-sm font-medium text-muted mb-2">
                 Amount (₹) *
               </label>
               <input
@@ -184,12 +184,12 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
                 min="0.01"
                 value={formData.amount}
                 onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) })}
-                className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">
+              <label className="block text-sm font-medium text-muted mb-2">
                 Payment Date *
               </label>
               <input
@@ -197,19 +197,19 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
                 required
                 value={formData.payment_date}
                 onChange={(e) => setFormData({ ...formData, payment_date: e.target.value })}
-                className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">
+              <label className="block text-sm font-medium text-muted mb-2">
                 Payment Method *
               </label>
               <select
                 required
                 value={formData.payment_method}
                 onChange={(e) => setFormData({ ...formData, payment_method: e.target.value })}
-                className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
               >
                 {paymentMethods.map((method) => (
                   <option key={method} value={method}>
@@ -220,7 +220,7 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">
+              <label className="block text-sm font-medium text-muted mb-2">
                 Transaction Reference {formData.payment_method === 'upi' && '*'}
               </label>
               <input
@@ -228,20 +228,20 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
                 required={formData.payment_method === 'upi'}
                 value={formData.transaction_reference}
                 onChange={(e) => setFormData({ ...formData, transaction_reference: e.target.value })}
-                className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
                 placeholder="UPI ID / Transaction ID"
               />
             </div>
 
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-400 mb-2">
+              <label className="block text-sm font-medium text-muted mb-2">
                 Remarks
               </label>
               <textarea
                 rows={2}
                 value={formData.remarks}
                 onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
-                className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
               />
             </div>
           </div>
@@ -250,14 +250,14 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
             <button
               type="submit"
               disabled={loading}
-              className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg transition-colors disabled:opacity-50"
+              className="bg-success hover:bg-success-hover text-foreground px-6 py-2 rounded-lg transition-colors disabled:opacity-50"
             >
               {loading ? 'Saving...' : editingId ? 'Update Payment' : 'Save Payment'}
             </button>
             <button
               type="button"
               onClick={resetForm}
-              className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded-lg transition-colors"
+              className="bg-surface-inset hover:bg-surface-inset text-foreground px-6 py-2 rounded-lg transition-colors"
             >
               Cancel
             </button>
@@ -265,50 +265,50 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
         </form>
       )}
 
-      <div className="bg-gray-800 rounded-lg overflow-hidden">
+      <div className="bg-surface-hover rounded-lg overflow-hidden">
         <table className="w-full">
-          <thead className="bg-gray-700">
+          <thead className="bg-surface-inset">
             <tr>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">#</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Date</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Method</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Reference</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Remarks</th>
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-300">Created By</th>
-              <th className="px-4 py-3 text-right text-sm font-medium text-gray-300">Amount</th>
-              <th className="px-4 py-3 text-center text-sm font-medium text-gray-300">Actions</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-foreground">#</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Date</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Method</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Reference</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Remarks</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Created By</th>
+              <th className="px-4 py-3 text-right text-sm font-medium text-foreground">Amount</th>
+              <th className="px-4 py-3 text-center text-sm font-medium text-foreground">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-700">
+          <tbody className="divide-y divide-input-border">
             {installments.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={8} className="px-4 py-8 text-center text-muted">
                   No payments recorded yet
                 </td>
               </tr>
             ) : (
               <>
                 {installments.map((installment) => (
-                  <tr key={installment.id} className="hover:bg-gray-700/50">
-                    <td className="px-4 py-3 text-sm text-white">
+                  <tr key={installment.id} className="hover:bg-table-row-hover">
+                    <td className="px-4 py-3 text-sm text-foreground">
                       {installment.installment_number}
                     </td>
-                    <td className="px-4 py-3 text-sm text-white">
+                    <td className="px-4 py-3 text-sm text-foreground">
                       {new Date(installment.payment_date).toLocaleDateString()}
                     </td>
-                    <td className="px-4 py-3 text-sm text-white">
+                    <td className="px-4 py-3 text-sm text-foreground">
                       {installment.payment_method.toUpperCase()}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-400">
+                    <td className="px-4 py-3 text-sm text-muted">
                       {installment.transaction_reference || '-'}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-400">
+                    <td className="px-4 py-3 text-sm text-muted">
                       {installment.remarks || '-'}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-400">
+                    <td className="px-4 py-3 text-sm text-muted">
                       {installment.users?.username || 'Unknown'}
                     </td>
-                    <td className="px-4 py-3 text-sm text-white text-right font-medium">
+                    <td className="px-4 py-3 text-sm text-foreground text-right font-medium">
                       ₹{parseFloat(installment.amount).toFixed(2)}
                     </td>
                     <td className="px-4 py-3 text-center">
@@ -337,11 +337,11 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
                     </td>
                   </tr>
                 ))}
-                <tr className="bg-gray-700 font-semibold">
-                  <td colSpan={6} className="px-4 py-3 text-sm text-white text-right">
+                <tr className="bg-surface-inset font-semibold">
+                  <td colSpan={6} className="px-4 py-3 text-sm text-foreground text-right">
                     Total Paid:
                   </td>
-                  <td className="px-4 py-3 text-sm text-white text-right">
+                  <td className="px-4 py-3 text-sm text-foreground text-right">
                     ₹{installments.reduce((sum, i) => sum + parseFloat(i.amount), 0).toFixed(2)}
                   </td>
                   <td colSpan={3}></td>

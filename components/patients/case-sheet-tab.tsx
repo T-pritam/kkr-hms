@@ -294,14 +294,14 @@ export default function CaseSheetTab({ patientId, billing }: CaseSheetTabProps) 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h3 className="text-xl font-semibold text-white">Case Sheet & Discharge</h3>
+        <h3 className="text-xl font-semibold text-foreground">Case Sheet & Discharge</h3>
         {!caseSheet && (
           <button
             onClick={() => {
               setShowForm(!showForm);
               setIsEditing(false);
             }}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+            className="flex items-center gap-2 bg-info hover:bg-info-hover text-foreground px-4 py-2 rounded-lg transition-colors"
           >
             <Plus className="h-4 w-4" />
             Add Case Sheet
@@ -310,22 +310,22 @@ export default function CaseSheetTab({ patientId, billing }: CaseSheetTabProps) 
       </div>
 
       {showForm && (
-        <form onSubmit={handleSubmit} className="bg-gray-800 rounded-lg p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="bg-surface-hover rounded-lg p-6 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">
+              <label className="block text-sm font-medium text-muted mb-2">
                 Discharge Date
               </label>
               <input
                 type="date"
                 value={formData.discharge_date}
                 onChange={(e) => setFormData({ ...formData, discharge_date: e.target.value })}
-                className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">
+              <label className="block text-sm font-medium text-muted mb-2">
                 Upload Case Sheet (PDF)
               </label>
               <div className="relative">
@@ -333,25 +333,25 @@ export default function CaseSheetTab({ patientId, billing }: CaseSheetTabProps) 
                   type="file"
                   accept=".pdf"
                   onChange={handleFileChange}
-                  className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:bg-blue-600 file:text-white file:cursor-pointer hover:file:bg-blue-700"
+                  className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:bg-info file:text-foreground file:cursor-pointer hover:file:bg-info-hover"
                 />
               </div>
               {formData.case_sheet_file && (
-                <p className="text-sm text-gray-400 mt-1">
+                <p className="text-sm text-muted mt-1">
                   Selected: {formData.case_sheet_file.name}
                 </p>
               )}
             </div>
 
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-400 mb-2">
+              <label className="block text-sm font-medium text-muted mb-2">
                 Discharge Notes
               </label>
               <textarea
                 rows={5}
                 value={formData.discharge_notes}
                 onChange={(e) => setFormData({ ...formData, discharge_notes: e.target.value })}
-                className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
                 placeholder="Enter discharge summary, follow-up instructions, etc..."
               />
             </div>
@@ -361,7 +361,7 @@ export default function CaseSheetTab({ patientId, billing }: CaseSheetTabProps) 
             <button
               type="submit"
               disabled={loading || uploading}
-              className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg transition-colors disabled:opacity-50"
+              className="bg-success hover:bg-success-hover text-foreground px-6 py-2 rounded-lg transition-colors disabled:opacity-50"
             >
               {uploading ? 'Uploading...' : loading ? 'Saving...' : 'Save Case Sheet'}
             </button>
@@ -375,7 +375,7 @@ export default function CaseSheetTab({ patientId, billing }: CaseSheetTabProps) 
                   case_sheet_file: null,
                 });
               }}
-              className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded-lg transition-colors"
+              className="bg-surface-inset hover:bg-surface-inset text-foreground px-6 py-2 rounded-lg transition-colors"
             >
               Cancel
             </button>
@@ -385,38 +385,38 @@ export default function CaseSheetTab({ patientId, billing }: CaseSheetTabProps) 
 
       <div className="space-y-4">
         {!caseSheet ? (
-          <div className="bg-gray-800 rounded-lg p-8 text-center text-gray-400">
+          <div className="bg-surface-hover rounded-lg p-8 text-center text-muted">
             No case sheet recorded yet
           </div>
         ) : (
-          <div className="bg-gray-800 rounded-lg p-6 space-y-4">
+          <div className="bg-surface-hover rounded-lg p-6 space-y-4">
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-4">
-                  <FileText className="h-5 w-5 text-blue-400" />
-                  <h4 className="text-lg font-semibold text-white">
+                  <FileText className="h-5 w-5 text-info" />
+                  <h4 className="text-lg font-semibold text-foreground">
                     Case Sheet - {caseSheet.discharge_date ? new Date(caseSheet.discharge_date).toLocaleDateString() : 'No Date'}
                   </h4>
                 </div>
                 
                 {caseSheet.discharge_notes && (
                   <div className="mb-4">
-                    <p className="text-sm font-medium text-gray-400 mb-1">Discharge Notes:</p>
-                    <p className="text-white whitespace-pre-wrap">{caseSheet.discharge_notes}</p>
+                    <p className="text-sm font-medium text-muted mb-1">Discharge Notes:</p>
+                    <p className="text-foreground whitespace-pre-wrap">{caseSheet.discharge_notes}</p>
                   </div>
                 )}
 
                 <div className="grid grid-cols-2 gap-4 text-sm mb-4">
                   <div>
-                    <span className="text-gray-400">Created:</span>
-                    <span className="text-white ml-2">
+                    <span className="text-muted">Created:</span>
+                    <span className="text-foreground ml-2">
                       {new Date(caseSheet.created_at).toLocaleString()}
                     </span>
                   </div>
                   {caseSheet.uploaded_at && (
                     <div>
-                      <span className="text-gray-400">Uploaded:</span>
-                      <span className="text-white ml-2">
+                      <span className="text-muted">Uploaded:</span>
+                      <span className="text-foreground ml-2">
                         {new Date(caseSheet.uploaded_at).toLocaleString()}
                       </span>
                     </div>
@@ -428,14 +428,14 @@ export default function CaseSheetTab({ patientId, billing }: CaseSheetTabProps) 
                 <div className="flex gap-2">
                   <button
                     onClick={() => handleViewPDF()}
-                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors ml-4"
+                    className="flex items-center gap-2 bg-info hover:bg-info-hover text-foreground px-4 py-2 rounded-lg transition-colors ml-4"
                   >
                     <FileText className="h-4 w-4" />
                     View PDF
                   </button>
                   <button
                     onClick={() => handleDownloadPDF()}
-                    className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors"
+                    className="flex items-center gap-2 bg-success hover:bg-success-hover text-foreground px-4 py-2 rounded-lg transition-colors"
                   >
                     <Download className="h-4 w-4" />
                     Download PDF
@@ -444,13 +444,13 @@ export default function CaseSheetTab({ patientId, billing }: CaseSheetTabProps) 
               )}
             </div>
 
-            <div className="flex gap-2 pt-4 border-t border-gray-700">
+            <div className="flex gap-2 pt-4 border-t border-input-border">
               <button
                 onClick={() => {
                   setShowForm(!showForm);
                   setIsEditing(true);
                 }}
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+                className="flex items-center gap-2 bg-info hover:bg-info-hover text-foreground px-4 py-2 rounded-lg transition-colors"
               >
                 <Plus className="h-4 w-4" />
                 Edit Case Sheet
@@ -458,7 +458,7 @@ export default function CaseSheetTab({ patientId, billing }: CaseSheetTabProps) 
               {user?.role === 'ADMIN' && (
                 <button
                   onClick={handleDelete}
-                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors"
+                  className="flex items-center gap-2 bg-destructive hover:bg-destructive-hover text-foreground px-4 py-2 rounded-lg transition-colors"
                 >
                   <Trash2 className="h-4 w-4" />
                   Delete

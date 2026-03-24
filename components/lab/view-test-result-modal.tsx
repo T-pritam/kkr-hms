@@ -64,13 +64,13 @@ export function ViewTestResultModal({ isOpen, resultId, onClose }: ViewTestResul
   const getFlagColor = (flag: string) => {
     switch (flag) {
       case 'low':
-        return 'text-blue-400'
+        return 'text-info'
       case 'high':
-        return 'text-orange-400'
+        return 'text-primary'
       case 'critical':
-        return 'text-red-400 font-bold'
+        return 'text-destructive font-bold'
       default:
-        return 'text-green-400'
+        return 'text-success-text'
     }
   }
 
@@ -90,23 +90,23 @@ export function ViewTestResultModal({ isOpen, resultId, onClose }: ViewTestResul
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-900 rounded-lg p-4 sm:p-6 w-full max-w-4xl border border-gray-800 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50 p-4">
+      <div className="bg-surface rounded-lg p-4 sm:p-6 w-full max-w-4xl border border-border max-h-[90vh] overflow-y-auto">
         {loading ? (
           <div className="text-center py-12">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-            <p className="mt-2 text-gray-400">Loading test result...</p>
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-info"></div>
+            <p className="mt-2 text-muted">Loading test result...</p>
           </div>
         ) : testResult ? (
           <>
             {/* Header */}
             <div className="flex items-center justify-between mb-6 print:hidden">
-              <h2 className="text-xl sm:text-2xl font-bold text-white">Test Result Report</h2>
+              <h2 className="text-xl sm:text-2xl font-bold text-foreground">Test Result Report</h2>
               <div className="flex gap-2">
                 {testResult.status === 'completed' && (
                   <Button
                     onClick={handleVerify}
-                    className="bg-green-600 hover:bg-green-700 text-white"
+                    className="bg-success hover:bg-success-hover text-foreground"
                   >
                     <CheckCircle className="mr-2" size={16} />
                     Verify & Issue
@@ -115,12 +115,12 @@ export function ViewTestResultModal({ isOpen, resultId, onClose }: ViewTestResul
                 <Button
                   onClick={handlePrint}
                   variant="outline"
-                  className="border-gray-700 text-gray-300"
+                  className="border-input-border text-foreground"
                 >
                   <Printer size={16} className="mr-2" />
                   Print
                 </Button>
-                <button onClick={onClose} className="text-gray-400 hover:text-white">
+                <button onClick={onClose} className="text-muted hover:text-foreground">
                   <X size={24} />
                 </button>
               </div>
@@ -129,7 +129,7 @@ export function ViewTestResultModal({ isOpen, resultId, onClose }: ViewTestResul
             {/* Report Content - Print Friendly */}
             <div className="bg-white text-black p-8 rounded-lg print:bg-white">
               {/* Hospital Header */}
-              <div className="text-center border-b-2 border-gray-800 pb-4 mb-6">
+              <div className="text-center border-b-2 border-border pb-4 mb-6">
                 <h1 className="text-2xl font-bold">KKR Hospital & Medical Services</h1>
                 <p className="text-sm text-gray-600 mt-1">Laboratory Report</p>
               </div>
@@ -273,7 +273,7 @@ export function ViewTestResultModal({ isOpen, resultId, onClose }: ViewTestResul
                     )}
                   </div>
                   <div className="text-right">
-                    <div className="border-t border-gray-800 pt-2 mt-8">
+                    <div className="border-t border-border pt-2 mt-8">
                       <p className="text-xs font-medium">Authorized Signature</p>
                     </div>
                   </div>
@@ -295,7 +295,7 @@ export function ViewTestResultModal({ isOpen, resultId, onClose }: ViewTestResul
             </div>
           </>
         ) : (
-          <div className="text-center py-12 text-gray-400">No test result found</div>
+          <div className="text-center py-12 text-muted">No test result found</div>
         )}
       </div>
     </div>

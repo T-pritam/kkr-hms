@@ -129,8 +129,8 @@ export default function PatientDetailsPage() {
       <DashboardLayout>
         <div className="flex items-center justify-center py-12">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-            <p className="text-gray-400">Loading patient details...</p>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+            <p className="text-muted">Loading patient details...</p>
           </div>
         </div>
       </DashboardLayout>
@@ -141,35 +141,35 @@ export default function PatientDetailsPage() {
     <DashboardLayout>
       <div className="space-y-6">
         {/* Header Card */}
-        <div className="bg-gradient-to-r from-gray-900 to-gray-950 rounded-lg border border-gray-600 p-6">
+        <div className="bg-gradient-to-r from-surface to-background rounded-lg border border-border p-6">
           <div className="flex items-start gap-6">
             <button
               onClick={() => router.back()}
-              className="p-2 hover:bg-gray-600 rounded-lg transition-colors flex-shrink-0"
+              className="p-2 hover:bg-surface-hover rounded-lg transition-colors flex-shrink-0"
               title="Back"
             >
               <ArrowLeft className="h-5 w-5" />
             </button>
             <div className="flex-1 min-w-0">
-              <h1 className="text-2xl font-bold text-white truncate">
+              <h1 className="text-2xl font-bold text-foreground truncate">
                 {patientData?.name || 'Patient Details'}
               </h1>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4 text-sm">
                 <div>
-                  <p className="text-gray-400">Patient ID</p>
-                  <p className="font-mono text-blue-400">{patientData?.patient_id}</p>
+                  <p className="text-muted">Patient ID</p>
+                  <p className="font-mono text-info">{patientData?.patient_id}</p>
                 </div>
                 <div>
-                  <p className="text-gray-400">Joined</p>
-                  <p className="text-gray-300">{patientData?.date_of_join}</p>
+                  <p className="text-muted">Joined</p>
+                  <p className="text-foreground">{patientData?.date_of_join}</p>
                 </div>
                 <div>
-                  <p className="text-gray-400">Age</p>
-                  <p className="text-gray-300">{patientData?.age || 'N/A'}</p>
+                  <p className="text-muted">Age</p>
+                  <p className="text-foreground">{patientData?.age || 'N/A'}</p>
                 </div>
                 <div>
-                  <p className="text-gray-400">Phone</p>
-                  <p className="text-gray-300">{patientData?.phone || 'N/A'}</p>
+                  <p className="text-muted">Phone</p>
+                  <p className="text-foreground">{patientData?.phone || 'N/A'}</p>
                 </div>
               </div>
             </div>
@@ -177,8 +177,8 @@ export default function PatientDetailsPage() {
         </div>
 
         {/* Tabs */}
-        <div className="bg-gray-900 rounded-lg border border-gray-700 p-6">
-          <div className="flex overflow-x-auto gap-0 -mx-6 px-6 mb-6 border-b border-gray-700">
+        <div className="bg-surface rounded-lg border border-input-border p-6">
+          <div className="flex overflow-x-auto gap-0 -mx-6 px-6 mb-6 border-b border-input-border">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               return (
@@ -187,8 +187,8 @@ export default function PatientDetailsPage() {
                   onClick={() => setActiveTab(tab.id)}
                   className={`flex items-center gap-2 px-4 py-4 border-b-2 transition-all whitespace-nowrap text-sm font-medium ${
                     activeTab === tab.id
-                      ? 'border-blue-500 text-blue-400'
-                      : 'border-transparent text-gray-400 hover:text-gray-300'
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-muted hover:text-foreground'
                   }`}
                 >
                   <Icon className="h-4 w-4" />

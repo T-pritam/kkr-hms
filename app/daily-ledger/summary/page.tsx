@@ -6,8 +6,8 @@ export default async function DailySummaryPage() {
     <DashboardLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold text-white">Daily Summary</h1>
-          <p className="text-gray-400 mt-1">Daily operational summary and statistics</p>
+          <h1 className="text-3xl font-bold text-foreground">Daily Summary</h1>
+          <p className="text-muted mt-1">Daily operational summary and statistics</p>
         </div>
 
         <Card>
@@ -15,7 +15,7 @@ export default async function DailySummaryPage() {
             <CardTitle>Today's Summary</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-center py-12 text-gray-400">
+            <div className="text-center py-12 text-muted">
               No data available for today.
             </div>
           </CardContent>

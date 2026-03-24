@@ -23,19 +23,19 @@ export function TablePagination({
   const endIndex = Math.min(currentPage * pageSize, totalItems)
 
   return (
-    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-gray-900 border border-gray-800 rounded-lg px-4 py-3">
+    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-surface border border-border rounded-lg px-4 py-3">
       <div className="flex items-center gap-2">
-        <span className="text-sm text-gray-400">Show</span>
+        <span className="text-sm text-muted">Show</span>
         <select
           value={pageSize}
           onChange={(e) => onPageSizeChange(Number(e.target.value))}
-          className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-white"
+          className="bg-input border border-input-border rounded-lg px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
         >
           <option value={10}>10</option>
           <option value={20}>20</option>
           <option value={50}>50</option>
         </select>
-        <span className="text-sm text-gray-400">
+        <span className="text-sm text-muted">
           Showing {totalItems > 0 ? startIndex : 0} to {endIndex} of {totalItems}
         </span>
       </div>
@@ -49,7 +49,7 @@ export function TablePagination({
         >
           Previous
         </Button>
-        <span className="text-sm text-gray-400">
+        <span className="text-sm text-muted">
           Page {currentPage} of {totalPages || 1}
         </span>
         <Button

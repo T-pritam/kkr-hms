@@ -42,8 +42,8 @@ export default function ResetPasswordPage() {
 
   if (success) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-black p-4">
-        <Card className="w-full max-w-md">
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-md animate-fadeIn">
           <CardHeader className="space-y-1">
             <CardTitle className="text-2xl text-center">Check Your Email</CardTitle>
             <CardDescription className="text-center">
@@ -64,13 +64,13 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-black p-4">
-      <Card className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <Card className="w-full max-w-md animate-fadeIn">
         <CardHeader className="space-y-1">
           <div className="flex items-center justify-center mb-4">
             <div className="text-4xl font-bold">
-              <span className="text-orange-600">KKR</span>
-              <span className="text-white ml-2">Hospital Management</span>
+              <span className="text-primary">KKR</span>
+              <span className="text-foreground ml-2">HMS</span>
             </div>
           </div>
           <CardTitle className="text-2xl text-center">Reset Password</CardTitle>
@@ -81,7 +81,7 @@ export default function ResetPasswordPage() {
         <CardContent>
           <form onSubmit={handleResetPassword} className="space-y-4">
             {error && (
-              <div className="p-3 rounded-md bg-red-900/20 border border-red-900 text-red-400 text-sm">
+              <div className="p-3 rounded-lg bg-destructive-subtle border border-destructive/30 text-destructive text-sm">
                 {error}
               </div>
             )}

@@ -181,16 +181,16 @@ export function ManageParametersModal({ isOpen, test, onClose }: ManageParameter
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-900 rounded-lg p-4 sm:p-6 w-full max-w-4xl border border-gray-800 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50 p-4">
+      <div className="bg-surface rounded-lg p-4 sm:p-6 w-full max-w-4xl border border-border max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4 sm:mb-6">
           <div>
-            <h2 className="text-xl sm:text-2xl font-bold text-white">Manage Test Parameters</h2>
-            <p className="text-gray-400 text-sm mt-1">
+            <h2 className="text-xl sm:text-2xl font-bold text-foreground">Manage Test Parameters</h2>
+            <p className="text-muted text-sm mt-1">
               {test.name} ({test.code})
             </p>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-white">
+          <button onClick={onClose} className="text-muted hover:text-foreground">
             <X size={24} />
           </button>
         </div>
@@ -198,7 +198,7 @@ export function ManageParametersModal({ isOpen, test, onClose }: ManageParameter
         {!showAddForm && (
           <Button
             onClick={() => setShowAddForm(true)}
-            className="mb-4 bg-blue-600 hover:bg-blue-700 text-white"
+            className="mb-4 bg-info hover:bg-info-hover text-foreground"
           >
             <Plus className="mr-2" size={16} />
             Add Parameter
@@ -206,14 +206,14 @@ export function ManageParametersModal({ isOpen, test, onClose }: ManageParameter
         )}
 
         {showAddForm && (
-          <form onSubmit={handleSubmit} className="mb-6 p-4 bg-gray-800 rounded-lg border border-gray-700">
-            <h3 className="text-lg font-semibold text-white mb-4">
+          <form onSubmit={handleSubmit} className="mb-6 p-4 bg-surface-hover rounded-lg border border-input-border">
+            <h3 className="text-lg font-semibold text-foreground mb-4">
               {editingParam ? 'Edit Parameter' : 'Add New Parameter'}
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <div>
-                <Label htmlFor="name" className="text-white">
+                <Label htmlFor="name" className="text-foreground">
                   Parameter Name *
                 </Label>
                 <Input
@@ -222,13 +222,13 @@ export function ManageParametersModal({ isOpen, test, onClose }: ManageParameter
                   required
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="bg-gray-900 border-gray-700 text-white"
+                  className="bg-input border-input-border text-foreground"
                   placeholder="e.g., Hemoglobin"
                 />
               </div>
 
               <div>
-                <Label htmlFor="unit" className="text-white">
+                <Label htmlFor="unit" className="text-foreground">
                   Unit
                 </Label>
                 <Input
@@ -236,7 +236,7 @@ export function ManageParametersModal({ isOpen, test, onClose }: ManageParameter
                   type="text"
                   value={formData.unit}
                   onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                  className="bg-gray-900 border-gray-700 text-white"
+                  className="bg-input border-input-border text-foreground"
                   placeholder="e.g., g/dL"
                 />
               </div>
@@ -251,9 +251,9 @@ export function ManageParametersModal({ isOpen, test, onClose }: ManageParameter
                   onChange={(e) =>
                     setFormData({ ...formData, gender_specific: e.target.checked })
                   }
-                  className="w-4 h-4 bg-gray-900 border-gray-700 rounded"
+                  className="w-4 h-4 bg-input border-input-border rounded"
                 />
-                <Label htmlFor="gender_specific" className="text-white">
+                <Label htmlFor="gender_specific" className="text-foreground">
                   Gender-Specific Reference Ranges
                 </Label>
               </div>
@@ -262,55 +262,55 @@ export function ManageParametersModal({ isOpen, test, onClose }: ManageParameter
             {formData.gender_specific ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-4">
-                  <h4 className="text-sm font-semibold text-blue-400">Male Range</h4>
+                  <h4 className="text-sm font-semibold text-info">Male Range</h4>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <Label className="text-white text-xs">Min *</Label>
+                      <Label className="text-foreground text-xs">Min *</Label>
                       <Input
                         type="number"
                         step="any"
                         required
                         value={formData.male_min}
                         onChange={(e) => setFormData({ ...formData, male_min: e.target.value })}
-                        className="bg-gray-900 border-gray-700 text-white"
+                        className="bg-input border-input-border text-foreground"
                       />
                     </div>
                     <div>
-                      <Label className="text-white text-xs">Max *</Label>
+                      <Label className="text-foreground text-xs">Max *</Label>
                       <Input
                         type="number"
                         step="any"
                         required
                         value={formData.male_max}
                         onChange={(e) => setFormData({ ...formData, male_max: e.target.value })}
-                        className="bg-gray-900 border-gray-700 text-white"
+                        className="bg-input border-input-border text-foreground"
                       />
                     </div>
                   </div>
                 </div>
                 <div className="space-y-4">
-                  <h4 className="text-sm font-semibold text-pink-400">Female Range</h4>
+                  <h4 className="text-sm font-semibold text-accent">Female Range</h4>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <Label className="text-white text-xs">Min *</Label>
+                      <Label className="text-foreground text-xs">Min *</Label>
                       <Input
                         type="number"
                         step="any"
                         required
                         value={formData.female_min}
                         onChange={(e) => setFormData({ ...formData, female_min: e.target.value })}
-                        className="bg-gray-900 border-gray-700 text-white"
+                        className="bg-input border-input-border text-foreground"
                       />
                     </div>
                     <div>
-                      <Label className="text-white text-xs">Max *</Label>
+                      <Label className="text-foreground text-xs">Max *</Label>
                       <Input
                         type="number"
                         step="any"
                         required
                         value={formData.female_max}
                         onChange={(e) => setFormData({ ...formData, female_max: e.target.value })}
-                        className="bg-gray-900 border-gray-700 text-white"
+                        className="bg-input border-input-border text-foreground"
                       />
                     </div>
                   </div>
@@ -319,7 +319,7 @@ export function ManageParametersModal({ isOpen, test, onClose }: ManageParameter
             ) : (
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="min_value" className="text-white">
+                  <Label htmlFor="min_value" className="text-foreground">
                     Minimum Value *
                   </Label>
                   <Input
@@ -329,11 +329,11 @@ export function ManageParametersModal({ isOpen, test, onClose }: ManageParameter
                     required
                     value={formData.min_value}
                     onChange={(e) => setFormData({ ...formData, min_value: e.target.value })}
-                    className="bg-gray-900 border-gray-700 text-white"
+                    className="bg-input border-input-border text-foreground"
                   />
                 </div>
                 <div>
-                  <Label htmlFor="max_value" className="text-white">
+                  <Label htmlFor="max_value" className="text-foreground">
                     Maximum Value *
                   </Label>
                   <Input
@@ -343,14 +343,14 @@ export function ManageParametersModal({ isOpen, test, onClose }: ManageParameter
                     required
                     value={formData.max_value}
                     onChange={(e) => setFormData({ ...formData, max_value: e.target.value })}
-                    className="bg-gray-900 border-gray-700 text-white"
+                    className="bg-input border-input-border text-foreground"
                   />
                 </div>
               </div>
             )}
 
             <div className="mt-4">
-              <Label htmlFor="display_order" className="text-white">
+              <Label htmlFor="display_order" className="text-foreground">
                 Display Order
               </Label>
               <Input
@@ -358,7 +358,7 @@ export function ManageParametersModal({ isOpen, test, onClose }: ManageParameter
                 type="number"
                 value={formData.display_order}
                 onChange={(e) => setFormData({ ...formData, display_order: e.target.value })}
-                className="bg-gray-900 border-gray-700 text-white"
+                className="bg-input border-input-border text-foreground"
               />
             </div>
 
@@ -367,14 +367,14 @@ export function ManageParametersModal({ isOpen, test, onClose }: ManageParameter
                 type="button"
                 onClick={resetForm}
                 variant="outline"
-                className="flex-1 border-gray-700 text-gray-300"
+                className="flex-1 border-input-border text-foreground"
               >
                 Cancel
               </Button>
               <Button
                 type="submit"
                 disabled={loading}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+                className="flex-1 bg-info hover:bg-info-hover text-foreground"
               >
                 {loading ? 'Saving...' : editingParam ? 'Update' : 'Add'}
               </Button>
@@ -382,42 +382,42 @@ export function ManageParametersModal({ isOpen, test, onClose }: ManageParameter
           </form>
         )}
 
-        <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+        <div className="bg-surface-hover rounded-lg border border-input-border overflow-hidden">
           {parameters.length === 0 ? (
-            <div className="text-center py-8 text-gray-400">
+            <div className="text-center py-8 text-muted">
               No parameters defined yet
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="bg-gray-700">
+                <thead className="bg-surface-inset">
                   <tr>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-300">
+                    <th className="px-4 py-2 text-left text-xs font-medium text-foreground">
                       Parameter
                     </th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-300">
+                    <th className="px-4 py-2 text-left text-xs font-medium text-foreground">
                       Unit
                     </th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-300">
+                    <th className="px-4 py-2 text-left text-xs font-medium text-foreground">
                       Reference Range
                     </th>
-                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-300">
+                    <th className="px-4 py-2 text-right text-xs font-medium text-foreground">
                       Actions
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-700">
+                <tbody className="divide-y divide-border">
                   {parameters.map((param) => (
-                    <tr key={param.id} className="hover:bg-gray-700/50">
-                      <td className="px-4 py-2 text-white">{param.name}</td>
-                      <td className="px-4 py-2 text-gray-300">{param.unit}</td>
-                      <td className="px-4 py-2 text-gray-300 text-sm">
+                    <tr key={param.id} className="hover:bg-surface-hover">
+                      <td className="px-4 py-2 text-foreground">{param.name}</td>
+                      <td className="px-4 py-2 text-foreground">{param.unit}</td>
+                      <td className="px-4 py-2 text-foreground text-sm">
                         {param.gender_specific ? (
                           <div>
-                            <div className="text-blue-400">
+                            <div className="text-info">
                               M: {param.male_min} - {param.male_max}
                             </div>
-                            <div className="text-pink-400">
+                            <div className="text-accent">
                               F: {param.female_min} - {param.female_max}
                             </div>
                           </div>
@@ -433,7 +433,7 @@ export function ManageParametersModal({ isOpen, test, onClose }: ManageParameter
                             onClick={() => handleEdit(param)}
                             variant="ghost"
                             size="sm"
-                            className="text-blue-400 hover:text-blue-300"
+                            className="text-info hover:text-info"
                           >
                             <Edit size={14} />
                           </Button>
@@ -441,7 +441,7 @@ export function ManageParametersModal({ isOpen, test, onClose }: ManageParameter
                             onClick={() => handleDelete(param.id)}
                             variant="ghost"
                             size="sm"
-                            className="text-red-400 hover:text-red-300"
+                            className="text-destructive hover:text-destructive"
                           >
                             <Trash2 size={14} />
                           </Button>
@@ -459,7 +459,7 @@ export function ManageParametersModal({ isOpen, test, onClose }: ManageParameter
           <Button
             onClick={onClose}
             variant="outline"
-            className="w-full border-gray-700 text-gray-300"
+            className="w-full border-input-border text-foreground"
           >
             Close
           </Button>

@@ -240,14 +240,14 @@ export function AddPatientInstallmentModal({
   const paymentMethods = ['cash', 'upi', 'card', 'bank_transfer', 'cheque'];
 
   return (
-    <div className={`fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 `}>
-      <div className={`bg-gray-800 rounded-lg shadow-xl w-full max-w-md max-h-[90vh] flex flex-col ${showPatientDropdown ? 'min-h-[500px]' : ''}`}>
+    <div className={`fixed inset-0 bg-overlay flex items-center justify-center z-50 p-4 `}>
+      <div className={`bg-surface-hover rounded-lg shadow-xl w-full max-w-md max-h-[90vh] flex flex-col ${showPatientDropdown ? 'min-h-[500px]' : ''}`}>
         {/* Header - Fixed */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-700 bg-gray-800 flex-shrink-0">
-          <h2 className="text-xl font-semibold text-white">Add Patient Installment</h2>
+        <div className="flex items-center justify-between p-6 border-b border-input-border bg-surface-hover flex-shrink-0">
+          <h2 className="text-xl font-semibold text-foreground">Add Patient Installment</h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-200 transition-colors"
+            className="text-muted hover:text-foreground transition-colors"
           >
             <X size={24} />
           </button>
@@ -257,32 +257,32 @@ export function AddPatientInstallmentModal({
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
           {/* Patient Dropdown */}
           <div className="relative">
-            <label className="block text-sm font-medium text-gray-400 mb-2">
+            <label className="block text-sm font-medium text-muted mb-2">
               Patient *
             </label>
             <div
               onClick={() => setShowPatientDropdown(!showPatientDropdown)}
-              className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none cursor-pointer flex items-center justify-between"
+              className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none cursor-pointer flex items-center justify-between"
             >
               <span>{selectedPatient?.name || 'Select Patient'}</span>
-              <Search className="h-4 w-4 text-gray-400" />
+              <Search className="h-4 w-4 text-muted" />
             </div>
 
             {showPatientDropdown && (
-              <div className="absolute top-full left-0 right-0 mt-1 bg-gray-700 border border-gray-600 rounded-lg shadow-lg z-10">
-                <div className="p-2 border-b border-gray-600">
+              <div className="absolute top-full left-0 right-0 mt-1 bg-surface-inset border border-border rounded-lg shadow-lg z-10">
+                <div className="p-2 border-b border-border">
                   <input
                     type="text"
                     placeholder="Search patient name or ID..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     autoFocus
-                    className="w-full bg-gray-600 text-white rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                    className="w-full bg-surface-inset text-foreground rounded px-3 py-2 text-sm focus:outline-none focus:border-ring"
                   />
                 </div>
                 <div className="max-h-48 overflow-y-auto">
                   {filteredPatients.length === 0 ? (
-                    <div className="px-4 py-3 text-sm text-gray-400">
+                    <div className="px-4 py-3 text-sm text-muted">
                       No patients found
                     </div>
                   ) : (
@@ -291,14 +291,14 @@ export function AddPatientInstallmentModal({
                         key={patient.id}
                         type="button"
                         onClick={() => handlePatientSelect(patient)}
-                        className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-600 transition-colors ${
+                        className={`w-full text-left px-4 py-2 text-sm hover:bg-surface-hover transition-colors ${
                           formData.patient_id === patient.id
-                            ? 'bg-blue-600 text-white'
-                            : 'text-gray-300'
+                            ? 'bg-info text-foreground'
+                            : 'text-foreground'
                         }`}
                       >
                         <div className="font-medium">{patient.name}</div>
-                        <div className="text-xs text-gray-400">
+                        <div className="text-xs text-muted">
                           ID: {patient.patient_id}
                         </div>
                       </button>
@@ -311,8 +311,8 @@ export function AddPatientInstallmentModal({
 
           {/* Billing Check Section */}
           {formData.patient_id && !billing && (
-            <div className="bg-yellow-900/30 border border-yellow-700 rounded-lg p-4 text-center">
-              <p className="text-yellow-400 mb-3">No billing record found for this patient</p>
+            <div className="bg-warning-subtle border border-warning/20 rounded-lg p-4 text-center">
+              <p className="text-warning-text mb-3">No billing record found for this patient</p>
               <Button
                 type="button"
                 onClick={createBilling}
@@ -328,15 +328,15 @@ export function AddPatientInstallmentModal({
           {billing && (
             <>
               {/* Billing Summary */}
-              <div className="bg-blue-900/30 border border-blue-700 rounded-lg p-3">
-                <p className="text-blue-400 text-sm">
+              <div className="bg-info-subtle border border-info/20 rounded-lg p-3">
+                <p className="text-info text-sm">
                   Paid: ₹{parseFloat(String(billing.patient_paid_amount) || '0').toFixed(2)}
                 </p>
               </div>
 
               {/* Amount */}
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-2">
+                <label className="block text-sm font-medium text-muted mb-2">
                   Amount (₹) *
                 </label>
                 <input
@@ -348,13 +348,13 @@ export function AddPatientInstallmentModal({
                   onChange={(e) =>
                     setFormData({ ...formData, amount: parseFloat(e.target.value) })
                   }
-                  className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                  className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
                 />
               </div>
 
               {/* Payment Date */}
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-2">
+                <label className="block text-sm font-medium text-muted mb-2">
                   Payment Date *
                 </label>
                 <input
@@ -364,13 +364,13 @@ export function AddPatientInstallmentModal({
                   onChange={(e) =>
                     setFormData({ ...formData, payment_date: e.target.value })
                   }
-                  className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                  className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
                 />
               </div>
 
               {/* Payment Method */}
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-2">
+                <label className="block text-sm font-medium text-muted mb-2">
                   Payment Method *
                 </label>
                 <select
@@ -379,7 +379,7 @@ export function AddPatientInstallmentModal({
                   onChange={(e) =>
                     setFormData({ ...formData, payment_method: e.target.value })
                   }
-                  className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                  className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
                 >
                   {paymentMethods.map((method) => (
                     <option key={method} value={method}>
@@ -391,7 +391,7 @@ export function AddPatientInstallmentModal({
 
               {/* Transaction Reference */}
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-2">
+                <label className="block text-sm font-medium text-muted mb-2">
                   Transaction Reference{formData.payment_method === 'upi' && ' *'}
                 </label>
                 <input
@@ -404,14 +404,14 @@ export function AddPatientInstallmentModal({
                       transaction_reference: e.target.value,
                     })
                   }
-                  className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                  className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
                   placeholder="UPI ID / Transaction ID"
                 />
               </div>
 
               {/* Remarks */}
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-2">
+                <label className="block text-sm font-medium text-muted mb-2">
                   Remarks
                 </label>
                 <textarea
@@ -420,12 +420,12 @@ export function AddPatientInstallmentModal({
                   onChange={(e) =>
                     setFormData({ ...formData, remarks: e.target.value })
                   }
-                  className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600 focus:border-blue-500 focus:outline-none"
+                  className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
                 />
               </div>
 
               {/* Buttons - Sticky at bottom */}
-              <div className="flex gap-3 pt-4 sticky bottom-0 bg-gray-800 -mx-6 px-6">
+              <div className="flex gap-3 pt-4 sticky bottom-0 bg-surface-hover -mx-6 px-6">
                 <Button
                   type="submit"
                   disabled={loading || !formData.patient_id || !formData.billing_id || formData.amount <= 0}
@@ -450,7 +450,7 @@ export function AddPatientInstallmentModal({
 
           {/* Show buttons only if patient selected but no billing */}
           {formData.patient_id && !billing && (
-            <div className="flex gap-3 pt-4 sticky bottom-0 bg-gray-800 -mx-6 px-6">
+            <div className="flex gap-3 pt-4 sticky bottom-0 bg-surface-hover -mx-6 px-6">
               <Button
                 type="button"
                 variant="outline"

@@ -111,15 +111,15 @@ export default function AdminPage() {
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
       case 'ADMIN':
-        return 'bg-purple-900/30 text-purple-400 border-purple-800'
+        return 'bg-accent-subtle text-accent border-accent/20'
       case 'DOCTOR':
-        return 'bg-blue-900/30 text-blue-400 border-blue-800'
+        return 'bg-info-subtle text-info border-info/20'
       case 'NURSE':
-        return 'bg-green-900/30 text-green-400 border-green-800'
+        return 'bg-success-subtle text-success-text border-success/20'
       case 'RECEPTIONIST':
-        return 'bg-orange-900/30 text-orange-400 border-orange-800'
+        return 'bg-primary-subtle text-primary border-primary/20'
       default:
-        return 'bg-gray-900/30 text-gray-400 border-gray-800'
+        return 'bg-surface text-muted border-border'
     }
   }
 
@@ -139,8 +139,8 @@ export default function AdminPage() {
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-white">User Management</h1>
-            <p className="text-gray-400 mt-1 text-sm sm:text-base">Manage users, roles, and permissions</p>
+            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">User Management</h1>
+            <p className="text-muted mt-1 text-sm sm:text-base">Manage users, roles, and permissions</p>
           </div>
           <Button onClick={() => setCreateModalOpen(true)} className="w-full sm:w-auto">
             <Plus size={20} className="mr-2" />
@@ -154,7 +154,7 @@ export default function AdminPage() {
               <span className="text-base sm:text-lg">Total {totalUsers} users</span>
               <div className="flex items-center gap-2 w-full sm:w-auto">
                 <div className="relative flex-1 sm:flex-none">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted" size={18} />
                   <Input
             type="text"
             placeholder="Search users..."
@@ -168,9 +168,9 @@ export default function AdminPage() {
           </CardHeader>
           <CardContent>
             {loading ? (
-              <div className="text-center py-12 text-gray-400">Loading...</div>
+              <div className="text-center py-12 text-muted">Loading...</div>
             ) : users.length === 0 ? (
-              <div className="text-center py-12 text-gray-400">
+              <div className="text-center py-12 text-muted">
                 No users found. Click "Create User" to add a new user.
               </div>
             ) : (
@@ -179,23 +179,23 @@ export default function AdminPage() {
                 <div className="hidden md:block overflow-x-auto">
                   <table className="w-full">
                     <thead>
-                      <tr className="border-b border-gray-800">
-                        <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">
+                      <tr className="border-b border-border">
+                        <th className="text-left py-3 px-4 text-sm font-medium text-muted">
                           Username
                         </th>
-                        <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">
+                        <th className="text-left py-3 px-4 text-sm font-medium text-muted">
                           Email
                         </th>
-                        <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">
+                        <th className="text-left py-3 px-4 text-sm font-medium text-muted">
                           Role
                         </th>
-                        <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">
+                        <th className="text-left py-3 px-4 text-sm font-medium text-muted">
                           Status
                         </th>
-                        <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">
+                        <th className="text-left py-3 px-4 text-sm font-medium text-muted">
                           Last Login
                         </th>
-                        <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">
+                        <th className="text-left py-3 px-4 text-sm font-medium text-muted">
                           Actions
                         </th>
                       </tr>
@@ -204,10 +204,10 @@ export default function AdminPage() {
                       {users.map((user: any) => (
                         <tr
                           key={user.id}
-                          className="border-b border-gray-800 hover:bg-gray-900/50"
+                          className="border-b border-border hover:bg-table-row-hover"
                         >
-                          <td className="py-3 px-4 text-white">{user.username}</td>
-                          <td className="py-3 px-4 text-gray-300">{user.email}</td>
+                          <td className="py-3 px-4 text-foreground">{user.username}</td>
+                          <td className="py-3 px-4 text-foreground">{user.email}</td>
                           <td className="py-3 px-4">
                             <span
                               className={`px-3 py-1 rounded-full text-xs font-medium border ${getRoleBadgeColor(
@@ -221,12 +221,12 @@ export default function AdminPage() {
                             <button
                               onClick={() => handleToggleStatus(user.id, user.status)}
                               disabled={user.role === 'ADMIN'}
-                              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 ${
+                              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${
                                 user.role === 'ADMIN' ? 'opacity-50 cursor-not-allowed' : ''
                               }`}
                               style={{
                                 backgroundColor:
-                                  user.status === 'ACTIVE' ? '#ea580c' : '#374151',
+                                  user.status === 'ACTIVE' ? 'var(--primary)' : 'var(--input-border)',
                               }}
                             >
                               <span
@@ -238,7 +238,7 @@ export default function AdminPage() {
                               />
                             </button>
                           </td>
-                          <td className="py-3 px-4 text-gray-400 text-sm">
+                          <td className="py-3 px-4 text-muted text-sm">
                             {user.last_login
                               ? new Date(user.last_login).toLocaleString()
                               : 'Never'}
@@ -284,12 +284,12 @@ export default function AdminPage() {
                   {users.map((user: any) => (
                     <div
                       key={user.id}
-                      className="bg-gray-800/50 rounded-lg p-4 border border-gray-700"
+                      className="bg-surface-hover rounded-lg p-4 border border-input-border"
                     >
                       <div className="flex items-start justify-between mb-3">
                         <div>
-                          <h3 className="text-white font-medium">{user.username}</h3>
-                          <p className="text-gray-400 text-sm">{user.email}</p>
+                          <h3 className="text-foreground font-medium">{user.username}</h3>
+                          <p className="text-muted text-sm">{user.email}</p>
                         </div>
                         <span
                           className={`px-2 py-1 rounded-full text-xs font-medium border ${getRoleBadgeColor(
@@ -301,7 +301,7 @@ export default function AdminPage() {
                       </div>
 
                       <div className="flex items-center justify-between mb-3">
-                        <span className="text-sm text-gray-400">Status:</span>
+                        <span className="text-sm text-muted">Status:</span>
                         <button
                           onClick={() => handleToggleStatus(user.id, user.status)}
                           disabled={user.role === 'ADMIN'}
@@ -310,7 +310,7 @@ export default function AdminPage() {
                           }`}
                           style={{
                             backgroundColor:
-                              user.status === 'ACTIVE' ? '#ea580c' : '#374151',
+                              user.status === 'ACTIVE' ? 'var(--primary)' : 'var(--input-border)',
                           }}
                         >
                           <span
@@ -323,7 +323,7 @@ export default function AdminPage() {
                         </button>
                       </div>
 
-                      <div className="text-sm text-gray-400 mb-3">
+                      <div className="text-sm text-muted mb-3">
                         Last login: {user.last_login
                           ? new Date(user.last_login).toLocaleString()
                           : 'Never'}
