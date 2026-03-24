@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Plus, Search, Eye, Edit, FileText } from 'lucide-react'
+import { Plus, Search, Edit, FileText } from 'lucide-react'
 import { CreateTestOrderModal } from '@/components/lab/create-test-order-modal'
 import { TestResultEntryModal } from '@/components/lab/test-result-entry-modal'
 import { ViewTestResultModal } from '@/components/lab/view-test-result-modal'
@@ -20,13 +20,10 @@ interface TestResult {
     code: string
     category: string
   }
-  patients: {
-    name: string
-    patient_id: string
-    phone: string
-  }
-  patient_name?: string
-  patient_phone?: string
+  patient_name: string | null
+  patient_phone: string | null
+  patient_age: number | null
+  patient_gender: string | null
 }
 
 export default function TestResultsPage() {
@@ -39,6 +36,19 @@ export default function TestResultsPage() {
   const [viewingResult, setViewingResult] = useState<TestResult | null>(null)
 
   const statuses = ['pending', 'collected', 'processing', 'completed', 'verified', 'cancelled']
+
+  const markAsCollected = async (resultId: string) => {
+    try {
+      await fetch(`/api/test-results/${resultId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'collected' }),
+      })
+      fetchResults()
+    } catch (error) {
+      console.error('Error updating status:', error)
+    }
+  }
 
   useEffect(() => {
     fetchResults()
@@ -86,8 +96,8 @@ export default function TestResultsPage() {
     ? results.filter(
         (r) =>
           r.lab_tests.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (r.patients?.name || r.patient_name)?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (r.patients?.patient_id)?.toLowerCase().includes(searchQuery.toLowerCase())
+          r.patient_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          r.patient_phone?.toLowerCase().includes(searchQuery.toLowerCase())
       )
     : results
 
@@ -187,12 +197,8 @@ export default function TestResultsPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div>
-                          <div className="text-foreground">
-                            {result.patients?.name || result.patient_name}
-                          </div>
-                          <div className="text-sm text-muted">
-                            {result.patients?.patient_id}
-                          </div>
+                          <div className="text-foreground">{result.patient_name || '—'}</div>
+                          <div className="text-sm text-muted">{result.patient_phone}</div>
                         </div>
                       </td>
                       <td className="px-4 py-3">
@@ -214,34 +220,38 @@ export default function TestResultsPage() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-2">
-                          {(result.status === 'completed' || result.status === 'verified') && (
+                          {result.status === 'pending' && (
                             <Button
-                              onClick={() => setViewingResult(result)}
-                              variant="ghost"
+                              onClick={() => markAsCollected(result.id)}
                               size="sm"
-                              className="text-success-text hover:text-success-text hover:bg-success-subtle"
+                              variant="outline"
+                              className="text-xs border-warning-text text-warning-text hover:bg-warning-subtle"
                             >
-                              <FileText size={16} />
+                              Collect Sample
                             </Button>
                           )}
                           {(result.status === 'collected' || result.status === 'processing') && (
                             <Button
                               onClick={() => setSelectedResult(result)}
-                              variant="ghost"
                               size="sm"
-                              className="text-info hover:text-info hover:bg-info-subtle"
+                              variant="outline"
+                              className="text-xs border-info text-info hover:bg-info-subtle"
                             >
-                              <Edit size={16} />
+                              <Edit size={14} className="mr-1" />
+                              Enter Results
                             </Button>
                           )}
-                          <Button
-                            onClick={() => setViewingResult(result)}
-                            variant="ghost"
-                            size="sm"
-                            className="text-accent hover:text-accent hover:bg-accent-subtle"
-                          >
-                            <Eye size={16} />
-                          </Button>
+                          {(result.status === 'completed' || result.status === 'verified') && (
+                            <Button
+                              onClick={() => setViewingResult(result)}
+                              size="sm"
+                              variant="outline"
+                              className="text-xs border-success-text text-success-text hover:bg-success-subtle"
+                            >
+                              <FileText size={14} className="mr-1" />
+                              View Report
+                            </Button>
+                          )}
                         </div>
                       </td>
                     </tr>

@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
-import { X, Printer, CheckCircle } from 'lucide-react'
+import { X, Printer, CheckCircle, Download } from 'lucide-react'
+import jsPDF from 'jspdf'
 
 interface ViewTestResultModalProps {
   isOpen: boolean
@@ -38,6 +39,141 @@ export function ViewTestResultModal({ isOpen, resultId, onClose }: ViewTestResul
 
   const handlePrint = () => {
     window.print()
+  }
+
+  const handleDownloadPDF = () => {
+    if (!testResult) return
+
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+    const pageWidth = doc.internal.pageSize.getWidth()
+    const margin = 14
+    const contentWidth = pageWidth - margin * 2
+    let y = 14
+
+    const bold = (size: number) => { doc.setFont('helvetica', 'bold'); doc.setFontSize(size) }
+    const normal = (size: number) => { doc.setFont('helvetica', 'normal'); doc.setFontSize(size) }
+    const line = () => { doc.setDrawColor(200); doc.line(margin, y, pageWidth - margin, y); y += 4 }
+
+    // Header
+    bold(16)
+    doc.setTextColor(20, 20, 20)
+    doc.text('KKR Hospital & Medical Services', pageWidth / 2, y, { align: 'center' })
+    y += 6
+    normal(10)
+    doc.setTextColor(100)
+    doc.text('Laboratory Report', pageWidth / 2, y, { align: 'center' })
+    y += 2
+    doc.setTextColor(20)
+    y += 2
+    line()
+    y += 2
+
+    // Patient & Test Info side by side
+    bold(9)
+    doc.text('PATIENT INFORMATION', margin, y)
+    doc.text('TEST INFORMATION', pageWidth / 2 + 2, y)
+    y += 5
+    normal(9)
+    const patientName = testResult.patient_name || '—'
+    const patientAge = testResult.patient_age ? `${testResult.patient_age} yrs` : '—'
+    const patientGender = testResult.patient_gender || '—'
+    const patientPhone = testResult.patient_phone || '—'
+    const patientLines = [
+      ['Name:', patientName],
+      ['Age / Sex:', `${patientAge} / ${patientGender}`],
+      ['Phone:', patientPhone],
+    ]
+    const testDate = new Date(testResult.test_date).toLocaleDateString('en-IN')
+    const reportDate = testResult.result_issued_at
+      ? new Date(testResult.result_issued_at).toLocaleString('en-IN')
+      : new Date().toLocaleDateString('en-IN')
+    const testLines = [
+      ['Test:', testResult.lab_tests?.name || '—'],
+      ['Code:', testResult.lab_tests?.code || '—'],
+      ['Category:', testResult.lab_tests?.category || '—'],
+      ['Sample:', testResult.lab_tests?.sample_type || '—'],
+      ['Test Date:', testDate],
+      ['Report Date:', reportDate],
+    ]
+    const startY = y
+    patientLines.forEach(([label, value]) => {
+      bold(8.5); doc.text(label, margin, y)
+      normal(8.5); doc.text(value, margin + 22, y)
+      y += 5
+    })
+    y = startY
+    testLines.forEach(([label, value]) => {
+      bold(8.5); doc.text(label, pageWidth / 2 + 2, y)
+      normal(8.5); doc.text(String(value), pageWidth / 2 + 24, y)
+      y += 5
+    })
+    y += 4
+    line()
+
+    // Results table header
+    bold(9)
+    doc.setFillColor(240, 240, 240)
+    doc.rect(margin, y, contentWidth, 7, 'F')
+    const cols = [margin, margin + 60, margin + 90, margin + 120, margin + 150]
+    const headers = ['Parameter', 'Result', 'Unit', 'Ref Range', 'Flag']
+    headers.forEach((h, i) => { doc.text(h, cols[i] + 1, y + 5) })
+    y += 8
+
+    // Results rows
+    normal(8.5)
+    ;(testResult.values || []).forEach((v: any, idx: number) => {
+      if (y > 270) { doc.addPage(); y = 14 }
+      if (idx % 2 === 0) {
+        doc.setFillColor(249, 249, 249)
+        doc.rect(margin, y - 1, contentWidth, 6.5, 'F')
+      }
+      const flag = v.flag || 'normal'
+      const isAbnormal = flag !== 'normal'
+      if (isAbnormal) doc.setTextColor(180, 0, 0); else doc.setTextColor(20, 20, 20)
+      const refRange = v.ref_min !== null && v.ref_max !== null ? `${v.ref_min} - ${v.ref_max}` : '—'
+      const result = v.value !== null ? String(v.value) : (v.text_value || '—')
+      const flagText = flag === 'normal' ? '✓' : flag.toUpperCase()
+      doc.text(String(v.test_parameters?.name || '—'), cols[0] + 1, y + 4)
+      doc.text(result, cols[1] + 1, y + 4)
+      doc.setTextColor(20)
+      doc.text(String(v.unit || '—'), cols[2] + 1, y + 4)
+      doc.text(refRange, cols[3] + 1, y + 4)
+      if (isAbnormal) doc.setTextColor(180, 0, 0); else doc.setTextColor(0, 150, 0)
+      doc.text(flagText, cols[4] + 1, y + 4)
+      doc.setTextColor(20)
+      y += 6.5
+    })
+    y += 2
+    line()
+
+    // Notes
+    if (testResult.notes) {
+      y += 2
+      bold(8.5); doc.text('Notes:', margin, y); y += 5
+      normal(8.5); doc.setTextColor(80)
+      doc.text(testResult.notes, margin, y); y += 8
+      doc.setTextColor(20)
+    }
+
+    // Footer
+    y += 4
+    normal(8)
+    doc.setTextColor(80)
+    if (testResult.reference_doctor?.username) {
+      doc.text(`Reference Doctor: ${testResult.reference_doctor.username}`, margin, y)
+    }
+    if (testResult.verified_by_user?.username) {
+      doc.text(`Verified By: ${testResult.verified_by_user.username}`, pageWidth / 2, y)
+    }
+    y += 8
+    doc.setDrawColor(150)
+    doc.line(pageWidth - margin - 40, y, pageWidth - margin, y)
+    y += 4
+    doc.text('Authorized Signature', pageWidth - margin - 40, y)
+
+    const safeName = (testResult.patient_name || 'patient').replace(/[^a-z0-9]/gi, '_')
+    const safeTest = (testResult.lab_tests?.code || 'test').replace(/[^a-z0-9]/gi, '_')
+    doc.save(`Lab_Report_${safeName}_${safeTest}_${testDate.replace(/\//g, '-')}.pdf`)
   }
 
   const handleVerify = async () => {
@@ -113,6 +249,14 @@ export function ViewTestResultModal({ isOpen, resultId, onClose }: ViewTestResul
                   </Button>
                 )}
                 <Button
+                  onClick={handleDownloadPDF}
+                  variant="outline"
+                  className="border-input-border text-foreground"
+                >
+                  <Download size={16} className="mr-2" />
+                  Download PDF
+                </Button>
+                <Button
                   onClick={handlePrint}
                   variant="outline"
                   className="border-input-border text-foreground"
@@ -141,19 +285,15 @@ export function ViewTestResultModal({ isOpen, resultId, onClose }: ViewTestResul
                   <div className="space-y-1 text-sm">
                     <div>
                       <span className="font-medium">Name:</span>{' '}
-                      {testResult.patients?.name || testResult.patient_name}
-                    </div>
-                    <div>
-                      <span className="font-medium">Patient ID:</span>{' '}
-                      {testResult.patients?.patient_id}
+                      {testResult.patient_name || '—'}
                     </div>
                     <div>
                       <span className="font-medium">Age/Gender:</span>{' '}
-                      {testResult.patient_age || 'N/A'} / {testResult.patient_gender || testResult.patients?.gender}
+                      {testResult.patient_age || 'N/A'} / {testResult.patient_gender || 'N/A'}
                     </div>
                     <div>
                       <span className="font-medium">Phone:</span>{' '}
-                      {testResult.patients?.phone || testResult.patient_phone}
+                      {testResult.patient_phone || 'N/A'}
                     </div>
                   </div>
                 </div>

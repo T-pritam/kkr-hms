@@ -108,14 +108,22 @@ export function TestResultEntryModal({
     setError('')
 
     try {
-      // Prepare values array
-      const valuesArray = Object.values(values).map((v) => ({
-        parameter_id: v.parameter_id,
-        value: v.value ? parseFloat(v.value) : null,
-        text_value: v.text_value || null,
-      }))
+      // Only submit parameters where the user actually entered a value
+      const valuesArray = Object.values(values)
+        .filter((v) => v.value.trim() !== '' || v.text_value.trim() !== '')
+        .map((v) => ({
+          parameter_id: v.parameter_id,
+          value: v.value !== '' ? parseFloat(v.value) : null,
+          text_value: v.text_value || null,
+        }))
 
-      // Submit values
+      if (valuesArray.length === 0) {
+        setError('Please enter at least one parameter value before saving.')
+        setLoading(false)
+        return
+      }
+
+      // Submit values — the server will upsert and set status to 'completed'
       const response = await fetch(`/api/test-results/${resultId}/values`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -127,16 +135,6 @@ export function TestResultEntryModal({
       if (!response.ok) {
         throw new Error(data.error || 'Failed to save test results')
       }
-
-      // Update status to completed
-      await fetch(`/api/test-results/${resultId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          status: 'completed',
-          conducted_by: testInfo.conducted_by,
-        }),
-      })
 
       onSuccess()
       onClose()
@@ -173,7 +171,7 @@ export function TestResultEntryModal({
             <h2 className="text-xl sm:text-2xl font-bold text-foreground">Enter Test Results</h2>
             {testInfo && (
               <div className="text-sm text-muted mt-1">
-                {testInfo.lab_tests?.name} | Patient: {testInfo.patients?.name || testInfo.patient_name}
+                {testInfo.lab_tests?.name} | Patient: {testInfo.patient_name}
               </div>
             )}
           </div>

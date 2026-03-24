@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { X, Search } from 'lucide-react'
+import { X, Search, UserSearch } from 'lucide-react'
 
-interface Patient {
+interface ExistingPatient {
   id: string
   name: string
   patient_id: string
@@ -32,12 +32,12 @@ interface CreateTestOrderModalProps {
 export function CreateTestOrderModal({ isOpen, onClose, onSuccess }: CreateTestOrderModalProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [patients, setPatients] = useState<Patient[]>([])
+  const [existingPatients, setExistingPatients] = useState<ExistingPatient[]>([])
   const [tests, setTests] = useState<LabTest[]>([])
   const [patientSearch, setPatientSearch] = useState('')
   const [showPatientList, setShowPatientList] = useState(false)
+  const searchRef = useRef<HTMLDivElement>(null)
   const [formData, setFormData] = useState({
-    patient_id: '',
     patient_name: '',
     patient_phone: '',
     patient_age: '',
@@ -46,21 +46,48 @@ export function CreateTestOrderModal({ isOpen, onClose, onSuccess }: CreateTestO
     test_date: new Date().toISOString().split('T')[0],
     price: '',
     discount: '0',
-    reference_doctor_id: '',
     notes: '',
   })
 
   useEffect(() => {
     if (isOpen) {
       fetchTests()
+      setPatientSearch('')
+      setShowPatientList(false)
+      setFormData({
+        patient_name: '',
+        patient_phone: '',
+        patient_age: '',
+        patient_gender: '',
+        test_id: '',
+        test_date: new Date().toISOString().split('T')[0],
+        price: '',
+        discount: '0',
+        notes: '',
+      })
+      setError('')
     }
   }, [isOpen])
 
   useEffect(() => {
-    if (patientSearch.length > 2) {
-      searchPatients()
+    if (patientSearch.length > 1) {
+      searchExistingPatients()
+    } else {
+      setExistingPatients([])
+      setShowPatientList(false)
     }
   }, [patientSearch])
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setShowPatientList(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
 
   const fetchTests = async () => {
     try {
@@ -74,34 +101,33 @@ export function CreateTestOrderModal({ isOpen, onClose, onSuccess }: CreateTestO
     }
   }
 
-  const searchPatients = async () => {
+  const searchExistingPatients = async () => {
     try {
       const response = await fetch(`/api/patients?search=${patientSearch}`)
       const result = await response.json()
-      setPatients(result.patients || [])
-      setShowPatientList(true)
+      const list = result.patients || result.data?.data || []
+      setExistingPatients(list)
+      setShowPatientList(list.length > 0)
     } catch (error) {
       console.error('Error searching patients:', error)
     }
   }
 
-  const selectPatient = (patient: Patient) => {
+  const fillFromExistingPatient = (patient: ExistingPatient) => {
     const age = patient.date_of_birth
       ? Math.floor(
           (new Date().getTime() - new Date(patient.date_of_birth).getTime()) /
             (365.25 * 24 * 60 * 60 * 1000)
         )
       : 0
-
-    setFormData({
-      ...formData,
-      patient_id: patient.id,
+    setFormData((prev) => ({
+      ...prev,
       patient_name: patient.name,
       patient_phone: patient.phone,
-      patient_age: age.toString(),
+      patient_age: age > 0 ? age.toString() : '',
       patient_gender: patient.gender,
-    })
-    setPatientSearch(patient.name + ' (' + patient.patient_id + ')')
+    }))
+    setPatientSearch('')
     setShowPatientList(false)
   }
 
@@ -121,31 +147,32 @@ export function CreateTestOrderModal({ isOpen, onClose, onSuccess }: CreateTestO
     setLoading(true)
     setError('')
 
-    if (!formData.patient_id) {
-      setError('Please select a patient')
+    if (!formData.patient_name.trim()) {
+      setError('Patient name is required')
+      setLoading(false)
+      return
+    }
+
+    if (!formData.test_id) {
+      setError('Please select a test')
       setLoading(false)
       return
     }
 
     try {
-      const finalPrice =
-        parseFloat(formData.price) - parseFloat(formData.discount)
-
       const response = await fetch('/api/test-results', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          patient_id: formData.patient_id,
           test_id: formData.test_id,
           test_date: formData.test_date,
-          price: parseFloat(formData.price),
-          discount: parseFloat(formData.discount),
-          patient_name: formData.patient_name,
-          patient_phone: formData.patient_phone,
+          price: parseFloat(formData.price) || 0,
+          discount: parseFloat(formData.discount) || 0,
+          patient_name: formData.patient_name.trim(),
+          patient_phone: formData.patient_phone.trim() || null,
           patient_age: parseInt(formData.patient_age) || null,
-          patient_gender: formData.patient_gender,
-          reference_doctor_id: formData.reference_doctor_id || null,
-          notes: formData.notes,
+          patient_gender: formData.patient_gender || null,
+          notes: formData.notes || null,
         }),
       })
 
@@ -183,44 +210,111 @@ export function CreateTestOrderModal({ isOpen, onClose, onSuccess }: CreateTestO
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Patient Search */}
-          <div className="relative">
-            <Label htmlFor="patient" className="text-foreground">
-              Search Patient *
-            </Label>
-            <div className="relative">
-              <Search
-                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted"
-                size={20}
-              />
+          {/* Patient Section */}
+          <div className="border border-border rounded-lg p-4 space-y-3">
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="text-sm font-semibold text-foreground">Patient Details</h3>
+            </div>
+
+            {/* Optional: fill from existing registered patient */}
+            <div ref={searchRef} className="relative">
+              <Label className="text-muted text-xs">
+                <UserSearch size={12} className="inline mr-1" />
+                Auto-fill from registered patient (optional)
+              </Label>
+              <div className="relative mt-1">
+                <Search
+                  className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted"
+                  size={16}
+                />
+                <Input
+                  type="text"
+                  value={patientSearch}
+                  onChange={(e) => setPatientSearch(e.target.value)}
+                  className="pl-9 bg-input border-input-border text-foreground text-sm"
+                  placeholder="Search registered patients to auto-fill..."
+                />
+              </div>
+              {showPatientList && existingPatients.length > 0 && (
+                <div className="absolute z-10 w-full mt-1 bg-surface border border-input-border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                  {existingPatients.map((patient) => (
+                    <div
+                      key={patient.id}
+                      onMouseDown={() => fillFromExistingPatient(patient)}
+                      className="px-4 py-2 hover:bg-surface-hover cursor-pointer border-b border-input-border last:border-0"
+                    >
+                      <div className="text-foreground text-sm font-medium">{patient.name}</div>
+                      <div className="text-xs text-muted">
+                        {patient.patient_id} | {patient.phone} | {patient.gender}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Inline patient fields — always editable */}
+            <div>
+              <Label htmlFor="patient_name" className="text-foreground">
+                Patient Name *
+              </Label>
               <Input
-                id="patient"
+                id="patient_name"
                 type="text"
-                value={patientSearch}
-                onChange={(e) => setPatientSearch(e.target.value)}
-                onFocus={() => patientSearch.length > 2 && setShowPatientList(true)}
-                className="pl-10 bg-input border-input-border text-foreground"
-                placeholder="Type patient name or ID..."
                 required
+                value={formData.patient_name}
+                onChange={(e) => setFormData({ ...formData, patient_name: e.target.value })}
+                className="bg-input border-input-border text-foreground"
+                placeholder="Enter patient name"
               />
             </div>
 
-            {showPatientList && patients.length > 0 && (
-              <div className="absolute z-10 w-full mt-1 bg-surface-hover border border-input-border rounded-lg max-h-60 overflow-y-auto">
-                {patients.map((patient) => (
-                  <div
-                    key={patient.id}
-                    onClick={() => selectPatient(patient)}
-                    className="px-4 py-3 hover:bg-surface-hover cursor-pointer border-b border-input-border last:border-0"
-                  >
-                    <div className="text-foreground font-medium">{patient.name}</div>
-                    <div className="text-sm text-muted">
-                      {patient.patient_id} | {patient.phone}
-                    </div>
-                  </div>
-                ))}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <Label htmlFor="patient_phone" className="text-foreground">
+                  Phone
+                </Label>
+                <Input
+                  id="patient_phone"
+                  type="tel"
+                  value={formData.patient_phone}
+                  onChange={(e) => setFormData({ ...formData, patient_phone: e.target.value })}
+                  className="bg-input border-input-border text-foreground"
+                  placeholder="Phone number"
+                />
               </div>
-            )}
+              <div>
+                <Label htmlFor="patient_age" className="text-foreground">
+                  Age
+                </Label>
+                <Input
+                  id="patient_age"
+                  type="number"
+                  min="0"
+                  max="150"
+                  value={formData.patient_age}
+                  onChange={(e) => setFormData({ ...formData, patient_age: e.target.value })}
+                  className="bg-input border-input-border text-foreground"
+                  placeholder="Age"
+                />
+              </div>
+              <div>
+                <Label htmlFor="patient_gender" className="text-foreground">
+                  Sex
+                </Label>
+                <select
+                  id="patient_gender"
+                  value={formData.patient_gender}
+                  onChange={(e) => setFormData({ ...formData, patient_gender: e.target.value })}
+                  className="w-full bg-input border border-input-border rounded-md px-3 py-2 text-foreground"
+                >
+                  <option value="">Select...</option>
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+            </div>
           </div>
 
           {/* Test Selection */}
@@ -267,6 +361,7 @@ export function CreateTestOrderModal({ isOpen, onClose, onSuccess }: CreateTestO
                 id="price"
                 type="number"
                 step="0.01"
+                min="0"
                 required
                 value={formData.price}
                 onChange={(e) => setFormData({ ...formData, price: e.target.value })}

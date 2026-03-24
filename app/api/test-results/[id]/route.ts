@@ -35,15 +35,6 @@ export async function GET(
           sample_type,
           description
         ),
-        patients (
-          id,
-          name,
-          patient_id,
-          phone,
-          gender,
-          date_of_birth,
-          age
-        ),
         reference_doctor:users!patient_test_results_reference_doctor_id_fkey (
           id,
           username,

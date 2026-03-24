@@ -32,34 +32,25 @@ export async function GET(request: NextRequest) {
     let query = supabase
       .from('patient_test_results')
       .select(`
-        *,
+        id,
+        test_date,
+        status,
+        price,
+        discount,
+        final_price,
+        patient_name,
+        patient_phone,
+        patient_age,
+        patient_gender,
+        notes,
+        created_at,
+        updated_at,
         lab_tests (
           id,
           name,
           code,
           category,
           sample_type
-        ),
-        patients (
-          id,
-          name,
-          patient_id,
-          phone,
-          gender,
-          date_of_birth
-        ),
-        reference_doctor:users!patient_test_results_reference_doctor_id_fkey (
-          id,
-          username,
-          email
-        ),
-        conducted_by_user:users!patient_test_results_conducted_by_fkey (
-          id,
-          username
-        ),
-        verified_by_user:users!patient_test_results_verified_by_fkey (
-          id,
-          username
         )
       `, { count: 'exact' })
 
@@ -144,9 +135,16 @@ export async function POST(request: NextRequest) {
     } = body
 
     // Validate required fields
-    if (!patient_id || !test_id || price === undefined) {
+    if (!test_id || price === undefined) {
       return NextResponse.json(
-        { success: false, error: 'patient_id, test_id, and price are required' },
+        { success: false, error: 'test_id and price are required' },
+        { status: 400 }
+      )
+    }
+
+    if (!patient_name) {
+      return NextResponse.json(
+        { success: false, error: 'patient_name is required' },
         { status: 400 }
       )
     }
@@ -161,7 +159,7 @@ export async function POST(request: NextRequest) {
     const { data, error } = await supabase
       .from('patient_test_results')
       .insert({
-        patient_id,
+        ...(patient_id ? { patient_id } : {}),
         test_id,
         test_date: test_date || new Date().toISOString().split('T')[0],
         price,
@@ -182,13 +180,6 @@ export async function POST(request: NextRequest) {
           name,
           code,
           category
-        ),
-        patients (
-          id,
-          name,
-          patient_id,
-          phone,
-          gender
         )
       `)
       .single()

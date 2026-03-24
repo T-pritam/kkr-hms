@@ -35,13 +35,7 @@ export async function POST(
     // Check if test result exists and get patient gender
     const { data: testResult, error: testError } = await supabase
       .from('patient_test_results')
-      .select(`
-        id,
-        patient_gender,
-        patients (
-          gender
-        )
-      `)
+      .select('id, patient_gender')
       .eq('id', id)
       .single()
 
@@ -52,9 +46,8 @@ export async function POST(
       )
     }
 
-    // Determine patient gender (prefer patient_gender field, fallback to patients table)
-    const patientsData = Array.isArray(testResult.patients) ? testResult.patients[0] : testResult.patients
-    const patientGender = testResult.patient_gender || patientsData?.gender
+    // Determine patient gender from denormalized field
+    const patientGender = testResult.patient_gender
 
     // Get parameter details for each value to calculate flags and reference ranges
     const parameterIds = values.map(v => v.parameter_id)
@@ -129,10 +122,10 @@ export async function POST(
       }
     })
 
-    // Insert all values
+    // Upsert all values (handles re-submission without unique constraint error)
     const { data, error } = await supabase
       .from('test_result_values')
-      .insert(valuesToInsert)
+      .upsert(valuesToInsert, { onConflict: 'result_id,parameter_id' })
       .select(`
         *,
         test_parameters (
@@ -147,7 +140,7 @@ export async function POST(
       throw error
     }
 
-    // Update test result status to 'completed' if it was 'processing'
+    // Update test result status to 'completed' if it was pending/collected/processing
     await supabase
       .from('patient_test_results')
       .update({ 
@@ -155,7 +148,7 @@ export async function POST(
         updated_at: new Date().toISOString()
       })
       .eq('id', id)
-      .in('status', ['processing', 'collected'])
+      .in('status', ['pending', 'collected', 'processing'])
 
     return NextResponse.json({
       success: true,
