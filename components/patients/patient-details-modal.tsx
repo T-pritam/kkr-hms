@@ -122,49 +122,50 @@ export default function PatientDetailsModal({
   ];
 
   return (
-    <div className="fixed inset-0 bg-overlay  flex items-center justify-center z-50 p-4">
-      <div className="bg-surface rounded-lg shadow-xl w-full max-w-7xl flex flex-col">
+    <div className="fixed inset-0 bg-overlay flex items-end sm:items-center justify-center z-50 sm:p-4">
+      <div className="bg-surface rounded-t-2xl sm:rounded-lg shadow-xl w-full h-[95vh] sm:h-auto sm:max-h-[90vh] sm:max-w-7xl flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-input-border">
-          <div>
-            <h2 className="text-2xl font-bold text-foreground">
+        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-input-border shrink-0">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg sm:text-2xl font-bold text-foreground truncate">
               Patient Details: {patientData?.name || 'Loading...'}
             </h2>
-            <p className="text-muted mt-1">
+            <p className="text-muted mt-1 text-xs sm:text-sm">
               ID: {patientData?.patient_id} | Joined: {patientData?.date_of_join}
             </p>
           </div>
           <button
             onClick={onClose}
-            className="text-muted hover:text-foreground transition-colors"
+            className="text-muted hover:text-foreground transition-colors p-2 -mr-2 min-h-[44px] min-w-[44px] flex items-center justify-center"
           >
             <X className="h-6 w-6" />
           </button>
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-input-border px-6 overflow-x-auto">
+        <div className="flex border-b border-input-border px-3 sm:px-6 overflow-x-auto shrink-0">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             return (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors whitespace-nowrap ${
+                className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-3 min-h-[44px] border-b-2 transition-colors whitespace-nowrap text-xs sm:text-sm ${
                   activeTab === tab.id
                     ? 'border-info text-info'
                     : 'border-transparent text-muted hover:text-foreground'
                 }`}
               >
-                <Icon className="h-4 w-4" />
-                {tab.label}
+                <Icon className="h-4 w-4 flex-shrink-0" />
+                <span className="hidden sm:inline">{tab.label}</span>
+                <span className="sm:hidden">{tab.label.split(' ')[0]}</span>
               </button>
             );
           })}
         </div>
 
         {/* Tab Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-6">
           {activeTab === 'info' && <PatientInfoTab patient={patientData} />}
           
           {activeTab === 'visits' && (

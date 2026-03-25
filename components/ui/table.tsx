@@ -1,18 +1,26 @@
 import * as React from 'react'
 import { cn } from '@/lib/utils'
 
-const Table = React.forwardRef<
-  HTMLTableElement,
-  React.HTMLAttributes<HTMLTableElement>
->(({ className, ...props }, ref) => (
-  <div className="w-full overflow-x-auto">
-    <table
-      ref={ref}
-      className={cn('w-full caption-bottom text-sm', className)}
-      {...props}
-    />
-  </div>
-))
+interface TableProps extends React.HTMLAttributes<HTMLTableElement> {
+  /** When true, makes the first column sticky during horizontal scroll */
+  stickyFirstColumn?: boolean
+}
+
+const Table = React.forwardRef<HTMLTableElement, TableProps>(
+  ({ className, stickyFirstColumn, ...props }, ref) => (
+    <div className={cn('w-full overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0', stickyFirstColumn && 'relative')}>
+      <table
+        ref={ref}
+        className={cn(
+          'w-full caption-bottom text-sm',
+          stickyFirstColumn && '[&_th:first-child]:sticky [&_th:first-child]:left-0 [&_th:first-child]:z-10 [&_th:first-child]:bg-table-header [&_td:first-child]:sticky [&_td:first-child]:left-0 [&_td:first-child]:z-10 [&_td:first-child]:bg-surface',
+          className
+        )}
+        {...props}
+      />
+    </div>
+  )
+)
 Table.displayName = 'Table'
 
 const TableHeader = React.forwardRef<
@@ -61,7 +69,7 @@ const TableHead = React.forwardRef<
   <th
     ref={ref}
     className={cn(
-      'h-11 px-4 text-left align-middle font-medium text-muted',
+      'h-11 px-3 sm:px-4 text-left align-middle font-medium text-muted text-xs sm:text-sm whitespace-nowrap',
       '[&:has([role=checkbox])]:pr-0',
       className
     )}
@@ -77,7 +85,7 @@ const TableCell = React.forwardRef<
   <td
     ref={ref}
     className={cn(
-      'px-4 py-3 align-middle text-foreground',
+      'px-3 sm:px-4 py-2.5 sm:py-3 align-middle text-foreground text-sm',
       '[&:has([role=checkbox])]:pr-0',
       className
     )}

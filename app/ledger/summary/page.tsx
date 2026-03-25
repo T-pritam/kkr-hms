@@ -326,7 +326,9 @@ export default function DailyLedgerSummaryPage() {
                 No transactions for this date
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+                {/* Desktop Table */}
+                <div className="hidden md:block overflow-x-auto">
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-border">
@@ -419,7 +421,79 @@ export default function DailyLedgerSummaryPage() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+                </div>
+
+                {/* Mobile Cards */}
+                <div className="md:hidden space-y-3">
+                  {summary.transactions.map((txn) => (
+                    <div key={txn.id} className="bg-surface-elevated rounded-lg p-3 border border-border space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className={`shrink-0 px-2 py-1 rounded-full text-xs border font-medium ${
+                            txn.transaction_type === 'credit'
+                              ? 'bg-success-subtle text-success-text border-success/20'
+                              : 'bg-destructive-subtle text-destructive border-destructive/20'
+                          }`}>
+                            {txn.transaction_type === 'credit' ? '+' : '-'}
+                          </span>
+                          <span className={`font-bold text-lg ${
+                            txn.transaction_type === 'credit' ? 'text-success-text' : 'text-destructive'
+                          }`}>
+                            {formatCurrency(txn.amount)}
+                          </span>
+                        </div>
+                        <span className={`shrink-0 px-2 py-1 rounded-full text-xs border flex items-center gap-1 ${getStatusColor(txn.status)}`}>
+                          {getStatusIcon(txn.status)}
+                          {txn.status.replace('_', ' ')}
+                        </span>
+                      </div>
+
+                      <div className="text-sm text-foreground">{txn.description}</div>
+                      
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
+                        <span>{new Date(txn.created_at).toLocaleTimeString('en-GB', { hour12: false, hour: '2-digit', minute: '2-digit' })}</span>
+                        <span className="capitalize">{txn.source}{txn.source === 'patient' ? ` (${txn.patient?.name || 'Unknown'})` : ''}</span>
+                        <span className="capitalize">{txn.payment_mode.replace('_', ' ')}</span>
+                        {txn.reference_number && <span>Ref: {txn.reference_number}</span>}
+                        <span>By: {txn.created_by_user?.username || 'Unknown'}</span>
+                      </div>
+
+                      {txn.status !== 'day_closed' && (
+                        <div className="flex gap-2 pt-1">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="flex-1"
+                            onClick={() => {
+                              setSelectedTransaction(txn)
+                              setShowEditModal(true)
+                            }}
+                          >
+                            <Edit size={14} className="mr-1" />
+                            Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleDeleteTransaction(txn.id)}
+                          >
+                            <Trash2 size={14} />
+                          </Button>
+                          {userRole === 'admin' && txn.status === 'pending' && (
+                            <Button
+                              size="sm"
+                              variant="default"
+                              onClick={() => handleVerifyTransaction(txn.id)}
+                            >
+                              <CheckCircle size={14} />
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
           </CardContent>
         </Card>

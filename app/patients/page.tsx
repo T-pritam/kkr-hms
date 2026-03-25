@@ -112,6 +112,7 @@ export default function PatientsPage() {
                 <div className="relative flex-1 sm:flex-none">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted" size={18} />
                   <Input
+                    type="search"
                     placeholder="Search patients..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}

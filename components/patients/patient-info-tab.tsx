@@ -53,13 +53,13 @@ export default function PatientInfoTab({ patient, onStatusChange }: PatientInfoT
   };
 
   return (
-    <div className="space-y-6 max-h-[60vh] overflow-y-auto pr-4">
+    <div className="space-y-6 max-h-[60vh] overflow-y-auto pr-0 sm:pr-4">
       {/* Patient Information Section */}
-      <div className="bg-surface-hover rounded-lg p-6">
-        <h3 className="text-xl font-semibold text-foreground mb-6">Patient Information</h3>
+      <div className="bg-surface-hover rounded-lg p-4 sm:p-6">
+        <h3 className="text-lg sm:text-xl font-semibold text-foreground mb-4 sm:mb-6">Patient Information</h3>
         
         {/* Full Name & Gender */}
-        <div className="grid grid-cols-2 gap-8 mb-4 border-b border-input-border pb-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8 mb-4 border-b border-input-border pb-4">
           <div className="flex justify-between items-center">
             <label className="text-sm font-medium text-muted">Full Name</label>
             <span className="text-foreground font-medium">{patient.name || 'N/A'}</span>
@@ -81,7 +81,7 @@ export default function PatientInfoTab({ patient, onStatusChange }: PatientInfoT
         </div>
 
         {/* Date of Birth & Date of Join */}
-        <div className="grid grid-cols-2 gap-8 mb-4 border-b border-input-border pb-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8 mb-4 border-b border-input-border pb-4">
           <div className="flex justify-between items-center">
             <label className="text-sm font-medium text-muted">Date of Birth</label>
             <span className="text-foreground font-medium">{formatDate(patient.date_of_birth) || 'N/A'}</span>
@@ -93,7 +93,7 @@ export default function PatientInfoTab({ patient, onStatusChange }: PatientInfoT
         </div>
 
         {/* Phone & Email */}
-        <div className="grid grid-cols-2 gap-8 mb-4 border-b border-input-border pb-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8 mb-4 border-b border-input-border pb-4">
           <div className="flex justify-between items-center">
             <label className="text-sm font-medium text-muted">Phone</label>
             <span className="text-foreground font-medium">{patient.phone || 'N/A'}</span>
@@ -144,8 +144,8 @@ export default function PatientInfoTab({ patient, onStatusChange }: PatientInfoT
       </div>
 
       {/* Medical Information Section */}
-      <div className="bg-surface-hover rounded-lg p-6">
-        <h3 className="text-xl font-semibold text-foreground mb-6">Medical Information</h3>
+      <div className="bg-surface-hover rounded-lg p-4 sm:p-6">
+        <h3 className="text-lg sm:text-xl font-semibold text-foreground mb-4 sm:mb-6">Medical Information</h3>
         
         {/* Medical History */}
         <div className="mb-4 border-b border-input-border pb-4">

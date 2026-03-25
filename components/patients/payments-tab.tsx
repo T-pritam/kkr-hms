@@ -159,14 +159,15 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h3 className="text-xl font-semibold text-foreground">Payment Installments</h3>
+          <h3 className="text-lg sm:text-xl font-semibold text-foreground">Payment Installments</h3>
         </div>
         <button
           onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 bg-info hover:bg-info-hover text-foreground px-4 py-2 rounded-lg transition-colors"
+          className="flex items-center gap-2 bg-info hover:bg-info-hover text-foreground px-3 sm:px-4 py-2 rounded-lg transition-colors min-h-[44px] text-sm"
         >
           <Plus className="h-4 w-4" />
-          Add Payment
+          <span className="hidden sm:inline">Add Payment</span>
+          <span className="sm:hidden">Add</span>
         </button>
       </div>
 
@@ -265,7 +266,8 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
         </form>
       )}
 
-      <div className="bg-surface-hover rounded-lg overflow-hidden">
+      {/* Desktop Table */}
+      <div className="bg-surface-hover rounded-lg overflow-hidden hidden md:block">
         <table className="w-full">
           <thead className="bg-surface-inset">
             <tr>
@@ -350,6 +352,75 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Mobile Cards */}
+      <div className="md:hidden space-y-3">
+        {installments.length === 0 ? (
+          <div className="bg-surface-hover rounded-lg p-6 text-center text-muted">
+            No payments recorded yet
+          </div>
+        ) : (
+          <>
+            {installments.map((installment) => (
+              <div key={installment.id} className="bg-surface-hover rounded-lg p-4 space-y-3">
+                <div className="flex items-start justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs bg-surface-inset px-2 py-0.5 rounded text-muted">
+                        #{installment.installment_number}
+                      </span>
+                      <span className="text-xs font-medium px-2 py-0.5 rounded bg-info-subtle text-info">
+                        {installment.payment_method.toUpperCase()}
+                      </span>
+                    </div>
+                    <p className="text-sm text-muted mt-1">
+                      {new Date(installment.payment_date).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <p className="text-base font-semibold text-success-text ml-3">
+                    ₹{parseFloat(installment.amount).toFixed(2)}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs">
+                  {installment.transaction_reference && (
+                    <span className="bg-surface-inset px-2 py-1 rounded text-muted">
+                      Ref: {installment.transaction_reference}
+                    </span>
+                  )}
+                  <span className="bg-surface-inset px-2 py-1 rounded text-muted">
+                    by {installment.users?.username || 'Unknown'}
+                  </span>
+                </div>
+                {installment.remarks && (
+                  <p className="text-xs text-muted line-clamp-2">{installment.remarks}</p>
+                )}
+                {canEditOrDelete(installment) && (
+                  <div className="flex gap-3 pt-2 border-t border-input-border">
+                    <button
+                      onClick={() => handleEdit(installment)}
+                      className="text-info text-sm font-medium min-h-[44px] flex items-center gap-1.5"
+                    >
+                      <Edit size={14} /> Edit
+                    </button>
+                    <button
+                      onClick={() => handleDelete(installment.id)}
+                      className="text-destructive text-sm font-medium min-h-[44px] flex items-center gap-1.5"
+                    >
+                      <Trash2 size={14} /> Delete
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+            <div className="bg-surface-inset rounded-lg p-4 flex justify-between items-center">
+              <span className="text-sm font-semibold text-foreground">Total Paid</span>
+              <span className="text-sm font-semibold text-success-text">
+                ₹{installments.reduce((sum, i) => sum + parseFloat(i.amount), 0).toFixed(2)}
+              </span>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

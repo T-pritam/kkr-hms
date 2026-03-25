@@ -187,7 +187,7 @@ export default function FinancesPage() {
             <select
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
-              className="px-4 py-2 bg-input border border-input-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              className="px-4 py-2 min-h-[44px] bg-input border border-input-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             >
               {getMonthOptions().map((option) => (
                 <option key={option.value} value={option.value}>
@@ -208,10 +208,10 @@ export default function FinancesPage() {
         </div>
 
         {/* Tabs */}
-        <div className="flex overflow-x-auto border-b border-border">
+        <div className="flex overflow-x-auto border-b border-border -mx-3 px-3 sm:mx-0 sm:px-0">
           <button
             onClick={() => setActiveTab('overview')}
-            className={`px-4 py-2 font-medium whitespace-nowrap transition-colors ${activeTab === 'overview'
+            className={`px-4 py-3 min-h-[44px] font-medium whitespace-nowrap transition-colors ${activeTab === 'overview'
                 ? 'text-primary border-b-2 border-primary'
                 : 'text-muted hover:text-foreground'
               }`}
@@ -220,7 +220,7 @@ export default function FinancesPage() {
           </button>
           <button
             onClick={() => setActiveTab('settlements')}
-            className={`px-4 py-2 font-medium whitespace-nowrap transition-colors ${activeTab === 'settlements'
+            className={`px-4 py-3 min-h-[44px] font-medium whitespace-nowrap transition-colors ${activeTab === 'settlements'
                 ? 'text-primary border-b-2 border-primary'
                 : 'text-muted hover:text-foreground'
               }`}
@@ -229,7 +229,7 @@ export default function FinancesPage() {
           </button>
           <button
             onClick={() => setActiveTab('transactions')}
-            className={`px-4 py-2 font-medium whitespace-nowrap transition-colors ${activeTab === 'transactions'
+            className={`px-4 py-3 min-h-[44px] font-medium whitespace-nowrap transition-colors ${activeTab === 'transactions'
                 ? 'text-primary border-b-2 border-primary'
                 : 'text-muted hover:text-foreground'
               }`}
@@ -238,7 +238,7 @@ export default function FinancesPage() {
           </button>
           <button
             onClick={() => setActiveTab('expenses')}
-            className={`px-4 py-2 font-medium whitespace-nowrap transition-colors ${activeTab === 'expenses'
+            className={`px-4 py-3 min-h-[44px] font-medium whitespace-nowrap transition-colors ${activeTab === 'expenses'
                 ? 'text-primary border-b-2 border-primary'
                 : 'text-muted hover:text-foreground'
               }`}
@@ -599,7 +599,7 @@ export default function FinancesPage() {
         {activeTab === 'expenses' && summary && (
           <div className="space-y-6">
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
               <Card className="bg-gradient-to-br from-destructive-subtle to-destructive-subtle/50 border-destructive/20">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted">Salary Expense</CardTitle>

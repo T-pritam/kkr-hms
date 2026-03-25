@@ -89,7 +89,7 @@ export default function LabTestsPage() {
           </div>
           <Button
             onClick={() => setShowCreateModal(true)}
-            className="bg-info hover:bg-info-hover text-foreground"
+            className="bg-info hover:bg-info-hover text-foreground w-full sm:w-auto"
           >
             <Plus className="mr-2" size={20} />
             Add New Test
@@ -122,7 +122,8 @@ export default function LabTestsPage() {
           </div>
         ) : (
           <div className="bg-surface rounded-lg border border-border overflow-hidden">
-            <div className="overflow-x-auto">
+            {/* Desktop Table */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-surface-hover">
                   <tr>
@@ -204,6 +205,64 @@ export default function LabTestsPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+
+            {/* Mobile Cards */}
+            <div className="md:hidden divide-y divide-border">
+              {tests.map((test) => (
+                <div key={test.id} className="p-4 space-y-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <h3 className="text-foreground font-semibold truncate">{test.name}</h3>
+                      <p className="text-xs text-muted mt-0.5">{test.code}</p>
+                    </div>
+                    <span
+                      className={`shrink-0 px-2 py-1 rounded text-xs font-medium ${
+                        test.is_active
+                          ? 'bg-success-subtle text-success-text'
+                          : 'bg-destructive-subtle text-destructive'
+                      }`}
+                    >
+                      {test.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-sm">
+                    <span className="px-2 py-1 bg-info-subtle text-info rounded text-xs">
+                      {test.category}
+                    </span>
+                    <span className="text-muted text-xs px-2 py-1 bg-surface-hover rounded">{test.sample_type}</span>
+                    <span className="text-foreground font-medium text-xs px-2 py-1 bg-surface-hover rounded">₹{test.price}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => setManagingParameters(test)}
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 text-accent"
+                    >
+                      <Settings size={14} className="mr-1" />
+                      Params
+                    </Button>
+                    <Button
+                      onClick={() => setEditingTest(test)}
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 text-info"
+                    >
+                      <Edit size={14} className="mr-1" />
+                      Edit
+                    </Button>
+                    <Button
+                      onClick={() => handleDelete(test.id)}
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:bg-destructive-subtle"
+                    >
+                      <Trash2 size={14} />
+                    </Button>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}

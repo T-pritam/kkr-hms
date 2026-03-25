@@ -223,19 +223,19 @@ export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50 p-4">
-      <div className="bg-surface rounded-lg w-full max-w-2xl border border-border max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-overlay flex items-end sm:items-center justify-center z-50 sm:p-4">
+      <div className="bg-surface rounded-t-2xl sm:rounded-lg w-full sm:max-w-2xl border border-border max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-border sticky top-0 bg-surface">
-          <h2 className="text-xl font-bold text-foreground">
+        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-border sticky top-0 bg-surface">
+          <h2 className="text-lg sm:text-xl font-bold text-foreground">
             {showAddForm ? (editingId ? 'Edit Expense' : 'Add New Expense') : 'General Expenses'}
           </h2>
-          <button onClick={onClose} className="text-muted hover:text-foreground">
+          <button onClick={onClose} className="text-muted hover:text-foreground p-1 min-h-[44px] min-w-[44px] flex items-center justify-center">
             <X size={20} />
           </button>
         </div>
 
-        <div className="p-6 space-y-6">
+        <div className="p-4 sm:p-6 space-y-6">
           {/* Form - Always Visible */}
           <form onSubmit={handleSubmit} className="space-y-5 border-b border-border pb-6">
             {/* Expense Type */}

@@ -447,9 +447,9 @@ export default function BillingSettlementTab({
   return (
     <div className="space-y-6">
       {/* Billing Summary */}
-      <div className="bg-surface-hover rounded-lg p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-xl font-semibold text-foreground">Billing Summary</h3>
+      <div className="bg-surface-hover rounded-lg p-4 sm:p-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+          <h3 className="text-lg sm:text-xl font-semibold text-foreground">Billing Summary</h3>
           {isAdmin && (
             <button
               onClick={() => {
@@ -634,22 +634,23 @@ export default function BillingSettlementTab({
 
       {/* Doctor Visit Settlements */}
       <div>
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-xl font-semibold text-foreground">Doctor Visit Settlements</h3>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+          <h3 className="text-lg sm:text-xl font-semibold text-foreground">Doctor Visit Settlements</h3>
           <div className="flex gap-2">
             {isAdmin && (
               <button
                 onClick={handleSyncDoctorVisits}
                 disabled={syncing}
-                className="flex items-center gap-2 bg-success hover:bg-success-hover text-foreground px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+                className="flex items-center gap-2 bg-success hover:bg-success-hover text-foreground px-3 sm:px-4 py-2 rounded-lg transition-colors disabled:opacity-50 min-h-[44px] text-sm"
               >
-                {syncing ? 'Syncing...' : '🔄 Sync Doctor Visits'}
+                {syncing ? 'Syncing...' : '🔄 Sync Visits'}
               </button>
             )}
           </div>
         </div>
 
-        <div className="bg-surface-hover rounded-lg overflow-hidden">
+        {/* Desktop Table */}
+        <div className="bg-surface-hover rounded-lg overflow-hidden hidden md:block">
           <table className="w-full">
             <thead className="bg-surface-inset">
               <tr>
@@ -765,12 +766,104 @@ export default function BillingSettlementTab({
             </tbody>
           </table>
         </div>
+
+        {/* Mobile Cards */}
+        <div className="md:hidden space-y-3">
+          {settlements.length === 0 ? (
+            <div className="bg-surface-hover rounded-lg p-6 text-center text-muted">
+              No settlements created yet
+            </div>
+          ) : (
+            settlements.map((settlement) => (
+              <div key={settlement.id} className="bg-surface-hover rounded-lg p-4 space-y-3">
+                <div className="flex items-start justify-between">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-foreground">{settlement.doctor?.name}</p>
+                    {settlement.doctor?.specialist && (
+                      <p className="text-xs text-muted">{settlement.doctor.specialist}</p>
+                    )}
+                  </div>
+                  {settlement.settled ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-success-subtle text-success-text ml-2">
+                      <Check className="h-3 w-3" />
+                      Settled
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-warning-subtle text-warning-text ml-2">
+                      Pending
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div className="bg-surface-inset rounded p-2 text-center">
+                    <p className="text-muted">Visits</p>
+                    <p className="font-semibold text-foreground">{settlement.visit_count}</p>
+                  </div>
+                  <div className="bg-surface-inset rounded p-2 text-center">
+                    <p className="text-muted">Per Visit</p>
+                    <p className="font-semibold text-foreground">₹{parseFloat(settlement.amount_per_visit).toFixed(0)}</p>
+                  </div>
+                  <div className="bg-surface-inset rounded p-2 text-center">
+                    <p className="text-muted">Total</p>
+                    <p className="font-semibold text-foreground">₹{parseFloat(settlement.total_amount).toFixed(0)}</p>
+                  </div>
+                </div>
+                {isAdmin && (
+                  <div className="flex gap-3 pt-2 border-t border-input-border">
+                    <button
+                      onClick={() => handleEditSettlement(settlement)}
+                      className="text-info text-sm font-medium min-h-[44px] flex items-center"
+                    >
+                      Edit
+                    </button>
+                    {!settlement.settled && (
+                      <button
+                        onClick={() => {
+                          setSettlePricingData({
+                            pricing_mode: settlement.pricing_mode || 'per_visit',
+                            amount_per_visit: parseFloat(settlement.amount_per_visit || 0),
+                            total_amount: parseFloat(settlement.total_amount || 0),
+                            visit_count: settlement.visit_count || 0,
+                          });
+                          setSettlePricingComplete(false);
+                          setSettleData({
+                            settlement_id: settlement.id,
+                            settlement_amount: parseFloat(settlement.total_amount),
+                            payment_method: 'cash',
+                            transaction_reference: '',
+                            settlement_notes: '',
+                            settlement_type: settlement.settlement_type || 'regular',
+                          });
+                          setShowSettleModal(true);
+                        }}
+                        className="text-success-text text-sm font-medium min-h-[44px] flex items-center"
+                      >
+                        Settle
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleDeleteSettlement(settlement.id)}
+                      className="text-destructive text-sm font-medium min-h-[44px] flex items-center"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                )}
+                {!isAdmin && settlement.settled && (
+                  <div className="text-xs text-muted pt-2 border-t border-input-border">
+                    Settled: {new Date(settlement.settlement_date).toLocaleDateString()} — ₹{parseFloat(settlement.settlement_amount).toFixed(2)}
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
       </div>
 
       {/* Mark as Settled Modal */}
       {showSettleModal && settleData.settlement_id && (
-        <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50 p-4">
-          <div className="bg-surface-hover rounded-lg p-6 w-full max-w-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-overlay flex items-end sm:items-center justify-center z-50 sm:p-4">
+          <div className="bg-surface-hover rounded-t-2xl sm:rounded-lg p-4 sm:p-6 w-full sm:max-w-2xl space-y-4 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h4 className="text-xl font-semibold text-foreground">
                 {!settlePricingComplete ? 'Set Consultation Fee' : 'Complete Settlement'}
@@ -1027,8 +1120,8 @@ export default function BillingSettlementTab({
 
       {/* Edit Settlement Modal */}
       {editingSettlement && (
-        <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50 p-4">
-          <form onSubmit={handleUpdateSettlement} className="bg-surface-hover rounded-lg p-6 w-full max-w-md space-y-4">
+        <div className="fixed inset-0 bg-overlay flex items-end sm:items-center justify-center z-50 sm:p-4">
+          <form onSubmit={handleUpdateSettlement} className="bg-surface-hover rounded-t-2xl sm:rounded-lg p-4 sm:p-6 w-full sm:max-w-md space-y-4 max-h-[95vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h4 className="text-xl font-semibold text-foreground">Edit Settlement</h4>
               <button
@@ -1187,8 +1280,8 @@ export default function BillingSettlementTab({
 
       {/* Settle Referral Commission Modal */}
       {showSettleReferralModal && (
-        <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50 p-4">
-          <form onSubmit={handleSettleReferralCommission} className="bg-surface-hover rounded-lg p-6 w-full max-w-md space-y-4">
+        <div className="fixed inset-0 bg-overlay flex items-end sm:items-center justify-center z-50 sm:p-4">
+          <form onSubmit={handleSettleReferralCommission} className="bg-surface-hover rounded-t-2xl sm:rounded-lg p-4 sm:p-6 w-full sm:max-w-md space-y-4 max-h-[95vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h4 className="text-xl font-semibold text-foreground">Settle Referral Commission</h4>
               <button

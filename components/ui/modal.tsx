@@ -13,14 +13,16 @@ interface ModalProps {
   children: React.ReactNode
   footer?: React.ReactNode
   className?: string
+  /** When true (default), modal becomes full-screen on mobile */
+  mobileFullScreen?: boolean
 }
 
 const sizeClasses = {
-  sm: 'max-w-md',
-  md: 'max-w-lg',
-  lg: 'max-w-2xl',
-  xl: 'max-w-4xl',
-  full: 'max-w-6xl',
+  sm: 'sm:max-w-md',
+  md: 'sm:max-w-lg',
+  lg: 'sm:max-w-2xl',
+  xl: 'sm:max-w-4xl',
+  full: 'sm:max-w-6xl',
 }
 
 export function Modal({
@@ -32,6 +34,7 @@ export function Modal({
   children,
   footer,
   className,
+  mobileFullScreen = true,
 }: ModalProps) {
   React.useEffect(() => {
     if (!isOpen) return
@@ -49,7 +52,7 @@ export function Modal({
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-overlay backdrop-blur-sm"
@@ -59,26 +62,28 @@ export function Modal({
       {/* Modal container */}
       <div
         className={cn(
-          'relative w-full rounded-xl border border-border bg-surface shadow-lg animate-scaleIn',
-          'max-h-[90vh] flex flex-col',
+          'relative w-full bg-surface shadow-lg animate-scaleIn flex flex-col',
+          mobileFullScreen
+            ? 'h-full sm:h-auto sm:max-h-[90vh] rounded-none sm:rounded-xl border-0 sm:border sm:border-border'
+            : 'max-h-[90vh] rounded-xl border border-border m-4',
           sizeClasses[size],
           className
         )}
       >
         {/* Header */}
         {(title || description) && (
-          <div className="flex items-start justify-between gap-4 border-b border-border px-6 py-4">
-            <div className="space-y-1">
+          <div className="flex items-start justify-between gap-4 border-b border-border px-4 sm:px-6 py-3 sm:py-4 shrink-0">
+            <div className="space-y-0.5 sm:space-y-1 min-w-0">
               {title && (
-                <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+                <h2 className="text-base sm:text-lg font-semibold text-foreground truncate">{title}</h2>
               )}
               {description && (
-                <p className="text-sm text-muted">{description}</p>
+                <p className="text-xs sm:text-sm text-muted">{description}</p>
               )}
             </div>
             <button
               onClick={onClose}
-              className="rounded-lg p-1.5 text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
+              className="rounded-lg p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-muted hover:text-foreground hover:bg-surface-hover transition-colors shrink-0"
             >
               <X className="h-5 w-5" />
             </button>
@@ -89,20 +94,20 @@ export function Modal({
         {!title && !description && (
           <button
             onClick={onClose}
-            className="absolute right-4 top-4 z-10 rounded-lg p-1.5 text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
+            className="absolute right-3 top-3 z-10 rounded-lg p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
           >
             <X className="h-5 w-5" />
           </button>
         )}
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-4">
+        <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
           {children}
         </div>
 
         {/* Footer */}
         {footer && (
-          <div className="border-t border-border px-6 py-4">
+          <div className="border-t border-border px-4 sm:px-6 py-3 sm:py-4 shrink-0">
             {footer}
           </div>
         )}

@@ -313,13 +313,13 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
   if (!isOpen || !employeeData) return null
 
   return (
-    <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50">
-      <div className="bg-surface rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-overlay flex items-end sm:items-center justify-center z-50 sm:p-0">
+      <div className="bg-surface rounded-t-2xl sm:rounded-lg p-4 sm:p-6 w-full sm:max-w-2xl sm:mx-4 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold text-foreground">
+          <h2 className="text-lg sm:text-xl font-bold text-foreground">
             {employeeData.name} - {selectedMonth}
           </h2>
-          <button onClick={onClose} className="text-muted hover:text-foreground">
+          <button onClick={onClose} className="text-muted hover:text-foreground p-1 min-h-[44px] min-w-[44px] flex items-center justify-center">
             <X size={24} />
           </button>
         </div>

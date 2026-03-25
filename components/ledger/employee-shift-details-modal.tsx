@@ -83,19 +83,19 @@ export function EmployeeShiftDetailsModal({
   if (!isOpen || !employee) return null
 
   return (
-    <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-surface rounded-lg max-w-4xl w-full border border-border my-8">
-        <div className="flex items-center justify-between p-6 border-b border-border">
-          <div>
-            <h2 className="text-xl font-bold text-foreground">{employee.employeeName}</h2>
+    <div className="fixed inset-0 bg-overlay flex items-end sm:items-center justify-center z-50 sm:p-4 sm:overflow-y-auto">
+      <div className="bg-surface rounded-t-2xl sm:rounded-lg sm:max-w-4xl w-full border border-border sm:my-8 max-h-[95vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-border shrink-0">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg sm:text-xl font-bold text-foreground truncate">{employee.employeeName}</h2>
             <p className="text-sm text-muted mt-1">Settlement Date: {settlementDate}</p>
           </div>
-          <button onClick={onClose} className="text-muted hover:text-foreground">
+          <button onClick={onClose} className="text-muted hover:text-foreground p-1 min-h-[44px] min-w-[44px] flex items-center justify-center ml-2">
             <X size={20} />
           </button>
         </div>
 
-        <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+        <div className="p-4 sm:p-6 space-y-6 overflow-y-auto">", "
           {/* Summary Stats */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-surface-hover rounded-lg p-4 border border-input-border">

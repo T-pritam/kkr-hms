@@ -141,8 +141,8 @@ export default function PatientDetailsPage() {
     <DashboardLayout>
       <div className="space-y-6">
         {/* Header Card */}
-        <div className="bg-gradient-to-r from-surface to-background rounded-lg border border-border p-6">
-          <div className="flex items-start gap-6">
+        <div className="bg-gradient-to-r from-surface to-background rounded-lg border border-border p-4 sm:p-6">
+          <div className="flex items-start gap-3 sm:gap-6">
             <button
               onClick={() => router.back()}
               className="p-2 hover:bg-surface-hover rounded-lg transition-colors flex-shrink-0"
@@ -177,22 +177,23 @@ export default function PatientDetailsPage() {
         </div>
 
         {/* Tabs */}
-        <div className="bg-surface rounded-lg border border-input-border p-6">
-          <div className="flex overflow-x-auto gap-0 -mx-6 px-6 mb-6 border-b border-input-border">
+        <div className="bg-surface rounded-lg border border-input-border p-3 sm:p-6">
+          <div className="flex overflow-x-auto gap-0 -mx-3 px-3 sm:-mx-6 sm:px-6 mb-4 sm:mb-6 border-b border-input-border">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               return (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-2 px-4 py-4 border-b-2 transition-all whitespace-nowrap text-sm font-medium ${
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-3 sm:py-4 min-h-[44px] border-b-2 transition-all whitespace-nowrap text-xs sm:text-sm font-medium ${
                     activeTab === tab.id
                       ? 'border-primary text-primary'
                       : 'border-transparent text-muted hover:text-foreground'
                   }`}
                 >
-                  <Icon className="h-4 w-4" />
-                  {tab.label}
+                  <Icon className="h-4 w-4 flex-shrink-0" />
+                  <span className="hidden sm:inline">{tab.label}</span>
+                  <span className="sm:hidden">{tab.label.split(' ')[0]}</span>
                 </button>
               );
             })}

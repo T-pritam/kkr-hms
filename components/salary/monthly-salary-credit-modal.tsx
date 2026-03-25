@@ -155,17 +155,17 @@ export function MonthlySalaryCreditModal({ isOpen, onClose, onSuccess }: Monthly
   }, 0)
 
   return (
-    <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50 p-4">
-      <div className="bg-surface rounded-lg w-full max-w-6xl max-h-[90vh] overflow-y-auto border border-border">
+    <div className="fixed inset-0 bg-overlay flex items-end sm:items-center justify-center z-50 sm:p-4">
+      <div className="bg-surface rounded-t-2xl sm:rounded-lg w-full sm:max-w-6xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto border border-border">
         {/* Header */}
-        <div className="sticky top-0 bg-surface border-b border-border p-6 flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-foreground">Monthly Salary Credit</h2>
-          <button onClick={handleClose} className="text-muted hover:text-foreground">
+        <div className="sticky top-0 bg-surface border-b border-border p-4 sm:p-6 flex items-center justify-between">
+          <h2 className="text-lg sm:text-xl font-semibold text-foreground">Monthly Salary Credit</h2>
+          <button onClick={handleClose} className="text-muted hover:text-foreground p-1 min-h-[44px] min-w-[44px] flex items-center justify-center">
             <X size={24} />
           </button>
         </div>
 
-        <div className="p-6 space-y-6">
+        <div className="p-4 sm:p-6 space-y-6">
           {/* Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-surface-hover p-4 rounded-lg border border-input-border">

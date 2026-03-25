@@ -90,84 +90,85 @@ export default function EmployeeSalaryPage() {
             <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Employee Management</h1>
             <p className="text-muted mt-1 text-sm sm:text-base">Manage employee salaries and advances</p>
           </div>
-          <div className="flex gap-2 w-full sm:w-auto">
+          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
             <input
               type="month"
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
-              className="px-4 py-2 bg-input border border-input-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              className="px-4 py-2 min-h-[44px] bg-input border border-input-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-ring w-full sm:w-auto"
             />
             <Button
               onClick={() => setShowMonthlySalaryCredit(true)}
-              className="bg-success hover:bg-success-hover"
+              className="bg-success hover:bg-success-hover w-full sm:w-auto"
             >
               <Calendar size={18} className="mr-2" />
-              Monthly Salary Credit
+              <span className="sm:hidden">Salary Credit</span>
+              <span className="hidden sm:inline">Monthly Salary Credit</span>
             </Button>
           </div>
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
           <Card className="bg-gradient-to-br from-primary-subtle to-primary-subtle/50 border-primary/20">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-primary text-sm font-medium">Advances Paid</p>
-                  <h3 className="text-2xl font-bold text-primary mt-2">
+            <CardContent className="p-3 sm:p-6">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-primary text-xs sm:text-sm font-medium">Advances Paid</p>
+                  <h3 className="text-lg sm:text-2xl font-bold text-primary mt-1 sm:mt-2 truncate">
                     {formatCurrency(totalAdvancesPaid)}
                   </h3>
                 </div>
-                <div className="bg-primary/20 p-3 rounded-full">
-                  <TrendingDown className="text-primary" size={24} />
+                <div className="bg-primary/20 p-2 sm:p-3 rounded-full shrink-0">
+                  <TrendingDown className="text-primary" size={20} />
                 </div>
               </div>
             </CardContent>
           </Card>
 
           <Card className="bg-gradient-to-br from-destructive-subtle to-destructive-subtle/50 border-destructive/20">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-destructive text-sm font-medium">Need to Settle</p>
-                  <h3 className="text-2xl font-bold text-destructive mt-2">
+            <CardContent className="p-3 sm:p-6">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-destructive text-xs sm:text-sm font-medium">Need to Settle</p>
+                  <h3 className="text-lg sm:text-2xl font-bold text-destructive mt-1 sm:mt-2 truncate">
                     {formatCurrency(needToSettle)}
                   </h3>
                 </div>
-                <div className="bg-destructive/20 p-3 rounded-full">
-                  <DollarSign className="text-destructive" size={24} />
+                <div className="bg-destructive/20 p-2 sm:p-3 rounded-full shrink-0">
+                  <DollarSign className="text-destructive" size={20} />
                 </div>
               </div>
             </CardContent>
           </Card>
 
           <Card className="bg-gradient-to-br from-success-subtle to-success-subtle/50 border-success/20">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-success-text text-sm font-medium">Settled Amount</p>
-                  <h3 className="text-2xl font-bold text-success-text mt-2">
+            <CardContent className="p-3 sm:p-6">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-success-text text-xs sm:text-sm font-medium">Settled Amount</p>
+                  <h3 className="text-lg sm:text-2xl font-bold text-success-text mt-1 sm:mt-2 truncate">
                     {formatCurrency(settledAmount)}
                   </h3>
                 </div>
-                <div className="bg-success/20 p-3 rounded-full">
-                  <TrendingUp className="text-success-text" size={24} />
+                <div className="bg-success/20 p-2 sm:p-3 rounded-full shrink-0">
+                  <TrendingUp className="text-success-text" size={20} />
                 </div>
               </div>
             </CardContent>
           </Card>
 
           <Card className="bg-gradient-to-br from-info-subtle to-info-subtle/50 border-info/20">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-info text-sm font-medium">Grand Total</p>
-                  <h3 className="text-2xl font-bold text-info mt-2">
+            <CardContent className="p-3 sm:p-6">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-info text-xs sm:text-sm font-medium">Grand Total</p>
+                  <h3 className="text-lg sm:text-2xl font-bold text-info mt-1 sm:mt-2 truncate">
                     {formatCurrency(grandTotal)}
                   </h3>
                 </div>
-                <div className="bg-info/20 p-3 rounded-full">
-                  <DollarSign className="text-info" size={24} />
+                <div className="bg-info/20 p-2 sm:p-3 rounded-full shrink-0">
+                  <DollarSign className="text-info" size={20} />
                 </div>
               </div>
             </CardContent>
@@ -189,7 +190,9 @@ export default function EmployeeSalaryPage() {
                 No salary records found for this month
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+                {/* Desktop Table */}
+                <div className="hidden md:block overflow-x-auto">
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-border">
@@ -274,8 +277,87 @@ export default function EmployeeSalaryPage() {
                     })}
                   </tbody>
                 </table>
+                </div>
 
-              </div>
+                {/* Mobile Cards */}
+                <div className="md:hidden space-y-3">
+                  {employees.map((employee: any) => {
+                    const salaryRecord = employee.salary_record
+                    const hasRecord = !!salaryRecord
+                    const totalAdvance = employee.advances?.reduce((sum: number, adv: any) => sum + adv.amount, 0) || 0
+
+                    return (
+                      <div
+                        key={employee.id}
+                        className="bg-surface-elevated rounded-lg p-4 border border-border cursor-pointer active:bg-surface-hover transition-colors"
+                        onClick={() => handleViewSalary(employee.id)}
+                      >
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="min-w-0">
+                            <h3 className="text-foreground font-semibold truncate">{employee.name}</h3>
+                            <span className="inline-block mt-1 px-2 py-0.5 bg-info-subtle text-info border border-info/20 rounded text-xs">
+                              {employee.designation}
+                            </span>
+                          </div>
+                          {hasRecord ? (
+                            <span className={`shrink-0 ml-2 px-2 py-1 rounded-full text-xs font-medium ${salaryRecord.status === 'settled'
+                                ? 'bg-success-subtle text-success-text border border-success/20'
+                                : 'bg-warning-subtle text-warning-text border border-warning/20'
+                              }`}>
+                              {salaryRecord.status === 'settled' ? 'Settled' : 'Pending'}
+                            </span>
+                          ) : (
+                            <span className="shrink-0 ml-2 px-2 py-1 rounded-full text-xs font-medium bg-surface text-muted border border-border">
+                              Not Created
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 text-sm mb-3">
+                          <div>
+                            <span className="text-muted text-xs">Base Salary</span>
+                            <p className="text-foreground font-medium">₹{employee.base_salary.toLocaleString('en-IN')}</p>
+                          </div>
+                          <div>
+                            <span className="text-muted text-xs">Final Salary</span>
+                            <p className="text-foreground font-medium">
+                              {hasRecord ? (
+                                <span className={salaryRecord.status === 'settled' ? 'text-success-text' : ''}>
+                                  {formatCurrency(parseFloat(salaryRecord.calculated_salary))}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </p>
+                          </div>
+                          <div>
+                            <span className="text-muted text-xs">Attendance</span>
+                            <p className="text-foreground">
+                              {hasRecord ? `${salaryRecord.days_present}d + ${salaryRecord.ot_days} OT` : '—'}
+                            </p>
+                          </div>
+                          <div>
+                            <span className="text-muted text-xs">Total Advance</span>
+                            <p className="text-primary font-medium">₹{totalAdvance.toLocaleString('en-IN')}</p>
+                          </div>
+                        </div>
+
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handlePayAdvance(employee.id, employee.name)
+                          }}
+                        >
+                          Add Advance
+                        </Button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
             )}
           </CardContent>
         </Card>

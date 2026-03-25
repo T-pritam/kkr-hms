@@ -76,7 +76,7 @@ export default function DoctorsPage() {
             </p>
           </div>
 
-          <Button onClick={() => setCreateModalOpen(true)}>
+          <Button onClick={() => setCreateModalOpen(true)} className="w-full sm:w-auto">
             <Plus size={20} className="mr-2" />
             Add Doctor
           </Button>

@@ -143,20 +143,20 @@ export function OpdEntryModal({
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50 p-4">
-      <div className="bg-surface rounded-lg max-w-md w-full border border-border">
+    <div className="fixed inset-0 bg-overlay flex items-end sm:items-center justify-center z-50 sm:p-4">
+      <div className="bg-surface rounded-t-2xl sm:rounded-lg max-w-md w-full border border-border max-h-[95vh] sm:max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-border">
-          <h2 className="text-xl font-bold text-foreground">
+        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-border shrink-0">
+          <h2 className="text-lg sm:text-xl font-bold text-foreground">
             {mode === 'edit' ? 'Edit OPD Entry' : 'Add OPD Entry'}
           </h2>
-          <button onClick={onClose} className="text-muted hover:text-foreground">
+          <button onClick={onClose} className="text-muted hover:text-foreground p-1 min-h-[44px] min-w-[44px] flex items-center justify-center">
             <X size={20} />
           </button>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 overflow-y-auto">
           {/* Patient Name */}
           <div>
             <Label htmlFor="patient_name">Patient Name *</Label>

@@ -158,13 +158,14 @@ export default function ChargesTab({ patientId, billing, onCreateBilling }: Char
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h3 className="text-xl font-semibold text-foreground">Patient Charges</h3>
+        <h3 className="text-lg sm:text-xl font-semibold text-foreground">Patient Charges</h3>
         <button
           onClick={() => setShowForm(!showForm)}
-          className="flex items-center gap-2 bg-info hover:bg-info-hover text-foreground px-4 py-2 rounded-lg transition-colors"
+          className="flex items-center gap-2 bg-info hover:bg-info-hover text-foreground px-3 sm:px-4 py-2 rounded-lg transition-colors min-h-[44px] text-sm"
         >
           <Plus className="h-4 w-4" />
-          Add Charge
+          <span className="hidden sm:inline">Add Charge</span>
+          <span className="sm:hidden">Add</span>
         </button>
       </div>
 
@@ -265,7 +266,8 @@ export default function ChargesTab({ patientId, billing, onCreateBilling }: Char
         </form>
       )}
 
-      <div className="bg-surface-hover rounded-lg overflow-hidden">
+      {/* Desktop Table */}
+      <div className="bg-surface-hover rounded-lg overflow-hidden hidden md:block">
         <table className="w-full">
           <thead className="bg-surface-inset">
             <tr>
@@ -346,6 +348,69 @@ export default function ChargesTab({ patientId, billing, onCreateBilling }: Char
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* Mobile Cards */}
+      <div className="md:hidden space-y-3">
+        {charges.length === 0 ? (
+          <div className="bg-surface-hover rounded-lg p-6 text-center text-muted">
+            No charges recorded yet
+          </div>
+        ) : (
+          <>
+            {charges.map((charge) => {
+              const canEdit = user?.id === charge.created_by || user?.role === 'ADMIN';
+              const canDelete = user?.id === charge.created_by || user?.role === 'ADMIN';
+              return (
+                <div key={charge.id} className="bg-surface-hover rounded-lg p-4 space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-foreground">{charge.charge_type}</p>
+                      {charge.description && (
+                        <p className="text-xs text-muted mt-0.5 line-clamp-2">{charge.description}</p>
+                      )}
+                    </div>
+                    <p className="text-base font-semibold text-foreground ml-3">₹{parseFloat(charge.amount).toFixed(2)}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    <span className="bg-surface-inset px-2 py-1 rounded text-muted">
+                      {new Date(charge.charge_date).toLocaleDateString()}
+                    </span>
+                    <span className="bg-surface-inset px-2 py-1 rounded text-muted">
+                      by {charge.users?.username || 'Unknown'}
+                    </span>
+                  </div>
+                  {(canEdit || canDelete) && (
+                    <div className="flex gap-3 pt-2 border-t border-input-border">
+                      {canEdit && (
+                        <button
+                          onClick={() => handleEdit(charge)}
+                          className="text-info text-sm font-medium min-h-[44px] flex items-center"
+                        >
+                          Edit
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button
+                          onClick={() => handleDelete(charge.id)}
+                          className="text-destructive text-sm font-medium min-h-[44px] flex items-center"
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            <div className="bg-surface-inset rounded-lg p-4 flex justify-between items-center">
+              <span className="text-sm font-semibold text-foreground">Total Charges</span>
+              <span className="text-sm font-semibold text-foreground">
+                ₹{charges.reduce((sum, c) => sum + parseFloat(c.amount), 0).toFixed(2)}
+              </span>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

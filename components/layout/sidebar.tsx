@@ -120,9 +120,10 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
       {/* Mobile menu button */}
       <button
         onClick={() => setMobileOpen(!mobileOpen)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 rounded-lg bg-surface border border-border text-foreground shadow-md"
+        className="lg:hidden fixed top-3 left-3 z-50 p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg bg-surface border border-border text-foreground shadow-md active:scale-95 transition-transform"
+        aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
       >
-        {mobileOpen ? <X size={24} /> : <Menu size={24} />}
+        {mobileOpen ? <X size={22} /> : <Menu size={22} />}
       </button>
 
       {/* Sidebar */}
@@ -142,8 +143,8 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 overflow-y-auto py-4">
-            <ul className="space-y-1 px-3">
+          <nav className="flex-1 overflow-y-auto py-3 sm:py-4">
+            <ul className="space-y-0.5 sm:space-y-1 px-2 sm:px-3">
               {filteredMenuItems.map((item) => {
                 const Icon = item.icon
                 const hasSubmenu = item.submenu && item.submenu.length > 0
@@ -168,7 +169,7 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
                       <button
                         onClick={() => setIsOpen(!isOpen)}
                         className={cn(
-                          'flex items-center justify-between w-full px-4 py-3 rounded-lg text-muted hover:bg-sidebar-hover hover:text-foreground transition-colors',
+                          'flex items-center justify-between w-full px-3 sm:px-4 py-3 min-h-[44px] rounded-lg text-muted hover:bg-sidebar-hover hover:text-foreground transition-colors active:bg-sidebar-hover',
                           isOpen && 'bg-sidebar-hover text-foreground'
                         )}
                       >
@@ -192,7 +193,7 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
                                 href={subItem.href}
                                 onClick={() => setMobileOpen(false)}
                                 className={cn(
-                                  'flex items-center px-4 py-2 rounded-lg text-sm text-muted hover:bg-sidebar-hover hover:text-foreground transition-colors',
+                                  'flex items-center px-3 sm:px-4 py-2.5 sm:py-2 min-h-[44px] sm:min-h-0 rounded-lg text-sm text-muted hover:bg-sidebar-hover hover:text-foreground transition-colors active:bg-sidebar-hover',
                                   pathname === subItem.href &&
                                     'bg-sidebar-active text-primary font-medium'
                                 )}
@@ -213,7 +214,7 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
                       href={item.href!}
                       onClick={() => setMobileOpen(false)}
                       className={cn(
-                        'flex items-center gap-3 px-4 py-3 rounded-lg text-muted hover:bg-sidebar-hover hover:text-foreground transition-colors',
+                        'flex items-center gap-3 px-3 sm:px-4 py-3 min-h-[44px] rounded-lg text-muted hover:bg-sidebar-hover hover:text-foreground transition-colors active:bg-sidebar-hover',
                         isActive && 'bg-sidebar-active text-primary font-medium'
                       )}
                     >
@@ -227,13 +228,13 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
           </nav>
 
           {/* Theme Toggle + Logout */}
-          <div className="border-t border-sidebar-border p-3 space-y-2">
+          <div className="border-t border-sidebar-border p-2 sm:p-3 space-y-1 sm:space-y-2 pb-safe">
             <div className="flex items-center justify-center px-2">
               <ThemeToggle className="w-full justify-center" />
             </div>
             <button
               onClick={handleLogout}
-              className="flex items-center gap-3 w-full px-4 py-3 rounded-lg text-muted hover:bg-destructive-subtle hover:text-destructive transition-colors"
+              className="flex items-center gap-3 w-full px-3 sm:px-4 py-3 min-h-[44px] rounded-lg text-muted hover:bg-destructive-subtle hover:text-destructive transition-colors active:bg-destructive-subtle"
             >
               <LogOut size={20} />
               <span className="font-medium">Logout</span>

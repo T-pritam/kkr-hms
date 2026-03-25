@@ -60,7 +60,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     <div className="min-h-screen bg-background">
       <Sidebar userRole={userRole} />
       <div className="lg:pl-64">
-        <main className="p-4 sm:p-6 lg:p-8">{children}</main>
+        <main className="p-3 pt-16 sm:p-6 sm:pt-6 lg:p-8 pb-safe">{children}</main>
       </div>
     </div>
   )

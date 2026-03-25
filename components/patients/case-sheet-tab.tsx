@@ -390,8 +390,8 @@ export default function CaseSheetTab({ patientId, billing }: CaseSheetTabProps) 
           </div>
         ) : (
           <div className="bg-surface-hover rounded-lg p-6 space-y-4">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
+            <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
+              <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-4">
                   <FileText className="h-5 w-5 text-info" />
                   <h4 className="text-lg font-semibold text-foreground">
@@ -406,7 +406,7 @@ export default function CaseSheetTab({ patientId, billing }: CaseSheetTabProps) 
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-4 text-sm mb-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm mb-4">
                   <div>
                     <span className="text-muted">Created:</span>
                     <span className="text-foreground ml-2">
@@ -425,26 +425,26 @@ export default function CaseSheetTab({ patientId, billing }: CaseSheetTabProps) 
               </div>
 
               {caseSheet.case_sheet_url && (
-                <div className="flex gap-2">
+                <div className="flex gap-2 w-full sm:w-auto">
                   <button
                     onClick={() => handleViewPDF()}
-                    className="flex items-center gap-2 bg-info hover:bg-info-hover text-foreground px-4 py-2 rounded-lg transition-colors ml-4"
+                    className="flex items-center justify-center gap-2 bg-info hover:bg-info-hover text-foreground px-3 sm:px-4 py-2 rounded-lg transition-colors min-h-[44px] text-sm flex-1 sm:flex-none"
                   >
                     <FileText className="h-4 w-4" />
                     View PDF
                   </button>
                   <button
                     onClick={() => handleDownloadPDF()}
-                    className="flex items-center gap-2 bg-success hover:bg-success-hover text-foreground px-4 py-2 rounded-lg transition-colors"
+                    className="flex items-center justify-center gap-2 bg-success hover:bg-success-hover text-foreground px-3 sm:px-4 py-2 rounded-lg transition-colors min-h-[44px] text-sm flex-1 sm:flex-none"
                   >
                     <Download className="h-4 w-4" />
-                    Download PDF
+                    Download
                   </button>
                 </div>
               )}
             </div>
 
-            <div className="flex gap-2 pt-4 border-t border-input-border">
+            <div className="flex flex-wrap gap-2 pt-4 border-t border-input-border">
               <button
                 onClick={() => {
                   setShowForm(!showForm);

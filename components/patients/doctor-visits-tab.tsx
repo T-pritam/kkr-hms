@@ -277,13 +277,14 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate, billing, o
             {billing && (
                 <>
                     <div className="flex justify-between items-center">
-                        <h3 className="text-xl font-semibold text-foreground">Doctor Consultations</h3>
+                        <h3 className="text-lg sm:text-xl font-semibold text-foreground">Doctor Consultations</h3>
                         <button
                             onClick={() => setShowForm(!showForm)}
-                            className="flex items-center gap-2 bg-info hover:bg-info-hover text-foreground px-4 py-2 rounded-lg transition-colors"
+                            className="flex items-center gap-2 bg-info hover:bg-info-hover text-foreground px-3 sm:px-4 py-2 rounded-lg transition-colors min-h-[44px] text-sm"
                         >
                             <Plus className="h-4 w-4" />
-                            Add Consultation
+                            <span className="hidden sm:inline">Add Consultation</span>
+                            <span className="sm:hidden">Add</span>
                         </button>
                     </div>
 
@@ -422,7 +423,8 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate, billing, o
                         </form>
                     )}
 
-                    <div className="bg-surface-hover rounded-lg overflow-hidden">
+                    {/* Desktop Table */}
+                    <div className="bg-surface-hover rounded-lg overflow-hidden hidden md:block">
                         <table className="w-full">
                             <thead className="bg-surface-inset">
                                 <tr>
@@ -486,6 +488,59 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate, billing, o
                                 )}
                             </tbody>
                         </table>
+                    </div>
+
+                    {/* Mobile Cards */}
+                    <div className="md:hidden space-y-3">
+                        {consultations.length === 0 ? (
+                            <div className="bg-surface-hover rounded-lg p-6 text-center text-muted">
+                                No consultations recorded yet
+                            </div>
+                        ) : (
+                            consultations.map((consultation) => (
+                                <div key={consultation.id} className="bg-surface-hover rounded-lg p-4 space-y-3">
+                                    <div className="flex items-start justify-between">
+                                        <div className="min-w-0 flex-1">
+                                            <p className="font-medium text-foreground">
+                                                {consultation.doctor?.name || 'No Doctor'}
+                                            </p>
+                                            {consultation.doctor?.specialist && (
+                                                <p className="text-xs text-muted">{consultation.doctor.specialist}</p>
+                                            )}
+                                        </div>
+                                        {canEditOrDelete(consultation) && (
+                                            <div className="flex gap-3 ml-2">
+                                                <button
+                                                    onClick={() => handleEdit(consultation)}
+                                                    className="text-info min-h-[44px] min-w-[44px] flex items-center justify-center"
+                                                    title="Edit"
+                                                >
+                                                    <Edit2 className="h-4 w-4" />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDelete(consultation.id, consultation)}
+                                                    className="text-destructive min-h-[44px] min-w-[44px] flex items-center justify-center"
+                                                    title="Delete"
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="flex flex-wrap gap-2 text-xs">
+                                        <span className="bg-surface-inset px-2 py-1 rounded text-muted">
+                                            {formatConsultationDateIST(consultation.consultation_date)}
+                                        </span>
+                                        <span className="bg-surface-inset px-2 py-1 rounded text-muted">
+                                            by {consultation.created_by_user?.username || 'Unknown'}
+                                        </span>
+                                    </div>
+                                    {consultation.notes && (
+                                        <p className="text-sm text-muted line-clamp-2">{consultation.notes}</p>
+                                    )}
+                                </div>
+                            ))
+                        )}
                     </div>
                 </>
             )}

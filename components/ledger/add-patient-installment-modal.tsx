@@ -240,21 +240,21 @@ export function AddPatientInstallmentModal({
   const paymentMethods = ['cash', 'upi', 'card', 'bank_transfer', 'cheque'];
 
   return (
-    <div className={`fixed inset-0 bg-overlay flex items-center justify-center z-50 p-4 `}>
-      <div className={`bg-surface-hover rounded-lg shadow-xl w-full max-w-md max-h-[90vh] flex flex-col ${showPatientDropdown ? 'min-h-[500px]' : ''}`}>
+    <div className={`fixed inset-0 bg-overlay flex items-end sm:items-center justify-center z-50 sm:p-4`}>
+      <div className={`bg-surface-hover rounded-t-2xl sm:rounded-lg shadow-xl w-full sm:max-w-md max-h-[95vh] sm:max-h-[90vh] flex flex-col ${showPatientDropdown ? 'min-h-[500px]' : ''}`}>
         {/* Header - Fixed */}
-        <div className="flex items-center justify-between p-6 border-b border-input-border bg-surface-hover flex-shrink-0">
-          <h2 className="text-xl font-semibold text-foreground">Add Patient Installment</h2>
+        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-input-border bg-surface-hover flex-shrink-0">
+          <h2 className="text-lg sm:text-xl font-semibold text-foreground">Add Patient Installment</h2>
           <button
             onClick={onClose}
-            className="text-muted hover:text-foreground transition-colors"
+            className="text-muted hover:text-foreground transition-colors p-1 min-h-[44px] min-w-[44px] flex items-center justify-center"
           >
             <X size={24} />
           </button>
         </div>
 
         {/* Form - Scrollable */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
           {/* Patient Dropdown */}
           <div className="relative">
             <label className="block text-sm font-medium text-muted mb-2">

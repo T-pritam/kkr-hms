@@ -145,21 +145,21 @@ export function PayAdvanceModal({ isOpen, onClose, employeeId, selectedMonth, em
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50 p-4">
-      <div className="bg-surface rounded-lg w-full max-w-md border border-border max-h-[80vh] flex flex-col overflow-hidden overflow-y-auto">
+    <div className="fixed inset-0 bg-overlay flex items-end sm:items-center justify-center z-50 sm:p-4">
+      <div className="bg-surface rounded-t-2xl sm:rounded-lg w-full sm:max-w-md border border-border max-h-[95vh] sm:max-h-[80vh] flex flex-col overflow-hidden overflow-y-auto">
         {/* Header */}
-        <div className="border-b border-border p-4 flex items-center justify-between">
+        <div className="border-b border-border p-4 flex items-center justify-between shrink-0">
           <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
             <DollarSign size={20} className="text-primary" />
             Pay Advance
           </h2>
-          <button onClick={handleClose} className="text-muted hover:text-foreground">
+          <button onClick={handleClose} className="text-muted hover:text-foreground p-1 min-h-[44px] min-w-[44px] flex items-center justify-center">
             <X size={20} />
           </button>
         </div>
 
         {/* Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4">
           <div>
             <div className="text-muted text-sm mb-2">Employee</div>
             <div className="text-foreground font-medium">{employeeName}</div>
