@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Calendar, Users, DollarSign } from 'lucide-react'
+import { X, Calendar, Users, DollarSign, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
@@ -19,9 +19,10 @@ interface MonthlySalaryCreditModalProps {
   isOpen: boolean
   onClose: () => void
   onSuccess: () => void
+  initialMonth?: string
 }
 
-export function MonthlySalaryCreditModal({ isOpen, onClose, onSuccess }: MonthlySalaryCreditModalProps) {
+export function MonthlySalaryCreditModal({ isOpen, onClose, onSuccess, initialMonth }: MonthlySalaryCreditModalProps) {
   const [loading, setLoading] = useState(false)
   const [employees, setEmployees] = useState<Employee[]>([])
   const [monthYear, setMonthYear] = useState('')
@@ -32,13 +33,14 @@ export function MonthlySalaryCreditModal({ isOpen, onClose, onSuccess }: Monthly
 
   useEffect(() => {
     if (isOpen) {
-      // Set default month to current month
+      // Use initialMonth from parent if provided, otherwise default to current month
       const now = new Date()
-      const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+      const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+      const defaultMonth = initialMonth || currentMonth
       setMonthYear(defaultMonth)
       fetchSalaryData(defaultMonth)
     }
-  }, [isOpen])
+  }, [isOpen, initialMonth])
 
   const fetchSalaryData = async (month?: string) => {
     try {
@@ -148,8 +150,10 @@ export function MonthlySalaryCreditModal({ isOpen, onClose, onSuccess }: Monthly
 
   if (!isOpen) return null
 
-  const totalBaseSalary = employees.reduce((sum, emp) => sum + emp.base_salary, 0)
-  const estimatedPayout = employees.reduce((sum, emp) => {
+  const settledCount = employees.filter(e => e.salary_record?.status === 'settled').length
+  const editableEmployees = employees.filter(e => e.salary_record?.status !== 'settled')
+  const totalBaseSalary = editableEmployees.reduce((sum, emp) => sum + emp.base_salary, 0)
+  const estimatedPayout = editableEmployees.reduce((sum, emp) => {
     const att = attendance[emp.id] || { days_present: 27, ot_days: 0 }
     return sum + calculateSalary(emp.base_salary, att.days_present, att.ot_days)
   }, 0)
@@ -174,6 +178,12 @@ export function MonthlySalaryCreditModal({ isOpen, onClose, onSuccess }: Monthly
                 Total Employees
               </div>
               <div className="text-foreground text-2xl font-bold">{employees.length}</div>
+              {settledCount > 0 && (
+                <div className="text-xs text-muted mt-1 flex items-center gap-1">
+                  <Lock size={10} />
+                  {settledCount} settled (locked)
+                </div>
+              )}
             </div>
             <div className="bg-surface-hover p-4 rounded-lg border border-input-border">
               <div className="flex items-center gap-2 text-muted text-sm mb-2">
@@ -234,8 +244,15 @@ export function MonthlySalaryCreditModal({ isOpen, onClose, onSuccess }: Monthly
                   const isSettled = employee.salary_record?.status === 'settled'
                   
                   return (
-                    <tr key={employee.id} className="border-t border-border hover:bg-surface-hover">
-                      <td className="p-3 text-foreground">{employee.name}</td>
+                    <tr key={employee.id} className={`border-t border-border ${
+                      isSettled ? 'opacity-60 bg-surface-inset' : 'hover:bg-surface-hover'
+                    }`}>
+                      <td className="p-3 text-foreground">
+                        <div className="flex items-center gap-2">
+                          {isSettled && <Lock size={13} className="text-muted shrink-0" />}
+                          {employee.name}
+                        </div>
+                      </td>
                       <td className="p-3">
                         <span className="px-2 py-1 bg-info-subtle text-info border border-info/20 rounded text-xs">
                           {employee.designation}
@@ -243,38 +260,47 @@ export function MonthlySalaryCreditModal({ isOpen, onClose, onSuccess }: Monthly
                       </td>
                       <td className="p-3 text-foreground">₹{employee.base_salary.toLocaleString('en-IN')}</td>
                       <td className="p-3">
-                        <Input
-                          type="number"
-                          min="0"
-                          max="27"
-                          value={att.days_present}
-                          onChange={(e) => handleAttendanceChange(employee.id, 'days_present', e.target.value)}
-                          className="w-20"
-                          disabled={isSettled}
-                        />
+                        {isSettled ? (
+                          <span className="text-sm text-muted">{att.days_present}</span>
+                        ) : (
+                          <Input
+                            type="number"
+                            min="0"
+                            max="27"
+                            value={att.days_present}
+                            onChange={(e) => handleAttendanceChange(employee.id, 'days_present', e.target.value)}
+                            className="w-20"
+                          />
+                        )}
                       </td>
                       <td className="p-3">
-                        <Input
-                          type="number"
-                          min="0"
-                          max="3"
-                          value={att.ot_days}
-                          onChange={(e) => handleAttendanceChange(employee.id, 'ot_days', e.target.value)}
-                          className="w-20"
-                          disabled={isSettled}
-                        />
+                        {isSettled ? (
+                          <span className="text-sm text-muted">{att.ot_days}</span>
+                        ) : (
+                          <Input
+                            type="number"
+                            min="0"
+                            max="3"
+                            value={att.ot_days}
+                            onChange={(e) => handleAttendanceChange(employee.id, 'ot_days', e.target.value)}
+                            className="w-20"
+                          />
+                        )}
                       </td>
-                      <td className="p-3 text-success-text font-semibold">
-                        ₹{calcSalary.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                      <td className="p-3 font-semibold">
+                        <span className={isSettled ? 'text-muted' : 'text-success-text'}>
+                          ₹{calcSalary.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                        </span>
                       </td>
                       <td className="p-3">
-                        {hasRecord ? (
-                          <span className={`px-2 py-1 rounded text-xs font-medium ${
-                            isSettled
-                              ? 'bg-success-subtle text-success-text border border-success/20'
-                              : 'bg-warning-subtle text-warning-text border border-warning/20'
-                          }`}>
-                            {isSettled ? 'Settled' : 'Pending'}
+                        {isSettled ? (
+                          <span className="px-2 py-1 rounded text-xs font-medium bg-success-subtle text-success-text border border-success/20 flex items-center gap-1 w-fit">
+                            <Lock size={10} />
+                            Settled
+                          </span>
+                        ) : hasRecord ? (
+                          <span className="px-2 py-1 rounded text-xs font-medium bg-warning-subtle text-warning-text border border-warning/20">
+                            Pending
                           </span>
                         ) : (
                           <span className="px-2 py-1 rounded text-xs font-medium bg-surface-hover text-muted border border-input-border">
@@ -291,17 +317,24 @@ export function MonthlySalaryCreditModal({ isOpen, onClose, onSuccess }: Monthly
         </div>
 
         {/* Footer */}
-        <div className="sticky bottom-0 bg-surface border-t border-border p-6 flex justify-between">
+        <div className="sticky bottom-0 bg-surface border-t border-border p-6 flex justify-between items-center">
           <Button variant="outline" onClick={handleClose}>
             Cancel
           </Button>
-          <Button
-            onClick={handleCreateRecords}
-            disabled={loading || !monthYear}
-            className="bg-primary hover:bg-primary-hover"
-          >
-            {loading ? 'Creating...' : 'Create Salary Records'}
-          </Button>
+          <div className="flex items-center gap-3">
+            {settledCount > 0 && (
+              <p className="text-xs text-muted">
+                {settledCount} settled record{settledCount > 1 ? 's' : ''} will be skipped
+              </p>
+            )}
+            <Button
+              onClick={handleCreateRecords}
+              disabled={loading || !monthYear || editableEmployees.length === 0}
+              className="bg-primary hover:bg-primary-hover"
+            >
+              {loading ? 'Saving...' : editableEmployees.length === 0 ? 'All Settled' : `Save ${editableEmployees.length} Record${editableEmployees.length !== 1 ? 's' : ''}`}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

@@ -1,15 +1,17 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { DollarSign, Calendar, TrendingUp, TrendingDown } from 'lucide-react'
+import { DollarSign, Calendar, TrendingUp, TrendingDown, RefreshCw } from 'lucide-react'
 import { SalaryDetailsModal } from '@/components/salary/salary-details-modal'
 import { PayAdvanceModal } from '@/components/salary/pay-advance-modal'
 import { MonthlySalaryCreditModal } from '@/components/salary/monthly-salary-credit-modal'
 
-export default function EmployeeSalaryPage() {
+function SalaryContent() {
+  const searchParams = useSearchParams()
   const [loading, setLoading] = useState(true)
   const [employees, setEmployees] = useState<any[]>([])
   const [selectedMonth, setSelectedMonth] = useState('')
@@ -26,10 +28,16 @@ export default function EmployeeSalaryPage() {
   const [grandTotal, setGrandTotal] = useState(0)
 
   useEffect(() => {
-    // Set default month to current month
-    const now = new Date()
-    const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-    setSelectedMonth(defaultMonth)
+    // Use ?month=YYYY-MM from URL if provided, otherwise default to current month
+    const monthParam = searchParams.get('month')
+    const isValid = monthParam && /^\d{4}-\d{2}$/.test(monthParam)
+    if (isValid) {
+      setSelectedMonth(monthParam)
+    } else {
+      const now = new Date()
+      const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+      setSelectedMonth(defaultMonth)
+    }
   }, [])
 
   useEffect(() => {
@@ -109,66 +117,87 @@ export default function EmployeeSalaryPage() {
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
-          <Card className="bg-gradient-to-br from-primary-subtle to-primary-subtle/50 border-primary/20">
-            <CardContent className="p-3 sm:p-6">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          {/* Total Paid */}
+          <Card className="bg-gradient-to-br from-accent-subtle to-accent-subtle/50 border-accent/20">
+            <CardContent className="p-3 sm:p-4">
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="text-primary text-xs sm:text-sm font-medium">Advances Paid</p>
-                  <h3 className="text-lg sm:text-2xl font-bold text-primary mt-1 sm:mt-2 truncate">
+                  <p className="text-accent text-xs font-medium">Total Paid</p>
+                  <h3 className="text-lg sm:text-xl font-bold text-accent mt-1 truncate">
+                    {formatCurrency(totalAdvancesPaid + settledAmount)}
+                  </h3>
+                </div>
+                <div className="bg-accent/20 p-2 rounded-full shrink-0">
+                  <DollarSign className="text-accent" size={18} />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Advances Paid */}
+          <Card className="bg-gradient-to-br from-primary-subtle to-primary-subtle/50 border-primary/20">
+            <CardContent className="p-3 sm:p-4">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-primary text-xs font-medium">Advances Paid</p>
+                  <h3 className="text-lg sm:text-xl font-bold text-primary mt-1 truncate">
                     {formatCurrency(totalAdvancesPaid)}
                   </h3>
                 </div>
-                <div className="bg-primary/20 p-2 sm:p-3 rounded-full shrink-0">
-                  <TrendingDown className="text-primary" size={20} />
+                <div className="bg-primary/20 p-2 rounded-full shrink-0">
+                  <TrendingDown className="text-primary" size={18} />
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-destructive-subtle to-destructive-subtle/50 border-destructive/20">
-            <CardContent className="p-3 sm:p-6">
-              <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="text-destructive text-xs sm:text-sm font-medium">Need to Settle</p>
-                  <h3 className="text-lg sm:text-2xl font-bold text-destructive mt-1 sm:mt-2 truncate">
-                    {formatCurrency(needToSettle)}
-                  </h3>
-                </div>
-                <div className="bg-destructive/20 p-2 sm:p-3 rounded-full shrink-0">
-                  <DollarSign className="text-destructive" size={20} />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
+          {/* Settled Amount */}
           <Card className="bg-gradient-to-br from-success-subtle to-success-subtle/50 border-success/20">
-            <CardContent className="p-3 sm:p-6">
+            <CardContent className="p-3 sm:p-4">
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="text-success-text text-xs sm:text-sm font-medium">Settled Amount</p>
-                  <h3 className="text-lg sm:text-2xl font-bold text-success-text mt-1 sm:mt-2 truncate">
+                  <p className="text-success-text text-xs font-medium">Settled Amount</p>
+                  <h3 className="text-lg sm:text-xl font-bold text-success-text mt-1 truncate">
                     {formatCurrency(settledAmount)}
                   </h3>
                 </div>
-                <div className="bg-success/20 p-2 sm:p-3 rounded-full shrink-0">
-                  <TrendingUp className="text-success-text" size={20} />
+                <div className="bg-success/20 p-2 rounded-full shrink-0">
+                  <TrendingUp className="text-success-text" size={18} />
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-br from-info-subtle to-info-subtle/50 border-info/20">
-            <CardContent className="p-3 sm:p-6">
+          {/* Need to Settle */}
+          <Card className="bg-gradient-to-br from-destructive-subtle to-destructive-subtle/50 border-destructive/20">
+            <CardContent className="p-3 sm:p-4">
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="text-info text-xs sm:text-sm font-medium">Grand Total</p>
-                  <h3 className="text-lg sm:text-2xl font-bold text-info mt-1 sm:mt-2 truncate">
+                  <p className="text-destructive text-xs font-medium">Need to Settle</p>
+                  <h3 className="text-lg sm:text-xl font-bold text-destructive mt-1 truncate">
+                    {formatCurrency(needToSettle)}
+                  </h3>
+                </div>
+                <div className="bg-destructive/20 p-2 rounded-full shrink-0">
+                  <TrendingDown className="text-destructive" size={18} />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Grand Total */}
+          <Card className="bg-gradient-to-br from-info-subtle to-info-subtle/50 border-info/20">
+            <CardContent className="p-3 sm:p-4">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-info text-xs font-medium">Grand Total</p>
+                  <h3 className="text-lg sm:text-xl font-bold text-info mt-1 truncate">
                     {formatCurrency(grandTotal)}
                   </h3>
                 </div>
-                <div className="bg-info/20 p-2 sm:p-3 rounded-full shrink-0">
-                  <DollarSign className="text-info" size={20} />
+                <div className="bg-info/20 p-2 rounded-full shrink-0">
+                  <DollarSign className="text-info" size={18} />
                 </div>
               </div>
             </CardContent>
@@ -392,7 +421,24 @@ export default function EmployeeSalaryPage() {
         isOpen={showMonthlySalaryCredit}
         onClose={() => setShowMonthlySalaryCredit(false)}
         onSuccess={fetchSalaryData}
+        initialMonth={selectedMonth}
       />
     </DashboardLayout>
+  )
+}
+
+export default function EmployeeSalaryPage() {
+  return (
+    <Suspense
+      fallback={
+        <DashboardLayout>
+          <div className="flex items-center justify-center h-96">
+            <RefreshCw className="animate-spin h-8 w-8 text-primary" />
+          </div>
+        </DashboardLayout>
+      }
+    >
+      <SalaryContent />
+    </Suspense>
   )
 }

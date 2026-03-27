@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -20,6 +21,9 @@ import {
   Trash2,
   Edit2,
   Plus,
+  ChevronRight,
+  X,
+  Filter,
 } from 'lucide-react'
 import { SettleDoctorFeesModal } from '@/components/finances/settle-doctor-fees-modal'
 import { SettleReferralCommissionModal } from '@/components/finances/settle-referral-commission-modal'
@@ -57,6 +61,7 @@ interface FinancialSummary {
 }
 
 export default function FinancesPage() {
+  const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [summary, setSummary] = useState<FinancialSummary | null>(null)
   const [selectedMonth, setSelectedMonth] = useState<string>(
@@ -72,12 +77,34 @@ export default function FinancesPage() {
   const [expensesLoading, setExpensesLoading] = useState(false)
   const [editingExpense, setEditingExpense] = useState<any | null>(null)
 
+  // Transactions tab state
+  const [transactionsSubTab, setTransactionsSubTab] = useState<'all' | 'credit' | 'debit'>('all')
+  const [transactionUserFilter, setTransactionUserFilter] = useState('')
+  const [transactionSourceFilter, setTransactionSourceFilter] = useState('')
+  const [transactions, setTransactions] = useState<any[]>([])
+  const [transactionsLoading, setTransactionsLoading] = useState(false)
+  const [users, setUsers] = useState<{ id: string; username: string }[]>([])
+  const usersFetchedRef = useRef(false)
+
   useEffect(() => {
     fetchSummary()
     if (activeTab === 'expenses') {
       fetchExpenses()
     }
+    if (activeTab === 'transactions') {
+      fetchTransactions()
+      if (!usersFetchedRef.current) {
+        fetchUsers()
+        usersFetchedRef.current = true
+      }
+    }
   }, [selectedMonth, activeTab])
+
+  useEffect(() => {
+    if (activeTab === 'transactions') {
+      fetchTransactions()
+    }
+  }, [transactionsSubTab, transactionUserFilter, transactionSourceFilter])
 
   const fetchSummary = async () => {
     try {
@@ -108,6 +135,50 @@ export default function FinancesPage() {
       console.error('Error fetching expenses:', error)
     } finally {
       setExpensesLoading(false)
+    }
+  }
+
+  const fetchTransactions = async () => {
+    try {
+      setTransactionsLoading(true)
+      const [year, month] = selectedMonth.split('-').map(Number)
+      const startDate = `${selectedMonth}-01`
+      const lastDay = new Date(year, month, 0).getDate()
+      const endDate = `${selectedMonth}-${String(lastDay).padStart(2, '0')}`
+
+      const params = new URLSearchParams({
+        start_date: startDate,
+        end_date: endDate,
+      })
+      if (transactionsSubTab !== 'all') params.set('transaction_type', transactionsSubTab)
+      if (transactionUserFilter) params.set('created_by', transactionUserFilter)
+      if (transactionSourceFilter) params.set('source', transactionSourceFilter)
+
+      const response = await fetch(`/api/ledger/transactions?${params.toString()}`, {
+        credentials: 'include',
+      })
+      const result = await response.json()
+      if (result.success) {
+        setTransactions(result.data || [])
+      } else {
+        setTransactions([])
+      }
+    } catch (error) {
+      console.error('Error fetching transactions:', error)
+    } finally {
+      setTransactionsLoading(false)
+    }
+  }
+
+  const fetchUsers = async () => {
+    try {
+      const response = await fetch('/api/admin/users?pageSize=100', { credentials: 'include' })
+      const result = await response.json()
+      if (result.users) {
+        setUsers(result.users.map((u: any) => ({ id: u.id, username: u.username })))
+      }
+    } catch {
+      // non-admin — silently skip
     }
   }
 
@@ -381,33 +452,58 @@ export default function FinancesPage() {
                     Expense Breakdown
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  {/* Summary Stats */}
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center pb-2 border-b border-border">
-                      <span className="text-muted">Salary Payments</span>
-                      <span className="font-semibold text-foreground">
-                        {formatCurrency(summary.expenses.salary_expenses)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center pb-2 border-b border-border">
-                      <span className="text-muted">General Expenses</span>
-                      <span className="font-semibold text-foreground">
-                        {formatCurrency(summary.expenses.general_expenses)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center pb-2 border-b border-border">
-                      <span className="text-muted">Ledger Expenses*</span>
-                      <span className="font-semibold text-foreground">
-                        {formatCurrency(summary.expenses.ledger_expenses)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center pt-2">
-                      <span className="font-semibold text-foreground">Total Expenses</span>
-                      <span className="font-bold text-xl text-destructive">
-                        {formatCurrency(summary.expenses.total_expenses)}
-                      </span>
-                    </div>
+                <CardContent className="space-y-1">
+                  {/* Salary Payments — navigate to salary page */}
+                  <button
+                    onClick={() => router.push(`/employees/salary?month=${selectedMonth}`)}
+                    className="w-full flex justify-between items-center py-2 px-2 border-b border-border hover:bg-surface-hover rounded-lg transition-colors cursor-pointer group"
+                  >
+                    <span className="text-muted group-hover:text-foreground flex items-center gap-1 transition-colors">
+                      Salary Payments
+                      <ChevronRight className="h-3.5 w-3.5 opacity-0 group-hover:opacity-60 transition-opacity" />
+                    </span>
+                    <span className="font-semibold text-foreground">
+                      {formatCurrency(summary.expenses.salary_expenses)}
+                    </span>
+                  </button>
+
+                  {/* General Expenses — switch to Expenses tab */}
+                  <button
+                    onClick={() => setActiveTab('expenses')}
+                    className="w-full flex justify-between items-center py-2 px-2 border-b border-border hover:bg-surface-hover rounded-lg transition-colors cursor-pointer group"
+                  >
+                    <span className="text-muted group-hover:text-foreground flex items-center gap-1 transition-colors">
+                      General Expenses
+                      <ChevronRight className="h-3.5 w-3.5 opacity-0 group-hover:opacity-60 transition-opacity" />
+                    </span>
+                    <span className="font-semibold text-foreground">
+                      {formatCurrency(summary.expenses.general_expenses)}
+                    </span>
+                  </button>
+
+                  {/* Ledger Expenses — switch to Transactions tab filtered to expense debits */}
+                  <button
+                    onClick={() => {
+                      setActiveTab('transactions')
+                      setTransactionsSubTab('debit')
+                      setTransactionSourceFilter('expense')
+                    }}
+                    className="w-full flex justify-between items-center py-2 px-2 border-b border-border hover:bg-surface-hover rounded-lg transition-colors cursor-pointer group"
+                  >
+                    <span className="text-muted group-hover:text-foreground flex items-center gap-1 transition-colors">
+                      Ledger Expenses
+                      <ChevronRight className="h-3.5 w-3.5 opacity-0 group-hover:opacity-60 transition-opacity" />
+                    </span>
+                    <span className="font-semibold text-foreground">
+                      {formatCurrency(summary.expenses.ledger_expenses)}
+                    </span>
+                  </button>
+
+                  <div className="flex justify-between items-center pt-2 px-2">
+                    <span className="font-semibold text-foreground">Total Expenses</span>
+                    <span className="font-bold text-xl text-destructive">
+                      {formatCurrency(summary.expenses.total_expenses)}
+                    </span>
                   </div>
                 </CardContent>
               </Card>
@@ -484,99 +580,151 @@ export default function FinancesPage() {
         )}
 
         {/* Transactions Tab */}
-        {activeTab === 'transactions' && summary && (
+        {activeTab === 'transactions' && (
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Calendar className="h-5 w-5 text-primary" />
-                Recent Transactions
-              </CardTitle>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <CardTitle className="flex items-center gap-2">
+                  <Calendar className="h-5 w-5 text-primary" />
+                  Transactions
+                </CardTitle>
+
+                {/* User filter — only shown when users list available (ADMIN) */}
+                {users.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <Filter className="h-4 w-4 text-muted flex-shrink-0" />
+                    <select
+                      value={transactionUserFilter}
+                      onChange={(e) => setTransactionUserFilter(e.target.value)}
+                      className="px-3 py-1.5 text-sm bg-input border border-input-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                    >
+                      <option value="">All Users</option>
+                      {users.map((u) => (
+                        <option key={u.id} value={u.id}>{u.username}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {/* Sub-tabs + source chip */}
+              <div className="flex items-center gap-3 mt-3 flex-wrap">
+                <div className="flex rounded-lg overflow-hidden border border-border">
+                  {(['all', 'credit', 'debit'] as const).map((tab) => (
+                    <button
+                      key={tab}
+                      onClick={() => {
+                        setTransactionsSubTab(tab)
+                        setTransactionSourceFilter('')
+                      }}
+                      className={`px-4 py-1.5 text-sm font-medium capitalize transition-colors ${
+                        transactionsSubTab === tab
+                          ? tab === 'credit'
+                            ? 'bg-success-subtle text-success-text'
+                            : tab === 'debit'
+                              ? 'bg-destructive-subtle text-destructive'
+                              : 'bg-primary text-foreground'
+                          : 'bg-surface text-muted hover:text-foreground'
+                      }`}
+                    >
+                      {tab}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Dismissible source filter chip */}
+                {transactionSourceFilter && (
+                  <span className="flex items-center gap-1 px-3 py-1 text-xs rounded-full bg-warning-subtle text-warning-text border border-warning/30">
+                    Source: {transactionSourceFilter}
+                    <button
+                      onClick={() => setTransactionSourceFilter('')}
+                      className="ml-1 hover:opacity-70"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                )}
+              </div>
             </CardHeader>
+
             <CardContent>
-              {summary.recent_transactions.length > 0 ? (
+              {transactionsLoading ? (
+                <div className="flex items-center justify-center h-40">
+                  <RefreshCw className="animate-spin h-6 w-6 text-primary" />
+                </div>
+              ) : transactions.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead>
                       <tr className="border-b border-border">
-                        <th className="text-left py-3 px-2 text-muted font-medium">
-                          Date
-                        </th>
-                        <th className="text-left py-3 px-2 text-muted font-medium hidden sm:table-cell">
-                          Patient
-                        </th>
-                        <th className="text-left py-3 px-2 text-muted font-medium hidden md:table-cell">
-                          Type
-                        </th>
-                        <th className="text-left py-3 px-2 text-muted font-medium hidden md:table-cell">
-                          Created By
-                        </th>
-                        <th className="text-left py-3 px-2 text-muted font-medium">
-                          Description
-                        </th>
-                        <th className="text-right py-3 px-2 text-muted font-medium">
-                          Amount
-                        </th>
-                        <th className="text-center py-3 px-2 text-muted font-medium hidden md:table-cell">
-                          Status
-                        </th>
+                        <th className="text-left py-3 px-2 text-muted font-medium">Date</th>
+                        <th className="text-left py-3 px-2 text-muted font-medium hidden sm:table-cell">Patient</th>
+                        <th className="text-left py-3 px-2 text-muted font-medium hidden md:table-cell">Type</th>
+                        <th className="text-left py-3 px-2 text-muted font-medium hidden md:table-cell">User</th>
+                        <th className="text-left py-3 px-2 text-muted font-medium">Description</th>
+                        <th className="text-left py-3 px-2 text-muted font-medium hidden lg:table-cell">Mode</th>
+                        <th className="text-right py-3 px-2 text-muted font-medium">Amount</th>
+                        <th className="text-center py-3 px-2 text-muted font-medium hidden md:table-cell">Status</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {summary.recent_transactions.map((txn: any) => (
-                        <tr key={txn.id} className="border-b border-border">
-                          <td className="py-3 px-2 text-sm text-foreground">
+                      {transactions.map((txn: any) => (
+                        <tr key={txn.id} className="border-b border-border hover:bg-surface-hover transition-colors">
+                          <td className="py-3 px-2 text-sm text-foreground whitespace-nowrap">
                             {new Date(txn.transaction_date).toLocaleDateString('en-IN', {
                               month: 'short',
                               day: 'numeric',
                             })}
                           </td>
                           <td className="py-3 px-2 text-sm hidden sm:table-cell">
-                            <span className="text-foreground">
-                              {txn.patient?.name ? (
-                                <span className="font-medium">{txn.patient.name}</span>
-                              ) : (
-                                <span className="text-muted-foreground italic">---</span>
-                              )}
-                            </span>
+                            {txn.patient?.name ? (
+                              <span className="font-medium text-foreground">{txn.patient.name}</span>
+                            ) : (
+                              <span className="text-muted italic">—</span>
+                            )}
                           </td>
                           <td className="py-3 px-2 text-sm hidden md:table-cell">
                             <span
-                              className={`px-2 py-1 rounded text-xs ${txn.transaction_type === 'credit'
+                              className={`px-2 py-1 rounded text-xs font-medium ${
+                                txn.transaction_type === 'credit'
                                   ? 'bg-success-subtle text-success-text'
                                   : 'bg-destructive-subtle text-destructive'
-                                }`}
+                              }`}
                             >
                               {txn.transaction_type}
                             </span>
                           </td>
-                          <td className="py-3 px-2 text-sm hidden md:table-cell">
-                            {txn.users?.username || 'System'}
+                          <td className="py-3 px-2 text-sm hidden md:table-cell text-muted">
+                            {txn.created_by_user?.username || '—'}
                           </td>
                           <td className="py-3 px-2 text-sm text-foreground">
                             <div>
                               {txn.description}
-                              <span className="sm:hidden block text-xs text-muted-foreground mt-0.5">
+                              <span className="sm:hidden block text-xs text-muted mt-0.5">
                                 {txn.transaction_type} • {txn.payment_mode}
                               </span>
                             </div>
                           </td>
+                          <td className="py-3 px-2 text-sm hidden lg:table-cell text-muted capitalize">
+                            {txn.payment_mode?.replace('_', ' ')}
+                          </td>
                           <td
-                            className={`py-3 px-2 text-sm text-right font-semibold ${txn.transaction_type === 'credit'
-                                ? 'text-success-text'
-                                : 'text-destructive'
-                              }`}
+                            className={`py-3 px-2 text-sm text-right font-semibold ${
+                              txn.transaction_type === 'credit' ? 'text-success-text' : 'text-destructive'
+                            }`}
                           >
-                            {txn.transaction_type === 'credit' ? '+' : '-'}
+                            {txn.transaction_type === 'credit' ? '+' : '−'}
                             {formatCurrency(txn.amount)}
                           </td>
                           <td className="py-3 px-2 text-center hidden md:table-cell">
                             <span
-                              className={`px-2 py-1 rounded text-xs ${txn.status === 'verified'
+                              className={`px-2 py-1 rounded text-xs ${
+                                txn.status === 'verified'
                                   ? 'bg-info-subtle text-info'
                                   : txn.status === 'day_closed'
                                     ? 'bg-surface-inset text-muted'
                                     : 'bg-warning-subtle text-warning-text'
-                                }`}
+                              }`}
                             >
                               {txn.status}
                             </span>
@@ -588,7 +736,7 @@ export default function FinancesPage() {
                 </div>
               ) : (
                 <div className="text-center py-12 text-muted">
-                  No transactions found for this month
+                  No transactions found for the selected filters
                 </div>
               )}
             </CardContent>
