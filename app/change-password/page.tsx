@@ -18,14 +18,16 @@ function ChangePasswordContent() {
   const [error, setError] = useState('')
   const [isTokenValid, setIsTokenValid] = useState<boolean | null>(null)
   const [isTokenExpired, setIsTokenExpired] = useState(false)
+  const [isSessionMode, setIsSessionMode] = useState(false)
 
   // Validate token on component mount
   useEffect(() => {
     if (token) {
       validateToken()
     } else {
-      setError('No reset token provided')
-      setIsTokenValid(false)
+      // No token = session-based change (admin forced password reset)
+      setIsSessionMode(true)
+      setIsTokenValid(true)
     }
   }, [token])
 
@@ -95,8 +97,8 @@ function ChangePasswordContent() {
         throw new Error(data.error || 'Password change failed')
       }
 
-      // Redirect to login after successful password change
-      router.push('/login')
+      // Redirect to dashboard if already authenticated (session mode), otherwise login
+      router.push(isSessionMode ? '/dashboard' : '/login')
     } catch (err: any) {
       setError(err.message || 'An error occurred')
     } finally {
@@ -184,6 +186,11 @@ function ChangePasswordContent() {
           {/* Valid token - show form */}
           {isTokenValid && (
             <form onSubmit={handleChangePassword} className="space-y-4">
+              {isSessionMode && (
+                <div className="p-3 rounded-lg bg-info/10 border border-info/30 text-foreground text-sm">
+                  Your password has been reset by an administrator. Please set a new password to continue.
+                </div>
+              )}
               {error && (
                 <div className="p-3 rounded-lg bg-destructive-subtle border border-destructive/30 text-destructive text-sm">
                   {error}

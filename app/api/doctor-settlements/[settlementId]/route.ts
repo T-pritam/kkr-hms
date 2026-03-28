@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { verifyAuth } from '@/lib/auth/verify';
+import { recalculatePatientBilling } from '@/lib/recalculate-billing';
 
 // Complete improved PUT route with settled settlement handling
 export async function PUT(
@@ -269,6 +270,11 @@ export async function PUT(
       total_amount: data.total_amount,
     });
 
+    // Recalculate billing totals
+    if (data.patient_billing_id) {
+      await recalculatePatientBilling(supabase, data.patient_billing_id);
+    }
+
     // =====================================================
     // Prepare response
     // =====================================================
@@ -328,6 +334,15 @@ export async function DELETE(
     const { settlementId } = await params;
     const body = await request.json();
 
+    // Fetch billing_id before deleting
+    const { data: settlement } = await supabase
+      .from('doctor_visit_settlements')
+      .select('patient_billing_id')
+      .eq('id', settlementId)
+      .single();
+
+    const billingId = settlement?.patient_billing_id;
+
     // Check if soft delete or hard delete
     const useSoftDelete = body.soft_delete !== false; // Default to soft delete
 
@@ -339,14 +354,6 @@ export async function DELETE(
         .eq('id', settlementId);
 
       if (error) throw error;
-
-      return NextResponse.json(
-        {
-          success: true,
-          message: 'Settlement soft deleted successfully',
-        },
-        { status: 200 }
-      );
     } else {
       // Hard delete
       const { error } = await supabase
@@ -355,15 +362,20 @@ export async function DELETE(
         .eq('id', settlementId);
 
       if (error) throw error;
-
-      return NextResponse.json(
-        {
-          success: true,
-          message: 'Settlement deleted permanently',
-        },
-        { status: 200 }
-      );
     }
+
+    // Recalculate billing totals
+    if (billingId) {
+      await recalculatePatientBilling(supabase, billingId);
+    }
+
+    return NextResponse.json(
+      {
+        success: true,
+        message: useSoftDelete ? 'Settlement soft deleted successfully' : 'Settlement deleted permanently',
+      },
+      { status: 200 }
+    );
   } catch (error) {
     console.error('Error deleting settlement:', error);
     return NextResponse.json(

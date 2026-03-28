@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { verifyAuth } from '@/lib/auth/verify';
+import { recalculatePatientBilling } from '@/lib/recalculate-billing';
 
 export async function POST(request: NextRequest) {
   try {
@@ -70,6 +71,11 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error) throw error;
+
+    // Recalculate billing totals
+    if (data?.patient_billing_id) {
+      await recalculatePatientBilling(supabase, data.patient_billing_id);
+    }
 
     return NextResponse.json(
       {

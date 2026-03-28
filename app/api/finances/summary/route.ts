@@ -64,24 +64,66 @@ export async function GET(request: NextRequest) {
 
     const supabase = await createClient()
 
-    // Get income data
-    const { data: patientBilling } = await supabase
-      .from('patient_billing')
-      .select('*')
-      .eq('month_year', monthYear)
+    // Calculate date range for the month
+    const [year, month] = monthYear.split('-').map(Number)
+    const startDate = `${monthYear}-01`
+    const endDate = `${monthYear}-${new Date(year, month, 0).getDate()}`
+
+    // ===== INCOME: Aggregate by transaction dates =====
+
+    // Revenue from installment payments in this month (by payment_date)
+    const { data: monthInstallments } = await supabase
+      .from('patient_billing_installments')
+      .select('amount, payment_date, patient_billing_id')
+      .gte('payment_date', startDate)
+      .lte('payment_date', endDate)
+
+    const totalPaid =
+      monthInstallments?.reduce((sum, i) => sum + (Number(i.amount) || 0), 0) || 0
+
+    // Get unique billing IDs that had transactions this month
+    const activeBillingIds = new Set(
+      monthInstallments?.map((i) => i.patient_billing_id).filter(Boolean) || []
+    )
+
+    // Charges incurred in this month (by charge_date)
+    const { data: monthCharges } = await supabase
+      .from('patient_charges')
+      .select('amount, qty, charge_date')
+      .gte('charge_date', startDate)
+      .lte('charge_date', endDate)
 
     const totalCharges =
-      patientBilling?.reduce((sum, b) => sum + (Number(b.total_charges) || 0), 0) || 0
-    const totalPaid =
-      patientBilling?.reduce((sum, b) => sum + (Number(b.patient_paid_amount) || 0), 0) || 0
+      monthCharges?.reduce((sum, c) => sum + (Number(c.amount) * (Number(c.qty) || 1)), 0) || 0
+
+    // Commission from billings that belong to this month (by month_year)
+    const { data: patientBilling } = await supabase
+      .from('patient_billing')
+      .select('referral_commission_amount, total_charges, patient_paid_amount')
+      .eq('month_year', monthYear)
+
     const totalCommission =
       patientBilling?.reduce(
         (sum, b) => sum + (Number(b.referral_commission_amount) || 0),
         0
       ) || 0
-    const pendingReceivables = totalCharges - totalPaid
 
-    // Get expenses
+    // Pending receivables: total_charges from all billings in this month minus what's been paid
+    const totalBillingCharges =
+      patientBilling?.reduce((sum, b) => sum + (Number(b.total_charges) || 0), 0) || 0
+    const totalBillingPaid =
+      patientBilling?.reduce((sum, b) => sum + (Number(b.patient_paid_amount) || 0), 0) || 0
+    const pendingReceivables = totalBillingCharges - totalBillingPaid
+
+    // Billing count: billings from this month + those with transactions this month
+    const billingCount = new Set([
+      ...(patientBilling ? Array.from({ length: patientBilling.length }, (_, i) => i) : []),
+      ...activeBillingIds,
+    ]).size || patientBilling?.length || 0
+
+    // ===== EXPENSES =====
+
+    // General expenses
     const { data: expenses } = await supabase
       .from('expenses')
       .select('*')
@@ -90,7 +132,7 @@ export async function GET(request: NextRequest) {
     const totalExpense =
       expenses?.reduce((sum, e) => sum + (Number(e.amount) || 0), 0) || 0
 
-    // Get settled salaries
+    // Salaries
     const { data: salaries } = await supabase
       .from('salary_payments')
       .select('*')
@@ -105,12 +147,7 @@ export async function GET(request: NextRequest) {
         }
       }, 0) || 0
 
-
-    // Get ledger expenses (corrected date range for the month)
-    const [year, month] = monthYear.split('-').map(Number)
-    const startDate = `${monthYear}-01`
-    const endDate = `${monthYear}-${new Date(year, month, 0).getDate()}`
-
+    // Ledger debit expenses
     const { data: ledgerExpenses } = await supabase
       .from('daily_ledger_transactions')
       .select('*')
@@ -122,21 +159,21 @@ export async function GET(request: NextRequest) {
     const ledgerExpenseTotal =
       ledgerExpenses?.reduce((sum, t) => sum + (Number(t.amount) || 0), 0) || 0
 
-    // Calculate totals
-    const totalExpenses = totalExpense + totalSalary + ledgerExpenseTotal
-    const netIncome = totalPaid - totalCommission
+    // ===== TOTALS: Commission is an expense, not a revenue reduction =====
+    const totalExpenses = totalExpense + totalSalary + ledgerExpenseTotal + totalCommission
+    const netIncome = totalPaid
     const netProfit = netIncome - totalExpenses
 
-    // Get unsettled doctor visits
+    // ===== PENDING SETTLEMENTS (global, not month-filtered) =====
     const { data: unsettledDoctorVisits } = await supabase
       .from('doctor_visit_settlements')
       .select('*, doctor:doctors(*), patient:patients(*)')
       .eq('settled', false)
+      .is('deleted_at', null)
 
     const totalUnsettledDoctorFees =
       unsettledDoctorVisits?.reduce((sum, d) => sum + (Number(d.total_amount) || 0), 0) || 0
 
-    // Get unsettled referral commissions
     const { data: unsettledReferrals } = await supabase
       .from('patient_billing')
       .select('*, patient:patients(*)')
@@ -149,7 +186,7 @@ export async function GET(request: NextRequest) {
         0
       ) || 0
 
-    // Get all transactions for the month with patient info
+    // ===== TRANSACTIONS for the month =====
     const { data: recentTransactions } = await supabase
       .from('daily_ledger_transactions')
       .select(`
@@ -172,7 +209,7 @@ export async function GET(request: NextRequest) {
       .order('transaction_date', { ascending: false })
       .order('created_at', { ascending: false })
 
-    // Payment mode breakdown for the month
+    // Payment mode breakdown
     const { data: allTransactions } = await supabase
       .from('daily_ledger_transactions')
       .select('payment_mode, amount, transaction_type')
@@ -209,6 +246,7 @@ export async function GET(request: NextRequest) {
           general_expenses: totalExpense,
           salary_expenses: totalSalary,
           ledger_expenses: ledgerExpenseTotal,
+          referral_commissions: totalCommission,
           total_expenses: totalExpenses,
         },
         profit: {

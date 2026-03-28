@@ -31,6 +31,7 @@ export default function BillingSettlementTab({
     referral_commission_amount: 0,
     referral_settlement_notes: '',
     referral_id: '',
+    referral_commission_included_in_package: false,
   });
   const [referrals, setReferrals] = useState<any[]>([]);
   const [settleData, setSettleData] = useState({
@@ -362,6 +363,8 @@ export default function BillingSettlementTab({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           billing_id: billing.id,
+          referral_settled: true,
+          referral_settlement_date: new Date().toISOString(),
           referral_settlement_payment_method: settleReferralData.payment_method,
           referral_settlement_transaction_ref: settleReferralData.transaction_reference,
           referral_settlement_notes: settleReferralData.settlement_notes,
@@ -405,6 +408,7 @@ export default function BillingSettlementTab({
           base_charge: isDelete ? 0 : chargesData.base_charge,
           referral_id: isDelete ? null : chargesData.referral_id,
           referral_commission_amount: isDelete ? 0 : chargesData.referral_commission_amount,
+          referral_commission_included_in_package: isDelete ? false : chargesData.referral_commission_included_in_package,
         }),
       });
 
@@ -416,6 +420,7 @@ export default function BillingSettlementTab({
           referral_commission_amount: 0,
           referral_settlement_notes: '',
           referral_id: '',
+          referral_commission_included_in_package: false,
         });
       } else {
         alert('Failed to update charges');
@@ -459,6 +464,7 @@ export default function BillingSettlementTab({
                   referral_commission_amount: parseFloat(billing.referral_commission_amount || 0),
                   referral_settlement_notes: billing.referral_settlement_notes || '',
                   referral_id: billing.referral?.id || '',
+                  referral_commission_included_in_package: billing.referral_commission_included_in_package || false,
                 });
               }}
               className="flex items-center gap-2 bg-info hover:bg-info-hover text-foreground px-4 py-2 rounded-lg transition-colors"
@@ -504,6 +510,19 @@ export default function BillingSettlementTab({
                 onChange={(e) => setChargesData({ ...chargesData, referral_commission_amount: parseFloat(e.target.value) })}
                 className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
               />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="commission_included"
+                checked={chargesData.referral_commission_included_in_package}
+                onChange={(e) => setChargesData({ ...chargesData, referral_commission_included_in_package: e.target.checked })}
+                className="h-4 w-4 rounded border-border text-primary focus:ring-ring"
+              />
+              <label htmlFor="commission_included" className="text-sm text-foreground">
+                Commission included in package
+              </label>
             </div>
 
             <div className="flex gap-2">

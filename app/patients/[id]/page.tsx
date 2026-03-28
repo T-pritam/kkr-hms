@@ -235,6 +235,7 @@ export default function PatientDetailsPage() {
               <CaseSheetTab
                 patientId={patientId}
                 billing={billing}
+                onStatusChange={(s) => setPatientData((prev: any) => ({ ...prev, status: s }))}
               />
             )}
 

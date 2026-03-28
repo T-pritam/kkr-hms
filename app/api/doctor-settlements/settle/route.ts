@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { verifyAuth } from '@/lib/auth/verify';
+import { recalculatePatientBilling } from '@/lib/recalculate-billing';
 
 export async function POST(request: NextRequest) {
   try {
@@ -104,6 +105,11 @@ async function settleSingleSettlement(
 
   if (error) throw error;
 
+  // Recalculate billing totals
+  if (updatedSettlement?.patient_billing_id) {
+    await recalculatePatientBilling(supabase, updatedSettlement.patient_billing_id);
+  }
+
   return NextResponse.json(
     {
       success: true,
@@ -183,6 +189,16 @@ async function settleMultipleSettlements(
   const settledSettlements = results
     .filter((r) => !r.error)
     .flatMap((r) => r.data);
+
+  // Recalculate billing totals for all affected billings
+  const billingIds = new Set(
+    settledSettlements
+      .map((s: any) => s.patient_billing_id)
+      .filter(Boolean)
+  );
+  for (const billingId of billingIds) {
+    await recalculatePatientBilling(supabase, billingId as string);
+  }
 
   return NextResponse.json(
     {

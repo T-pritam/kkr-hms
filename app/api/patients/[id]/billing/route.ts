@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { verifyAuth } from '@/lib/auth/verify';
+import { recalculatePatientBilling } from '@/lib/recalculate-billing';
 
 export async function GET(
   request: NextRequest,
@@ -165,6 +166,9 @@ export async function PATCH(
     if (body.base_charge !== undefined) {
       updateData.base_charge = body.base_charge;
     }
+    if (body.referral_commission_included_in_package !== undefined) {
+      updateData.referral_commission_included_in_package = body.referral_commission_included_in_package;
+    }
 
     const { data, error } = await supabase
       .from('patient_billing')
@@ -181,6 +185,11 @@ export async function PATCH(
         .from('patients')
         .update({ referred_by: body.referral_id }) // number OR null
         .eq('id', patientId);
+    }
+
+    // Recalculate billing totals if relevant fields changed
+    if (body.base_charge !== undefined || body.referral_commission_amount !== undefined || body.referral_commission_included_in_package !== undefined) {
+      await recalculatePatientBilling(supabase, body.billing_id);
     }
 
     return NextResponse.json(data);

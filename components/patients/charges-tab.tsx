@@ -275,6 +275,7 @@ export default function ChargesTab({ patientId, billing, onCreateBilling }: Char
               <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Charge Type</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Description</th>
               <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Created By</th>
+              <th className="px-4 py-3 text-center text-sm font-medium text-foreground">Qty</th>
               <th className="px-4 py-3 text-right text-sm font-medium text-foreground">Amount</th>
               <th className="px-4 py-3 text-center text-sm font-medium text-foreground">Actions</th>
             </tr>
@@ -282,7 +283,7 @@ export default function ChargesTab({ patientId, billing, onCreateBilling }: Char
           <tbody className="divide-y divide-input-border">
             {charges.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-muted">
+                <td colSpan={7} className="px-4 py-8 text-center text-muted">
                   No charges recorded yet
                 </td>
               </tr>
@@ -306,8 +307,11 @@ export default function ChargesTab({ patientId, billing, onCreateBilling }: Char
                       <td className="px-4 py-3 text-sm text-muted">
                         {charge.users?.username || 'Unknown'}
                       </td>
+                      <td className="px-4 py-3 text-sm text-foreground text-center">
+                        {charge.qty || 1}
+                      </td>
                       <td className="px-4 py-3 text-sm text-foreground text-right font-medium">
-                        ₹{parseFloat(charge.amount).toFixed(2)}
+                        ₹{(parseFloat(charge.amount) * (charge.qty || 1)).toFixed(2)}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <div className="flex gap-2 justify-center">
@@ -336,11 +340,11 @@ export default function ChargesTab({ patientId, billing, onCreateBilling }: Char
                   );
                 })}
                 <tr className="bg-surface-inset font-semibold">
-                  <td colSpan={4} className="px-4 py-3 text-sm text-foreground text-right">
+                  <td colSpan={5} className="px-4 py-3 text-sm text-foreground text-right">
                     Total Charges:
                   </td>
                   <td className="px-4 py-3 text-sm text-foreground text-right">
-                    ₹{charges.reduce((sum, c) => sum + parseFloat(c.amount), 0).toFixed(2)}
+                    ₹{charges.reduce((sum, c) => sum + parseFloat(c.amount) * (c.qty || 1), 0).toFixed(2)}
                   </td>
                   <td></td>
                 </tr>
@@ -370,7 +374,7 @@ export default function ChargesTab({ patientId, billing, onCreateBilling }: Char
                         <p className="text-xs text-muted mt-0.5 line-clamp-2">{charge.description}</p>
                       )}
                     </div>
-                    <p className="text-base font-semibold text-foreground ml-3">₹{parseFloat(charge.amount).toFixed(2)}</p>
+                    <p className="text-base font-semibold text-foreground ml-3">₹{(parseFloat(charge.amount) * (charge.qty || 1)).toFixed(2)}{(charge.qty || 1) > 1 ? ` (${charge.qty}x)` : ''}</p>
                   </div>
                   <div className="flex flex-wrap gap-2 text-xs">
                     <span className="bg-surface-inset px-2 py-1 rounded text-muted">
@@ -406,7 +410,7 @@ export default function ChargesTab({ patientId, billing, onCreateBilling }: Char
             <div className="bg-surface-inset rounded-lg p-4 flex justify-between items-center">
               <span className="text-sm font-semibold text-foreground">Total Charges</span>
               <span className="text-sm font-semibold text-foreground">
-                ₹{charges.reduce((sum, c) => sum + parseFloat(c.amount), 0).toFixed(2)}
+                ₹{charges.reduce((sum, c) => sum + parseFloat(c.amount) * (c.qty || 1), 0).toFixed(2)}
               </span>
             </div>
           </>

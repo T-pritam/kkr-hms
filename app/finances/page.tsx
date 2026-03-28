@@ -43,6 +43,7 @@ interface FinancialSummary {
     general_expenses: number
     salary_expenses: number
     ledger_expenses: number
+    referral_commissions: number
     total_expenses: number
   }
   profit: {
@@ -430,9 +431,9 @@ export default function FinancesPage() {
                     </span>
                   </div>
                   <div className="flex justify-between items-center pb-2 border-b border-border">
-                    <span className="text-muted">Referral Commission</span>
-                    <span className="font-semibold text-destructive">
-                      - {formatCurrency(summary.income.total_commission)}
+                    <span className="text-muted">Pending Receivables</span>
+                    <span className="font-semibold text-warning-text">
+                      {formatCurrency(summary.income.pending_receivables)}
                     </span>
                   </div>
                   <div className="flex justify-between items-center pt-2">
@@ -496,6 +497,20 @@ export default function FinancesPage() {
                     </span>
                     <span className="font-semibold text-foreground">
                       {formatCurrency(summary.expenses.ledger_expenses)}
+                    </span>
+                  </button>
+
+                  {/* Referral Commissions */}
+                  <button
+                    onClick={() => setActiveTab('settlements')}
+                    className="w-full flex justify-between items-center py-2 px-2 border-b border-border hover:bg-surface-hover rounded-lg transition-colors cursor-pointer group"
+                  >
+                    <span className="text-muted group-hover:text-foreground flex items-center gap-1 transition-colors">
+                      Referral Commissions
+                      <ChevronRight className="h-3.5 w-3.5 opacity-0 group-hover:opacity-60 transition-opacity" />
+                    </span>
+                    <span className="font-semibold text-foreground">
+                      {formatCurrency(summary.expenses.referral_commissions)}
                     </span>
                   </button>
 

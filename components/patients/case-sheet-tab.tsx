@@ -7,9 +7,10 @@ import { useUser } from '@/hooks/use-user';
 interface CaseSheetTabProps {
   patientId: string;
   billing: any;
+  onStatusChange?: (status: string) => void;
 }
 
-export default function CaseSheetTab({ patientId, billing }: CaseSheetTabProps) {
+export default function CaseSheetTab({ patientId, billing, onStatusChange }: CaseSheetTabProps) {
   const { user } = useUser();
   const [caseSheet, setCaseSheet] = useState<any>(null);
   const [showForm, setShowForm] = useState(false);
@@ -149,6 +150,23 @@ export default function CaseSheetTab({ patientId, billing }: CaseSheetTabProps) 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // All 3 fields are required on create
+    if (!isEditing || !caseSheet) {
+      if (!formData.discharge_date) {
+        alert('Discharge date is required');
+        return;
+      }
+      if (!formData.discharge_notes.trim()) {
+        alert('Discharge notes are required');
+        return;
+      }
+      if (!formData.case_sheet_file) {
+        alert('Please upload the case sheet PDF');
+        return;
+      }
+    }
+
     setLoading(true);
 
     try {
@@ -206,55 +224,48 @@ export default function CaseSheetTab({ patientId, billing }: CaseSheetTabProps) 
         }
       } else if (!caseSheet) {
         // Create new case sheet
-        if (formData.case_sheet_file) {
-          // Use FormData for file upload through POST
-          const postFormData = new FormData();
-          postFormData.append('file', formData.case_sheet_file);
-          postFormData.append('discharge_date', formData.discharge_date);
-          postFormData.append('discharge_notes', formData.discharge_notes);
-          postFormData.append('patient_billing_id', billing?.id || '');
+        // Step 1: upload PDF to R2 via /upload route
+        const uploadResult = await uploadToR2(formData.case_sheet_file!);
+        if (!uploadResult) {
+          // uploadToR2 already alerted the user
+          return;
+        }
 
-          const response = await fetch(`/api/patients/${patientId}/case-sheets`, {
-            method: 'POST',
-            body: postFormData,
-          });
+        // Step 2: save record as JSON (main POST route only accepts JSON)
+        const response = await fetch(`/api/patients/${patientId}/case-sheets`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            patient_billing_id: billing?.id || null,
+            discharge_date: formData.discharge_date,
+            discharge_notes: formData.discharge_notes,
+            case_sheet_url: uploadResult.url,
+            case_sheet_filename: uploadResult.filename,
+            uploaded_at: new Date().toISOString(),
+          }),
+        });
 
-          if (response.ok) {
-            await fetchCaseSheets();
-            setShowForm(false);
-            setFormData({
-              discharge_date: '',
-              discharge_notes: '',
-              case_sheet_file: null,
-            });
-          } else {
-            const errorData = await response.json();
-            alert(errorData.error || 'Failed to save case sheet');
-          }
-        } else {
-          // No file, use JSON
-          const response = await fetch(`/api/patients/${patientId}/case-sheets`, {
-            method: 'POST',
+        if (response.ok) {
+          // Auto-discharge: mark patient status as Discharged
+          const statusRes = await fetch(`/api/patients/${patientId}`, {
+            method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              patient_billing_id: billing?.id,
-              discharge_date: formData.discharge_date,
-              discharge_notes: formData.discharge_notes,
-            }),
+            body: JSON.stringify({ status: 'Discharged' }),
           });
-
-          if (response.ok) {
-            await fetchCaseSheets();
-            setShowForm(false);
-            setFormData({
-              discharge_date: '',
-              discharge_notes: '',
-              case_sheet_file: null,
-            });
-          } else {
-            const errorData = await response.json();
-            alert(errorData.error || 'Failed to save case sheet');
+          if (statusRes.ok) {
+            onStatusChange?.('Discharged');
           }
+
+          await fetchCaseSheets();
+          setShowForm(false);
+          setFormData({
+            discharge_date: '',
+            discharge_notes: '',
+            case_sheet_file: null,
+          });
+        } else {
+          const errorData = await response.json();
+          alert(errorData.error || 'Failed to save case sheet');
         }
       }
     } catch (error) {
@@ -314,7 +325,7 @@ export default function CaseSheetTab({ patientId, billing }: CaseSheetTabProps) 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-muted mb-2">
-                Discharge Date
+                Discharge Date <span className="text-destructive">*</span>
               </label>
               <input
                 type="date"
@@ -326,7 +337,7 @@ export default function CaseSheetTab({ patientId, billing }: CaseSheetTabProps) 
 
             <div>
               <label className="block text-sm font-medium text-muted mb-2">
-                Upload Case Sheet (PDF)
+                Upload Case Sheet (PDF){!isEditing ? <span className="text-destructive"> *</span> : <span className="text-muted text-xs ml-1">(leave empty to keep existing)</span>}
               </label>
               <div className="relative">
                 <input
@@ -345,7 +356,7 @@ export default function CaseSheetTab({ patientId, billing }: CaseSheetTabProps) 
 
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-muted mb-2">
-                Discharge Notes
+                Discharge Notes <span className="text-destructive">*</span>
               </label>
               <textarea
                 rows={5}
@@ -363,7 +374,7 @@ export default function CaseSheetTab({ patientId, billing }: CaseSheetTabProps) 
               disabled={loading || uploading}
               className="bg-success hover:bg-success-hover text-foreground px-6 py-2 rounded-lg transition-colors disabled:opacity-50"
             >
-              {uploading ? 'Uploading...' : loading ? 'Saving...' : 'Save Case Sheet'}
+              {uploading ? 'Uploading PDF...' : loading ? 'Saving...' : isEditing ? 'Update Case Sheet' : 'Save Case Sheet'}
             </button>
             <button
               type="button"

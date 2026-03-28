@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { verifyAuth } from '@/lib/auth/verify';
+import { recalculatePatientBilling } from '@/lib/recalculate-billing';
 
 export async function PATCH(
   request: NextRequest,
@@ -19,7 +20,7 @@ export async function PATCH(
     // Check if user is admin or created this charge
     const { data: charge } = await supabase
       .from('patient_charges')
-      .select('created_by')
+      .select('created_by, patient_billing_id')
       .eq('id', chargeId)
       .single();
 
@@ -45,6 +46,11 @@ export async function PATCH(
       .single();
 
     if (error) throw error;
+
+    // Recalculate billing totals
+    if (charge.patient_billing_id) {
+      await recalculatePatientBilling(supabase, charge.patient_billing_id);
+    }
 
     return NextResponse.json(data);
   } catch (error) {
@@ -90,6 +96,11 @@ export async function DELETE(
       .eq('id', chargeId);
 
     if (error) throw error;
+
+    // Recalculate billing totals
+    if (charge.patient_billing_id) {
+      await recalculatePatientBilling(supabase, charge.patient_billing_id);
+    }
 
     return NextResponse.json({ message: 'Charge deleted successfully' });
   } catch (error) {

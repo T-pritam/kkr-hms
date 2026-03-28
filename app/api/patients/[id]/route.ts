@@ -139,6 +139,58 @@ export async function PUT(
   }
 }
 
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+
+    const token = request.cookies.get('accessToken')?.value
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const payload = await verifyToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    const body = await request.json()
+    const supabase = await createClient()
+
+    // Only update the fields that are provided
+    const updateData: Record<string, any> = {}
+    if (body.status !== undefined) updateData.status = body.status
+    if (body.phone !== undefined) updateData.phone = body.phone
+    if (body.address !== undefined) updateData.address = body.address
+    if (body.medical_history !== undefined) updateData.medical_history = body.medical_history
+    if (body.allergies !== undefined) updateData.allergies = body.allergies
+    if (body.current_medications !== undefined) updateData.current_medications = body.current_medications
+    if (body.emergency_contact_name !== undefined) updateData.emergency_contact_name = body.emergency_contact_name
+    if (body.emergency_contact_phone !== undefined) updateData.emergency_contact_phone = body.emergency_contact_phone
+
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
+    }
+
+    const { error } = await supabase
+      .from('patients')
+      .update(updateData)
+      .eq('id', id)
+
+    if (error) throw error
+
+    return NextResponse.json({ message: 'Patient updated successfully' })
+  } catch (error: any) {
+    console.error('Error patching patient:', error)
+    return NextResponse.json(
+      { error: error.message || 'Failed to update patient' },
+      { status: 500 }
+    )
+  }
+}
+
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
