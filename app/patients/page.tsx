@@ -5,11 +5,12 @@ import { useRouter } from 'next/navigation'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Plus, Edit, Trash2, Search } from 'lucide-react'
+import { Plus, Edit, Trash2, Search, Download, X } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { CreatePatientModal } from '@/components/patients/create-patient-modal'
 import { EditPatientModal } from '@/components/patients/edit-patient-modal'
 import { TablePagination } from '@/components/ui/table-pagination'
+import { fetchPatientPDFData, generatePatientPDF } from '@/lib/pdf/patient-pdf'
 
 export default function PatientsPage() {
   const router = useRouter()
@@ -23,6 +24,52 @@ export default function PatientsPage() {
   const [pageSize, setPageSize] = useState(10)
   const [totalPatients, setTotalPatients] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
+  const [downloadModalOpen, setDownloadModalOpen] = useState(false)
+  const [downloadPatientId, setDownloadPatientId] = useState('')
+  const [downloadPatientSearch, setDownloadPatientSearch] = useState('')
+  const [downloadFilterType, setDownloadFilterType] = useState<'all' | 'last_month' | 'last_year' | 'custom'>('all')
+  const [downloadCustomStart, setDownloadCustomStart] = useState('')
+  const [downloadCustomEnd, setDownloadCustomEnd] = useState('')
+  const [downloadLoading, setDownloadLoading] = useState(false)
+  const [allPatientsList, setAllPatientsList] = useState<any[]>([])
+
+  const fetchAllPatients = async () => {
+    try {
+      const res = await fetch('/api/patients?page=1&pageSize=500')
+      const data = await res.json()
+      if (res.ok) setAllPatientsList(data.patients || [])
+    } catch {}
+  }
+
+  const handleDownloadPDF = async () => {
+    if (!downloadPatientId) { alert('Please select a patient'); return }
+    setDownloadLoading(true)
+    try {
+      let dateFilter: { start?: string; end?: string } | undefined
+      const now = new Date()
+      if (downloadFilterType === 'last_month') {
+        const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+        const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0)
+        dateFilter = {
+          start: lastMonth.toISOString().split('T')[0],
+          end: endOfLastMonth.toISOString().split('T')[0],
+        }
+      } else if (downloadFilterType === 'last_year') {
+        dateFilter = {
+          start: `${now.getFullYear() - 1}-01-01`,
+          end: `${now.getFullYear() - 1}-12-31`,
+        }
+      } else if (downloadFilterType === 'custom' && downloadCustomStart && downloadCustomEnd) {
+        dateFilter = { start: downloadCustomStart, end: downloadCustomEnd }
+      }
+      const data = await fetchPatientPDFData(downloadPatientId, dateFilter)
+      generatePatientPDF(data)
+    } catch {
+      alert('Failed to generate PDF')
+    } finally {
+      setDownloadLoading(false)
+    }
+  }
 
   const fetchPatients = async () => {
     try {
@@ -94,6 +141,17 @@ export default function PatientsPage() {
             <p className="text-muted mt-1 text-sm sm:text-base">Manage patient records</p>
           </div>
           <div className="flex gap-2 w-full sm:w-auto">
+            <Button
+              onClick={() => {
+                setDownloadModalOpen(true)
+                if (allPatientsList.length === 0) fetchAllPatients()
+              }}
+              variant="outline"
+              className="flex-1 sm:flex-none"
+            >
+              <Download size={18} className="mr-2" />
+              Download Report
+            </Button>
             <Button
               onClick={() => setCreateModalOpen(true)}
               className="flex-1 sm:flex-none"
@@ -300,6 +358,97 @@ export default function PatientsPage() {
         onSuccess={fetchPatients}
         patient={selectedPatient}
       />
+
+      {/* Download Report Modal */}
+      {downloadModalOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-surface rounded-xl shadow-xl w-full max-w-md p-6 space-y-5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-foreground">Download Patient Report</h2>
+              <button onClick={() => setDownloadModalOpen(false)} className="p-1 hover:bg-surface-hover rounded-lg">
+                <X className="h-5 w-5 text-muted" />
+              </button>
+            </div>
+
+            {/* Patient Select */}
+            <div>
+              <label className="block text-sm font-medium text-muted mb-2">Select Patient *</label>
+              <select
+                value={downloadPatientId}
+                onChange={(e) => setDownloadPatientId(e.target.value)}
+                className="w-full bg-input border border-input-border rounded-lg px-4 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="">-- Select a Patient --</option>
+                {allPatientsList.map((p: any) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.patient_id})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Date Filter */}
+            <div>
+              <label className="block text-sm font-medium text-muted mb-2">Date Range</label>
+              <div className="grid grid-cols-2 gap-2">
+                {(['all', 'last_month', 'last_year', 'custom'] as const).map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setDownloadFilterType(f)}
+                    className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
+                      downloadFilterType === f
+                        ? 'bg-primary text-foreground border-primary'
+                        : 'bg-surface-hover text-muted border-border hover:text-foreground'
+                    }`}
+                  >
+                    {f === 'all' ? 'All Time' : f === 'last_month' ? 'Last Month' : f === 'last_year' ? 'Last Year' : 'Custom'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {downloadFilterType === 'custom' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-muted mb-1">Start Date</label>
+                  <input
+                    type="date"
+                    value={downloadCustomStart}
+                    onChange={(e) => setDownloadCustomStart(e.target.value)}
+                    className="w-full bg-input border border-input-border rounded-lg px-3 py-2 text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-muted mb-1">End Date</label>
+                  <input
+                    type="date"
+                    value={downloadCustomEnd}
+                    onChange={(e) => setDownloadCustomEnd(e.target.value)}
+                    className="w-full bg-input border border-input-border rounded-lg px-3 py-2 text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={handleDownloadPDF}
+                disabled={downloadLoading || !downloadPatientId}
+                className="flex-1 flex items-center justify-center gap-2 bg-info hover:bg-info-hover text-foreground px-4 py-2.5 rounded-lg transition-colors disabled:opacity-50"
+              >
+                <Download className="h-4 w-4" />
+                {downloadLoading ? 'Generating...' : 'Download PDF'}
+              </button>
+              <button
+                onClick={() => setDownloadModalOpen(false)}
+                className="px-4 py-2.5 bg-surface-hover text-foreground rounded-lg hover:bg-surface-inset transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </DashboardLayout>
   )
 }

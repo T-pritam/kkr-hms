@@ -24,10 +24,20 @@ import {
   ChevronRight,
   X,
   Filter,
+  Download,
 } from 'lucide-react'
 import { SettleDoctorFeesModal } from '@/components/finances/settle-doctor-fees-modal'
 import { SettleReferralCommissionModal } from '@/components/finances/settle-referral-commission-modal'
 import { GeneralExpenseModal } from '@/components/finances/general-expense-modal'
+import {
+  generateSalaryPDF,
+  generateExpensesPDF,
+  generateLedgerExpensesPDF,
+  generateReferralPDF,
+  generateIncomePDF,
+  generateMonthlyFinancePDF,
+  generateExpenseBreakdownPDF,
+} from '@/lib/pdf/finance-pdf'
 
 interface FinancialSummary {
   month_year: string
@@ -44,6 +54,7 @@ interface FinancialSummary {
     salary_expenses: number
     ledger_expenses: number
     referral_commissions: number
+    doctor_fees: number
     total_expenses: number
   }
   profit: {
@@ -276,6 +287,20 @@ export default function FinancesPage() {
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               <span className="hidden sm:inline">{loading ? 'Loading...' : 'Refresh'}</span>
             </button>
+
+            {summary && (
+              <button
+                onClick={async () => {
+                  try { await generateMonthlyFinancePDF(selectedMonth, summary) }
+                  catch (e) { alert('Failed to generate PDF') }
+                }}
+                className="px-4 py-2 bg-info hover:bg-info-hover text-foreground rounded-lg flex items-center justify-center gap-2 transition-colors"
+                title="Download Monthly Finance Report"
+              >
+                <Download className="h-4 w-4" />
+                <span className="hidden sm:inline">Monthly PDF</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -355,7 +380,7 @@ export default function FinancesPage() {
                     {formatCurrency(summary.expenses.total_expenses)}
                   </p>
                   <p className="text-xs sm:text-sm text-muted mt-1">
-                    Salaries + General + Ledger
+                    Salaries + General + Ledger + Doctor + Referral
                   </p>
                 </CardContent>
               </Card>
@@ -412,9 +437,21 @@ export default function FinancesPage() {
               {/* Income Breakdown */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <DollarSign className="h-5 w-5 text-success-text" />
-                    Income Breakdown
+                  <CardTitle className="flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <DollarSign className="h-5 w-5 text-success-text" />
+                      Income Breakdown
+                    </span>
+                    <button
+                      onClick={async () => {
+                        try { await generateIncomePDF(selectedMonth, summary) }
+                        catch (e) { alert('Failed to generate PDF') }
+                      }}
+                      className="p-1.5 rounded-lg hover:bg-surface-hover transition-colors"
+                      title="Download Income Report"
+                    >
+                      <Download className="h-4 w-4 text-muted hover:text-foreground" />
+                    </button>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
@@ -448,71 +485,151 @@ export default function FinancesPage() {
               {/* Expense Breakdown */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Receipt className="h-5 w-5 text-destructive" />
-                    Expense Breakdown
+                  <CardTitle className="flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <Receipt className="h-5 w-5 text-destructive" />
+                      Expense Breakdown
+                    </span>
+                    <button
+                      onClick={async () => {
+                        try { await generateExpenseBreakdownPDF(selectedMonth, summary) }
+                        catch (e) { alert('Failed to generate PDF') }
+                      }}
+                      className="p-1.5 rounded-lg hover:bg-surface-hover transition-colors"
+                      title="Download Expense Breakdown PDF"
+                    >
+                      <Download className="h-4 w-4 text-muted hover:text-foreground" />
+                    </button>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-1">
                   {/* Salary Payments — navigate to salary page */}
-                  <button
-                    onClick={() => router.push(`/employees/salary?month=${selectedMonth}`)}
-                    className="w-full flex justify-between items-center py-2 px-2 border-b border-border hover:bg-surface-hover rounded-lg transition-colors cursor-pointer group"
-                  >
-                    <span className="text-muted group-hover:text-foreground flex items-center gap-1 transition-colors">
-                      Salary Payments
-                      <ChevronRight className="h-3.5 w-3.5 opacity-0 group-hover:opacity-60 transition-opacity" />
-                    </span>
-                    <span className="font-semibold text-foreground">
-                      {formatCurrency(summary.expenses.salary_expenses)}
-                    </span>
-                  </button>
+                  <div className="flex items-center py-2 px-2 border-b border-border hover:bg-surface-hover rounded-lg transition-colors group">
+                    <button
+                      onClick={() => router.push(`/employees/salary?month=${selectedMonth}`)}
+                      className="flex-1 flex justify-between items-center cursor-pointer"
+                    >
+                      <span className="text-muted group-hover:text-foreground flex items-center gap-1 transition-colors">
+                        Salary Payments
+                        <ChevronRight className="h-3.5 w-3.5 opacity-0 group-hover:opacity-60 transition-opacity" />
+                      </span>
+                      <span className="font-semibold text-foreground">
+                        {formatCurrency(summary.expenses.salary_expenses)}
+                      </span>
+                    </button>
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation()
+                        try { await generateSalaryPDF(selectedMonth) }
+                        catch { alert('Failed to generate PDF') }
+                      }}
+                      className="ml-2 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-surface-inset transition-all"
+                      title="Download Salary PDF"
+                    >
+                      <Download className="h-3.5 w-3.5 text-muted" />
+                    </button>
+                  </div>
 
                   {/* General Expenses — switch to Expenses tab */}
-                  <button
-                    onClick={() => setActiveTab('expenses')}
-                    className="w-full flex justify-between items-center py-2 px-2 border-b border-border hover:bg-surface-hover rounded-lg transition-colors cursor-pointer group"
-                  >
-                    <span className="text-muted group-hover:text-foreground flex items-center gap-1 transition-colors">
-                      General Expenses
-                      <ChevronRight className="h-3.5 w-3.5 opacity-0 group-hover:opacity-60 transition-opacity" />
-                    </span>
-                    <span className="font-semibold text-foreground">
-                      {formatCurrency(summary.expenses.general_expenses)}
-                    </span>
-                  </button>
+                  <div className="flex items-center py-2 px-2 border-b border-border hover:bg-surface-hover rounded-lg transition-colors group">
+                    <button
+                      onClick={() => setActiveTab('expenses')}
+                      className="flex-1 flex justify-between items-center cursor-pointer"
+                    >
+                      <span className="text-muted group-hover:text-foreground flex items-center gap-1 transition-colors">
+                        General Expenses
+                        <ChevronRight className="h-3.5 w-3.5 opacity-0 group-hover:opacity-60 transition-opacity" />
+                      </span>
+                      <span className="font-semibold text-foreground">
+                        {formatCurrency(summary.expenses.general_expenses)}
+                      </span>
+                    </button>
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation()
+                        try { await generateExpensesPDF(selectedMonth) }
+                        catch { alert('Failed to generate PDF') }
+                      }}
+                      className="ml-2 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-surface-inset transition-all"
+                      title="Download Expenses PDF"
+                    >
+                      <Download className="h-3.5 w-3.5 text-muted" />
+                    </button>
+                  </div>
 
                   {/* Ledger Expenses — switch to Transactions tab filtered to expense debits */}
-                  <button
-                    onClick={() => {
-                      setActiveTab('transactions')
-                      setTransactionsSubTab('debit')
-                      setTransactionSourceFilter('expense')
-                    }}
-                    className="w-full flex justify-between items-center py-2 px-2 border-b border-border hover:bg-surface-hover rounded-lg transition-colors cursor-pointer group"
-                  >
-                    <span className="text-muted group-hover:text-foreground flex items-center gap-1 transition-colors">
-                      Ledger Expenses
-                      <ChevronRight className="h-3.5 w-3.5 opacity-0 group-hover:opacity-60 transition-opacity" />
-                    </span>
-                    <span className="font-semibold text-foreground">
-                      {formatCurrency(summary.expenses.ledger_expenses)}
-                    </span>
-                  </button>
+                  <div className="flex items-center py-2 px-2 border-b border-border hover:bg-surface-hover rounded-lg transition-colors group">
+                    <button
+                      onClick={() => {
+                        setActiveTab('transactions')
+                        setTransactionsSubTab('debit')
+                        setTransactionSourceFilter('expense')
+                      }}
+                      className="flex-1 flex justify-between items-center cursor-pointer"
+                    >
+                      <span className="text-muted group-hover:text-foreground flex items-center gap-1 transition-colors">
+                        Ledger Expenses
+                        <ChevronRight className="h-3.5 w-3.5 opacity-0 group-hover:opacity-60 transition-opacity" />
+                      </span>
+                      <span className="font-semibold text-foreground">
+                        {formatCurrency(summary.expenses.ledger_expenses)}
+                      </span>
+                    </button>
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation()
+                        try { await generateLedgerExpensesPDF(selectedMonth) }
+                        catch { alert('Failed to generate PDF') }
+                      }}
+                      className="ml-2 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-surface-inset transition-all"
+                      title="Download Ledger Expenses PDF"
+                    >
+                      <Download className="h-3.5 w-3.5 text-muted" />
+                    </button>
+                  </div>
 
                   {/* Referral Commissions */}
-                  <button
-                    onClick={() => setActiveTab('settlements')}
-                    className="w-full flex justify-between items-center py-2 px-2 border-b border-border hover:bg-surface-hover rounded-lg transition-colors cursor-pointer group"
-                  >
-                    <span className="text-muted group-hover:text-foreground flex items-center gap-1 transition-colors">
-                      Referral Commissions
-                      <ChevronRight className="h-3.5 w-3.5 opacity-0 group-hover:opacity-60 transition-opacity" />
-                    </span>
-                    <span className="font-semibold text-foreground">
-                      {formatCurrency(summary.expenses.referral_commissions)}
-                    </span>
-                  </button>
+                  <div className="flex items-center py-2 px-2 border-b border-border hover:bg-surface-hover rounded-lg transition-colors group">
+                    <button
+                      onClick={() => setActiveTab('settlements')}
+                      className="flex-1 flex justify-between items-center cursor-pointer"
+                    >
+                      <span className="text-muted group-hover:text-foreground flex items-center gap-1 transition-colors">
+                        Referral Commissions
+                        <ChevronRight className="h-3.5 w-3.5 opacity-0 group-hover:opacity-60 transition-opacity" />
+                      </span>
+                      <span className="font-semibold text-foreground">
+                        {formatCurrency(summary.expenses.referral_commissions)}
+                      </span>
+                    </button>
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation()
+                        try { await generateReferralPDF(selectedMonth) }
+                        catch { alert('Failed to generate PDF') }
+                      }}
+                      className="ml-2 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-surface-inset transition-all"
+                      title="Download Referral Commissions PDF"
+                    >
+                      <Download className="h-3.5 w-3.5 text-muted" />
+                    </button>
+                  </div>
+
+                  {/* Doctor Fees */}
+                  <div className="flex items-center py-2 px-2 border-b border-border hover:bg-surface-hover rounded-lg transition-colors group">
+                    <button
+                      onClick={() => setActiveTab('settlements')}
+                      className="flex-1 flex justify-between items-center cursor-pointer"
+                    >
+                      <span className="text-muted group-hover:text-foreground flex items-center gap-1 transition-colors">
+                        Doctor Fees
+                        <ChevronRight className="h-3.5 w-3.5 opacity-0 group-hover:opacity-60 transition-opacity" />
+                      </span>
+                      <span className="font-semibold text-foreground">
+                        {formatCurrency(summary.expenses.doctor_fees)}
+                      </span>
+                    </button>
+                  </div>
 
                   <div className="flex justify-between items-center pt-2 px-2">
                     <span className="font-semibold text-foreground">Total Expenses</span>

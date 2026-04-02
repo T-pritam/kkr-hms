@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Check, DollarSign, Edit2, Trash2, X } from 'lucide-react';
+import { Plus, Check, DollarSign, Edit2, Trash2, X, Download } from 'lucide-react';
 import { useUser } from '@/hooks/use-user';
 import { ReferralSelect } from './referral-select';
+import { fetchPatientPDFData, generatePatientPDF } from '@/lib/pdf/patient-pdf';
 
 interface BillingSettlementTabProps {
   patientId: string;
@@ -32,6 +33,7 @@ export default function BillingSettlementTab({
     referral_settlement_notes: '',
     referral_id: '',
     referral_commission_included_in_package: false,
+    doctor_fees_included_in_package: false,
   });
   const [referrals, setReferrals] = useState<any[]>([]);
   const [settleData, setSettleData] = useState({
@@ -409,6 +411,7 @@ export default function BillingSettlementTab({
           referral_id: isDelete ? null : chargesData.referral_id,
           referral_commission_amount: isDelete ? 0 : chargesData.referral_commission_amount,
           referral_commission_included_in_package: isDelete ? false : chargesData.referral_commission_included_in_package,
+          doctor_fees_included_in_package: isDelete ? false : chargesData.doctor_fees_included_in_package,
         }),
       });
 
@@ -421,6 +424,7 @@ export default function BillingSettlementTab({
           referral_settlement_notes: '',
           referral_id: '',
           referral_commission_included_in_package: false,
+          doctor_fees_included_in_package: false,
         });
       } else {
         alert('Failed to update charges');
@@ -455,24 +459,40 @@ export default function BillingSettlementTab({
       <div className="bg-surface-hover rounded-lg p-4 sm:p-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
           <h3 className="text-lg sm:text-xl font-semibold text-foreground">Billing Summary</h3>
-          {isAdmin && (
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => {
-                setShowChargesForm(!showChargesForm);
-                setChargesData({
-                  base_charge: parseFloat(billing.base_charge || 0),
-                  referral_commission_amount: parseFloat(billing.referral_commission_amount || 0),
-                  referral_settlement_notes: billing.referral_settlement_notes || '',
-                  referral_id: billing.referral?.id || '',
-                  referral_commission_included_in_package: billing.referral_commission_included_in_package || false,
-                });
+              onClick={async () => {
+                try {
+                  const data = await fetchPatientPDFData(patientId);
+                  generatePatientPDF(data);
+                } catch { alert('Failed to generate PDF'); }
               }}
-              className="flex items-center gap-2 bg-info hover:bg-info-hover text-foreground px-4 py-2 rounded-lg transition-colors"
+              className="flex items-center gap-2 bg-accent hover:bg-accent-hover text-foreground px-4 py-2 rounded-lg transition-colors"
+              title="Download Patient Billing PDF"
             >
-              <Plus className="h-4 w-4" />
-              Set Charges
+              <Download className="h-4 w-4" />
+              <span className="hidden sm:inline">Download PDF</span>
             </button>
-          )}
+            {isAdmin && (
+              <button
+                onClick={() => {
+                  setShowChargesForm(!showChargesForm);
+                  setChargesData({
+                    base_charge: parseFloat(billing.base_charge || 0),
+                    referral_commission_amount: parseFloat(billing.referral_commission_amount || 0),
+                    referral_settlement_notes: billing.referral_settlement_notes || '',
+                    referral_id: billing.referral?.id || '',
+                    referral_commission_included_in_package: billing.referral_commission_included_in_package || false,
+                    doctor_fees_included_in_package: billing.doctor_fees_included_in_package || false,
+                  });
+                }}
+                className="flex items-center gap-2 bg-info hover:bg-info-hover text-foreground px-4 py-2 rounded-lg transition-colors"
+              >
+                <Plus className="h-4 w-4" />
+                Set Charges
+              </button>
+            )}
+          </div>
         </div>
 
         {showChargesForm && isAdmin && (
@@ -522,6 +542,19 @@ export default function BillingSettlementTab({
               />
               <label htmlFor="commission_included" className="text-sm text-foreground">
                 Commission included in package
+              </label>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="doctor_fees_included"
+                checked={chargesData.doctor_fees_included_in_package}
+                onChange={(e) => setChargesData({ ...chargesData, doctor_fees_included_in_package: e.target.checked })}
+                className="h-4 w-4 rounded border-border text-primary focus:ring-ring"
+              />
+              <label htmlFor="doctor_fees_included" className="text-sm text-foreground">
+                Doctor fees included in package
               </label>
             </div>
 

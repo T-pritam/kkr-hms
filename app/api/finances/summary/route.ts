@@ -99,12 +99,24 @@ export async function GET(request: NextRequest) {
     // Commission from billings that belong to this month (by month_year)
     const { data: patientBilling } = await supabase
       .from('patient_billing')
-      .select('referral_commission_amount, total_charges, patient_paid_amount')
+      .select('referral_commission_amount, total_charges, patient_paid_amount, referral_commission_included_in_package, total_doctor_fees, doctor_fees_included_in_package')
       .eq('month_year', monthYear)
 
     const totalCommission =
       patientBilling?.reduce(
-        (sum, b) => sum + (Number(b.referral_commission_amount) || 0),
+        (sum, b) => {
+          if (b.referral_commission_included_in_package) return sum
+          return sum + (Number(b.referral_commission_amount) || 0)
+        },
+        0
+      ) || 0
+
+    const totalDoctorFees =
+      patientBilling?.reduce(
+        (sum, b) => {
+          if (b.doctor_fees_included_in_package) return sum
+          return sum + (Number(b.total_doctor_fees) || 0)
+        },
         0
       ) || 0
 
@@ -159,8 +171,8 @@ export async function GET(request: NextRequest) {
     const ledgerExpenseTotal =
       ledgerExpenses?.reduce((sum, t) => sum + (Number(t.amount) || 0), 0) || 0
 
-    // ===== TOTALS: Commission is an expense, not a revenue reduction =====
-    const totalExpenses = totalExpense + totalSalary + ledgerExpenseTotal + totalCommission
+    // ===== TOTALS: Commission & doctor fees are expenses =====
+    const totalExpenses = totalExpense + totalSalary + ledgerExpenseTotal + totalCommission + totalDoctorFees
     const netIncome = totalPaid
     const netProfit = netIncome - totalExpenses
 
@@ -247,6 +259,7 @@ export async function GET(request: NextRequest) {
           salary_expenses: totalSalary,
           ledger_expenses: ledgerExpenseTotal,
           referral_commissions: totalCommission,
+          doctor_fees: totalDoctorFees,
           total_expenses: totalExpenses,
         },
         profit: {

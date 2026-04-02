@@ -169,6 +169,9 @@ export async function PATCH(
     if (body.referral_commission_included_in_package !== undefined) {
       updateData.referral_commission_included_in_package = body.referral_commission_included_in_package;
     }
+    if (body.doctor_fees_included_in_package !== undefined) {
+      updateData.doctor_fees_included_in_package = body.doctor_fees_included_in_package;
+    }
 
     const { data, error } = await supabase
       .from('patient_billing')
@@ -188,7 +191,7 @@ export async function PATCH(
     }
 
     // Recalculate billing totals if relevant fields changed
-    if (body.base_charge !== undefined || body.referral_commission_amount !== undefined || body.referral_commission_included_in_package !== undefined) {
+    if (body.base_charge !== undefined || body.referral_commission_amount !== undefined || body.referral_commission_included_in_package !== undefined || body.doctor_fees_included_in_package !== undefined) {
       await recalculatePatientBilling(supabase, body.billing_id);
     }
 

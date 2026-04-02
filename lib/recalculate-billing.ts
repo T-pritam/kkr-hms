@@ -11,7 +11,7 @@ export async function recalculatePatientBilling(
   // 1. Get billing record
   const { data: billing, error: billingError } = await supabase
     .from('patient_billing')
-    .select('base_charge, referral_commission_amount, referral_commission_included_in_package')
+    .select('base_charge, referral_commission_amount, referral_commission_included_in_package, doctor_fees_included_in_package')
     .eq('id', billingId)
     .single()
 
@@ -47,10 +47,11 @@ export async function recalculatePatientBilling(
   const baseCharge = Number(billing.base_charge) || 0
   const referralCommission = Number(billing.referral_commission_amount) || 0
   const commissionIncluded = billing.referral_commission_included_in_package === true
+  const doctorFeesIncluded = billing.doctor_fees_included_in_package === true
 
   const totalCharges = baseCharge
     + patientChargesTotal
-    + totalDoctorFees
+    + (doctorFeesIncluded ? 0 : totalDoctorFees)
     + (commissionIncluded ? 0 : referralCommission)
 
   // 5. Update billing record
