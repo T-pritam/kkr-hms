@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { verifyToken, getAccessToken } from '@/lib/auth/jwt'
 import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const supabase = await createClient()
+    const supabase = createServiceClient()
     let userId: string
 
     if (token) {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import crypto from 'crypto'
 
 export async function POST(request: NextRequest) {
@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const supabase = await createClient()
+    const supabase = createServiceClient()
 
     // Check if user exists
     const { data: user, error } = await supabase
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
 
     // Generate secure reset token
     const resetToken = crypto.randomBytes(32).toString('hex')
-    const resetTokenExpiry = new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
+    const resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000) // 1 hour
 
     // Save reset token to dedicated table (secure approach)
     const { error: tokenError } = await supabase
@@ -48,10 +48,12 @@ export async function POST(request: NextRequest) {
 
     // Send email via Brevo Edge Function
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-    console.log(baseUrl)
     const resetUrl = `${baseUrl}/change-password?token=${resetToken}`
-    
-    await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-reset-email`, {
+
+    const edgeFnUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/send-reset-email`
+    console.log('[reset-password] Calling edge function:', edgeFnUrl)
+
+    const emailResponse = await fetch(edgeFnUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -64,6 +66,15 @@ export async function POST(request: NextRequest) {
         baseUrl,
       }),
     })
+
+    if (!emailResponse.ok) {
+      const errText = await emailResponse.text()
+      console.error('[reset-password] Edge function error:', emailResponse.status, errText)
+      // Still return success so we don't reveal user existence
+    } else {
+      const resData = await emailResponse.json()
+      console.log('[reset-password] Email sent, messageId:', resData.messageId)
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {
