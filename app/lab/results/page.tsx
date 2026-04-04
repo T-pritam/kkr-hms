@@ -8,6 +8,7 @@ import { CreateTestOrderModal } from '@/components/lab/create-test-order-modal'
 import { TestResultEntryModal } from '@/components/lab/test-result-entry-modal'
 import { ViewTestResultModal } from '@/components/lab/view-test-result-modal'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
+import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch'
 
 interface TestResult {
   id: string
@@ -72,6 +73,8 @@ export default function TestResultsPage() {
       setLoading(false)
     }
   }
+
+  useRealtimeRefetch(['patient_test_results', 'test_result_values'], fetchResults)
 
   const getStatusColor = (status: string) => {
     switch (status) {

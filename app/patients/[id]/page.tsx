@@ -10,6 +10,7 @@ import ChargesTab from '@/components/patients/charges-tab';
 import PaymentsTab from '@/components/patients/payments-tab';
 import CaseSheetTab from '@/components/patients/case-sheet-tab';
 import BillingSettlementTab from '@/components/patients/billing-settlement-tab';
+import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch';
 
 type Tab = 'info' | 'visits' | 'charges' | 'payments' | 'casesheet' | 'billing';
 
@@ -32,6 +33,12 @@ export default function PatientDetailsPage() {
       fetchBilling();
     }
   }, [patientId]);
+
+  const refreshAll = () => { fetchPatientData(); fetchBilling(); };
+  useRealtimeRefetch(
+    ['patients', 'patient_billing', 'patient_charges', 'patient_consultations', 'patient_case_sheets', 'patient_billing_installments'],
+    refreshAll
+  );
 
   const fetchPatientData = async () => {
     try {

@@ -9,6 +9,7 @@ import { CreateLabTestModal } from '@/components/lab/create-lab-test-modal'
 import { EditLabTestModal } from '@/components/lab/edit-lab-test-modal'
 import { ManageParametersModal } from '@/components/lab/manage-parameters-modal'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
+import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch'
 
 interface LabTest {
   id: string
@@ -55,6 +56,8 @@ export default function LabTestsPage() {
       setLoading(false)
     }
   }
+
+  useRealtimeRefetch(['lab_tests', 'test_parameters'], fetchTests)
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this test?')) return

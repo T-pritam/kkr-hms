@@ -59,10 +59,10 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
     {
       name: 'Lab/Pathology',
       icon: FlaskConical,
-      roles: ['ADMIN', 'DOCTOR', 'LAB_TECHNICIAN', 'RECEPTIONIST'],
+      roles: ['ADMIN', 'DOCTOR', 'NURSE', 'LAB_TECHNICIAN', 'RECEPTIONIST'],
       submenu: [
-        { name: 'Test Catalog', href: '/lab/tests', roles: ['ADMIN', 'LAB_TECHNICIAN'] },
-        { name: 'Test Results', href: '/lab/results', roles: ['ADMIN', 'DOCTOR', 'LAB_TECHNICIAN', 'RECEPTIONIST'] },
+        { name: 'Test Catalog', href: '/lab/tests', roles: ['ADMIN', 'DOCTOR', 'NURSE', 'LAB_TECHNICIAN', 'RECEPTIONIST'] },
+        { name: 'Test Results', href: '/lab/results', roles: ['ADMIN', 'DOCTOR', 'NURSE', 'LAB_TECHNICIAN', 'RECEPTIONIST'] },
       ],
     },
     {

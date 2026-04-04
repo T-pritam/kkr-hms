@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { 
@@ -125,6 +126,8 @@ export default function DailyLedgerSummaryPage() {
       setLoading(false)
     }
   }
+
+  useRealtimeRefetch(['daily_ledger_transactions', 'daily_ledger_closures', 'expenses'], fetchDailySummary)
 
   const handleDeleteTransaction = async (id: string) => {
     if (!confirm('Are you sure you want to delete this transaction?')) return

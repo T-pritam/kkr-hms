@@ -38,6 +38,7 @@ import {
   generateMonthlyFinancePDF,
   generateExpenseBreakdownPDF,
 } from '@/lib/pdf/finance-pdf'
+import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch'
 
 interface FinancialSummary {
   month_year: string
@@ -111,6 +112,15 @@ export default function FinancesPage() {
       }
     }
   }, [selectedMonth, activeTab])
+
+  useRealtimeRefetch(
+    ['expenses', 'doctor_visit_settlements', 'referrals', 'salary_payments', 'patient_billing', 'patient_charges'],
+    () => {
+      fetchSummary()
+      if (activeTab === 'expenses') fetchExpenses()
+      if (activeTab === 'transactions') fetchTransactions()
+    }
+  )
 
   useEffect(() => {
     if (activeTab === 'transactions') {

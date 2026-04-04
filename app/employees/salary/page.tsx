@@ -9,6 +9,7 @@ import { DollarSign, Calendar, TrendingUp, TrendingDown, RefreshCw } from 'lucid
 import { SalaryDetailsModal } from '@/components/salary/salary-details-modal'
 import { PayAdvanceModal } from '@/components/salary/pay-advance-modal'
 import { MonthlySalaryCreditModal } from '@/components/salary/monthly-salary-credit-modal'
+import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch'
 
 function SalaryContent() {
   const searchParams = useSearchParams()
@@ -73,6 +74,8 @@ function SalaryContent() {
       setLoading(false)
     }
   }
+
+  useRealtimeRefetch(['salary_payments', 'advances'], fetchSalaryData)
 
   const handleViewSalary = (employeeId: string) => {
     setSelectedEmployeeID(employeeId)

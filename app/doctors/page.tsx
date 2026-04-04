@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { CreateDoctorModal } from '@/components/doctors/create-doctor-modal'
 import { EditDoctorModal } from '@/components/doctors/edit-doctor-modal'
 import { TablePagination } from '@/components/ui/table-pagination'
+import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch'
 
 export default function DoctorsPage() {
   const [doctors, setDoctors] = useState<any[]>([])
@@ -45,6 +46,8 @@ export default function DoctorsPage() {
     const timer = setTimeout(fetchDoctors, 300)
     return () => clearTimeout(timer)
   }, [searchTerm, currentPage, pageSize])
+
+  useRealtimeRefetch(['doctors'], fetchDoctors)
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this doctor?')) return

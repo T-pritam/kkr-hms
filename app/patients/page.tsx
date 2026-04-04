@@ -11,6 +11,7 @@ import { CreatePatientModal } from '@/components/patients/create-patient-modal'
 import { EditPatientModal } from '@/components/patients/edit-patient-modal'
 import { TablePagination } from '@/components/ui/table-pagination'
 import { fetchPatientPDFData, generatePatientPDF } from '@/lib/pdf/patient-pdf'
+import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch'
 
 export default function PatientsPage() {
   const router = useRouter()
@@ -95,6 +96,8 @@ export default function PatientsPage() {
     }, 300) // Debounce search
     return () => clearTimeout(timer)
   }, [searchTerm, currentPage, pageSize])
+
+  useRealtimeRefetch(['patients'], fetchPatients)
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this patient?')) return

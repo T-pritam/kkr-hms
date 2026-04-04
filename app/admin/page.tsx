@@ -9,6 +9,7 @@ import { CreateUserModal } from '@/components/admin/create-user-modal'
 import { EditUserModal } from '@/components/admin/edit-user-modal'
 import { TablePagination } from '@/components/ui/table-pagination'
 import { Input } from '@/components/ui/input'
+import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch'
 
 export default function AdminPage() {
   const [users, setUsers] = useState([])
@@ -46,6 +47,8 @@ export default function AdminPage() {
     }, 300) // Debounce search
     return () => clearTimeout(timer)
   }, [currentPage, pageSize, searchTerm])
+
+  useRealtimeRefetch(['users'], fetchUsers)
 
   const handleDelete = async (userId: string) => {
     if (!confirm('Are you sure you want to delete this user?')) return

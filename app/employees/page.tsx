@@ -9,6 +9,7 @@ import { CreateEmployeeModal } from '@/components/employees/create-employee-moda
 import { EditEmployeeModal } from '@/components/employees/edit-employee-modal'
 import { ImportEmployeeModal } from '@/components/employees/import-employee-modal'
 import { TablePagination } from '@/components/ui/table-pagination'
+import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch'
 
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState<any[]>([])
@@ -50,6 +51,8 @@ export default function EmployeesPage() {
       setLoading(false)
     }
   }
+
+  useRealtimeRefetch(['employees'], fetchEmployees)
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this employee?')) {

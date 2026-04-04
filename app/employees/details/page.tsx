@@ -10,6 +10,7 @@ import { CreateEmployeeModal } from '@/components/employees/create-employee-moda
 import { EditEmployeeModal } from '@/components/employees/edit-employee-modal'
 import { ImportEmployeeModal } from '@/components/employees/import-employee-modal'
 import { TablePagination } from '@/components/ui/table-pagination'
+import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch'
 
 export default function EmployeeDetailsPage() {
   const [employees, setEmployees] = useState<any[]>([])
@@ -63,6 +64,8 @@ export default function EmployeeDetailsPage() {
     const timer = setTimeout(fetchEmployees, 300)
     return () => clearTimeout(timer)
   }, [searchTerm, currentPage, pageSize])
+
+  useRealtimeRefetch(['employees'], fetchEmployees)
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to mark this employee as Inactive? Their historical salary and advance records will be preserved.')) return
