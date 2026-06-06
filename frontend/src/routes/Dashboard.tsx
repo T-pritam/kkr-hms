@@ -2,7 +2,7 @@ import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Activity, Users, Stethoscope, DollarSign } from 'lucide-react'
 
-export default async function DashboardPage() {
+export default function DashboardPage() {
   const stats = [
     {
       title: 'Total Patients',

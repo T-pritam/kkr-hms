@@ -1,7 +1,7 @@
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
-export default async function EmployeeLedgerPage() {
+export default function EmployeeLedgerPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
