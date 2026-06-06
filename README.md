@@ -16,8 +16,8 @@ that owns all data/auth/business logic, and a Vite + React single-page app that 
   token rotation on refresh and server-enforced **role-based access control** on every endpoint.
 - **4 roles** (Admin, Doctor, Nurse, Receptionist) — the backend is the source of truth for what
   each role can do; the UI mirrors it for UX.
-- **Clean layered backend** — `controller → service → repository → entity`, DTOs over the wire,
-  centralized exception handling, package-by-feature structure (~65 endpoints, 20 JPA entities).
+- **Clean layered backend** — `controller → service → repository → entity` package-by-layer,
+  DTOs over the wire, centralized exception handling (~65 endpoints, 21 JPA entities).
 - **Real domain logic** — patient billing recalculation, doctor visit-fee settlement (per-visit /
   total / merge), a prorated **payroll engine** (27-day month, OT, advances with validation), daily
   ledger close-out, and a monthly **finance summary** aggregating income vs. expenses.
