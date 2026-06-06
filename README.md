@@ -101,13 +101,17 @@ that owns all data/auth/business logic, and a Vite + React single-page app that 
 
 ```
 .
-├── backend/                     # Spring Boot REST API
+├── backend/                     # Spring Boot REST API (layered architecture)
 │   ├── src/main/java/tech/pritamrao/kkrhms/
-│   │   ├── config/   security/  common/        # security, CORS, error handling, JWT
-│   │   ├── auth/  users/                        # login/refresh/logout/me, admin user mgmt
-│   │   ├── patients/  doctors/  lab/            # clinical domains (+ billing, settlements)
-│   │   ├── employees/  ledger/  finances/  referrals/
-│   │   ├── storage/  email/  billing/           # R2, Brevo, billing recalculation
+│   │   ├── controller/    # @RestController — thin HTTP layer (auth, patients, doctors, lab, …)
+│   │   ├── service/       # business logic (billing recalc, payroll, settlements, R2, email)
+│   │   ├── repository/    # Spring Data JPA repositories
+│   │   ├── entity/        # JPA @Entity classes (21 tables)
+│   │   ├── dto/           # request/response records (no entities over the wire)
+│   │   ├── security/      # JWT, cookie filter, RBAC, principal
+│   │   ├── config/        # Spring Security, CORS, R2/S3 client
+│   │   ├── exception/     # ApiException + global handler
+│   │   ├── common/        # shared helpers (hashing, pagination)
 │   │   └── KkrHmsApplication.java
 │   ├── src/main/resources/application.yml
 │   └── .env.example
