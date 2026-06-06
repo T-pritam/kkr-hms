@@ -45,7 +45,7 @@ export function PayAdvanceModal({ isOpen, onClose, employeeId, selectedMonth, em
   const fetchValidationRules = async () => {
     try {
       setValidationLoading(true)
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/employees/${employeeId}/salary/advances/validation?month_year=${selectedMonth}`,
         { credentials: 'include' }
       )

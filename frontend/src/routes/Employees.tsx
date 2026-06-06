@@ -36,7 +36,7 @@ export default function EmployeesPage() {
     try {
       setLoading(true)
       const url = `/api/employees?page=${currentPage}&pageSize=${pageSize}&search=${encodeURIComponent(searchTerm)}`
-      const response = await fetch(url)
+      const response = await apiFetch(url)
       const data = await response.json()
       
       if (response.ok) {

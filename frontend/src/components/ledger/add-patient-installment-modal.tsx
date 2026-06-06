@@ -186,7 +186,7 @@ export function AddPatientInstallmentModal({
     setLoading(true);
 
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/patients/${formData.patient_id}/installments`,
         {
           method: 'POST',

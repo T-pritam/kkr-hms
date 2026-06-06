@@ -61,7 +61,7 @@ export function TestResultEntryModal({
         setTestInfo(result.data)
 
         // Fetch parameters for this test
-        const paramsResponse = await fetch(
+        const paramsResponse = await apiFetch(
           `/api/lab-tests/${result.data.test_id}/parameters`
         )
         const paramsResult = await paramsResponse.json()

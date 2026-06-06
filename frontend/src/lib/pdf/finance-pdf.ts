@@ -1,3 +1,4 @@
+import { apiFetch } from '@/lib/api'
 import jsPDF from 'jspdf'
 
 const HOSPITAL_NAME = 'KKR Hospital & Medical Services'
@@ -238,7 +239,7 @@ const RE = M + 269  // right edge = 283
 
 // ── Salary PDF ────────────────────────────────────────────────────────────────
 export async function generateSalaryPDF(monthYear: string) {
-  const res = await fetch(`/api/employees/salary?month_year=${monthYear}`)
+  const res = await apiFetch(`/api/employees/salary?month_year=${monthYear}`)
   const result = await res.json()
   if (!result.success) throw new Error('Failed to fetch salary data')
 
@@ -296,7 +297,7 @@ export async function generateSalaryPDF(monthYear: string) {
 
 // ── General Expenses PDF ───────────────────────────────────────────────────────
 export async function generateExpensesPDF(monthYear: string) {
-  const res = await fetch(`/api/finances/expenses?month_year=${monthYear}`)
+  const res = await apiFetch(`/api/finances/expenses?month_year=${monthYear}`)
   const result = await res.json()
   if (!result.success) throw new Error('Failed to fetch expenses')
 
@@ -348,7 +349,7 @@ export async function generateLedgerExpensesPDF(monthYear: string) {
   const startDate = `${monthYear}-01`
   const endDate   = `${monthYear}-${new Date(year, month, 0).getDate()}`
   const params = new URLSearchParams({ start_date: startDate, end_date: endDate, transaction_type: 'debit', source: 'expense' })
-  const res = await fetch(`/api/ledger/transactions?${params}`)
+  const res = await apiFetch(`/api/ledger/transactions?${params}`)
   const result = await res.json()
   const txns: any[] = result.success ? result.data : (Array.isArray(result) ? result : [])
 
@@ -403,7 +404,7 @@ export async function generateLedgerExpensesPDF(monthYear: string) {
 
 // ── Referral Commissions PDF ───────────────────────────────────────────────────
 export async function generateReferralPDF(monthYear: string) {
-  const res = await fetch('/api/finances/referral-commissions')
+  const res = await apiFetch('/api/finances/referral-commissions')
   const result = await res.json()
   const commissions: any[] = result.success ? result.data : (Array.isArray(result) ? result : [])
 
@@ -460,7 +461,7 @@ export async function generateIncomePDF(monthYear: string, summary: any) {
   const startDate = `${monthYear}-01`
   const endDate   = `${monthYear}-${new Date(year, month, 0).getDate()}`
   const params = new URLSearchParams({ start_date: startDate, end_date: endDate, transaction_type: 'credit', source: 'patient' })
-  const res = await fetch(`/api/ledger/transactions?${params}`)
+  const res = await apiFetch(`/api/ledger/transactions?${params}`)
   const result = await res.json()
   const txns: any[] = result.success ? result.data : (Array.isArray(result) ? result : [])
 
@@ -574,10 +575,10 @@ export async function generateMonthlyFinancePDF(monthYear: string, summary: any)
   const monthLabel = getMonthLabel(monthYear)
 
   const [salaryRes, expensesRes, ledgerRes, referralRes] = await Promise.all([
-    fetch(`/api/employees/salary?month_year=${monthYear}`),
-    fetch(`/api/finances/expenses?month_year=${monthYear}`),
-    fetch(`/api/ledger/transactions?${new URLSearchParams({ start_date: startDate, end_date: endDate, transaction_type: 'debit', source: 'expense' })}`),
-    fetch('/api/finances/referral-commissions'),
+    apiFetch(`/api/employees/salary?month_year=${monthYear}`),
+    apiFetch(`/api/finances/expenses?month_year=${monthYear}`),
+    apiFetch(`/api/ledger/transactions?${new URLSearchParams({ start_date: startDate, end_date: endDate, transaction_type: 'debit', source: 'expense' })}`),
+    apiFetch('/api/finances/referral-commissions'),
   ])
   const salaryData   = await salaryRes.json()
   const expensesData = await expensesRes.json()

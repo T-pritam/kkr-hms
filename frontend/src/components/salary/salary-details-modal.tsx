@@ -53,7 +53,7 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
   const fetchValidationRules = async () => {
     try {
       setValidationLoading(true)
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/employees/${employeeId}/salary/advances/validation?month_year=${selectedMonth}`,
         { credentials: 'include' }
       )
@@ -185,7 +185,7 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
           ]
         }
 
-      const response = await fetch(endpoint, {
+      const response = await apiFetch(endpoint, {
         method,
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },

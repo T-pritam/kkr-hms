@@ -117,7 +117,7 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate, billing, o
                 : `/api/patients/${patientId}/consultations`;
             const method = editingId ? 'PATCH' : 'POST';
 
-            const response = await fetch(url, {
+            const response = await apiFetch(url, {
                 method,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

@@ -1,3 +1,4 @@
+import { apiFetch } from '@/lib/api'
 import jsPDF from 'jspdf'
 
 const HOSPITAL_NAME = 'KKR Hospital & Medical Services'
@@ -187,10 +188,10 @@ export interface PatientPDFData {
 
 // ── Fetch helper ───────────────────────────────────────────────────────────────
 export async function fetchPatientPDFData(patientId: string, dateFilter?: { start?: string; end?: string }): Promise<PatientPDFData> {
-  const patientRes = await fetch(`/api/patients/${patientId}`)
+  const patientRes = await apiFetch(`/api/patients/${patientId}`)
   const patient = await patientRes.json()
 
-  const billingRes = await fetch(`/api/patients/${patientId}/billing`)
+  const billingRes = await apiFetch(`/api/patients/${patientId}/billing`)
   const billingData = await billingRes.json()
   const billing = billingData.billings?.[0] || null
   const referral = billingData.referral || null
@@ -200,9 +201,9 @@ export async function fetchPatientPDFData(patientId: string, dateFilter?: { star
   }
 
   const [chargesRes, installmentsRes, settlementsRes] = await Promise.all([
-    fetch(`/api/patients/${patientId}/charges?billing_id=${billing.id}`),
-    fetch(`/api/patients/${patientId}/installments?billing_id=${billing.id}`),
-    fetch(`/api/patients/${patientId}/settlements?billing_id=${billing.id}`),
+    apiFetch(`/api/patients/${patientId}/charges?billing_id=${billing.id}`),
+    apiFetch(`/api/patients/${patientId}/installments?billing_id=${billing.id}`),
+    apiFetch(`/api/patients/${patientId}/settlements?billing_id=${billing.id}`),
   ])
 
   let charges     = await chargesRes.json()

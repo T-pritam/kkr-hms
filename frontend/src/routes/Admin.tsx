@@ -28,7 +28,7 @@ export default function AdminPage() {
     try {
       setLoading(true)
       const url = `/api/admin/users?page=${currentPage}&pageSize=${pageSize}&search=${encodeURIComponent(searchTerm)}`
-      const response = await fetch(url)
+      const response = await apiFetch(url)
       const data = await response.json()
       if (response.ok) {
         setUsers(data.users || [])

@@ -77,7 +77,7 @@ export default function PatientsPage() {
     try {
       setLoading(true)
       const url = `/api/patients?page=${currentPage}&pageSize=${pageSize}&search=${encodeURIComponent(searchTerm)}`
-      const response = await fetch(url)
+      const response = await apiFetch(url)
       const data = await response.json()
       if (response.ok) {
         setPatients(data.patients || [])

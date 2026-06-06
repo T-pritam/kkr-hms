@@ -66,7 +66,7 @@ export default function CaseSheetTab({ patientId, billing, onStatusChange }: Cas
     if (!caseSheet?.id) return;
 
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/patients/${patientId}/case-sheets/${caseSheet.id}/download`
       );
 
@@ -88,7 +88,7 @@ export default function CaseSheetTab({ patientId, billing, onStatusChange }: Cas
     if (!caseSheet?.id) return;
 
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/patients/${patientId}/case-sheets/${caseSheet.id}/download`
       );
 
