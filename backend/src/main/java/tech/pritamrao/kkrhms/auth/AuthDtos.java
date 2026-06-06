@@ -1,5 +1,6 @@
 package tech.pritamrao.kkrhms.auth;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 
@@ -20,7 +21,9 @@ public final class AuthDtos {
 
     public record MeResponse(UserView user) {}
 
-    public record ChangePasswordRequest(String newPassword, String token, Boolean check) {}
+    // The frontend sends camelCase "newPassword"; pin the JSON name so the global
+    // snake_case strategy doesn't expect "new_password".
+    public record ChangePasswordRequest(@JsonProperty("newPassword") String newPassword, String token, Boolean check) {}
 
     public record ResetPasswordRequest(@Email String email) {}
 }
