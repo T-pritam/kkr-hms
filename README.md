@@ -31,11 +31,11 @@ that owns all data/auth/business logic, and a Vite + React single-page app that 
 ## Architecture
 
 ```
-┌──────────────────────────┐         ┌──────────────────────────────┐        ┌──────────────────┐
-│  Frontend (Vite + React) │  HTTPS  │   Backend (Spring Boot 3)    │  JDBC  │  Supabase Postgres│
-│  hms.pritamrao.tech       │ ──────► │   api-hms.pritamrao.tech     │ ─────► │  (existing DB)    │
-│  React Router · Tailwind  │ cookies │  Security · JPA · Services   │        └──────────────────┘
-│  central API client       │ ◄────── │  RBAC · DTOs · ExceptionAdv  │ ─────► Cloudflare R2 (PDFs)
+┌──────────────────────────┐         ┌──────────────────────────────┐        ┌────────────────────┐
+│  Frontend (Vite + React) │  HTTPS  │   Backend (Spring Boot 3)    │  JDBC  │  Supabase Postgres │
+│  hms.pritamrao.tech      │ ──────► │   api-hms.pritamrao.tech     │ ─────► │  (existing DB)     │
+│  React Router · Tailwind │ cookies │  Security · JPA · Services   │        └────────────────────┘
+│  central API client      │ ◄────── │  RBAC · DTOs · ExceptionAdv  │ ─────► Cloudflare R2 (PDFs)
 └─────────┬────────────────┘         └──────────────────────────────┘ ─────► Brevo (email)
           │ realtime (read-only, anon)
           └──────────────────────────────────────────► Supabase Realtime (refetch triggers only)
