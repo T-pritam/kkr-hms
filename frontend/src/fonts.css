@@ -1,0 +1,6 @@
+/* Geist is loaded via Google Fonts in index.html; expose the variables the
+   design tokens in globals.css expect (originally provided by next/font). */
+:root {
+  --font-geist-sans: 'Geist', system-ui, -apple-system, sans-serif;
+  --font-geist-mono: 'Geist Mono', ui-monospace, monospace;
+}

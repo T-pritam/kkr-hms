@@ -1,0 +1,20 @@
+# systemd unit for the Spring Boot backend.
+# Install at /etc/systemd/system/kkr-hms-backend.service, then:
+#   systemctl daemon-reload && systemctl enable --now kkr-hms-backend
+[Unit]
+Description=KKR HMS Spring Boot backend
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/kkr-hms/backend
+# Loads POSTGRES_*, JWT_SECRET, R2_*, BREVO_*, COOKIE_*, CORS_* etc.
+EnvironmentFile=/opt/kkr-hms/backend/.env
+ExecStart=/usr/bin/java -jar /opt/kkr-hms/backend/app.jar
+SuccessExitStatus=143
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

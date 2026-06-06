@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en" class="dark" suppressHydrationWarning>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KKR Hospital Management System</title>
+    <meta name="description" content="Secure hospital management system for managing patients, doctors, employees, and finances" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&display=swap" rel="stylesheet" />
+    <script>
+      // Apply persisted theme before paint to avoid a flash (ported from app/layout.tsx).
+      (function () {
+        try {
+          var theme = localStorage.getItem('kkr-theme') || 'dark';
+          var resolved = theme;
+          if (theme === 'system') {
+            resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          }
+          document.documentElement.classList.remove('light', 'dark');
+          document.documentElement.classList.add(resolved);
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body class="antialiased bg-background text-foreground">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
