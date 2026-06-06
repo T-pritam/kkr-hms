@@ -8,6 +8,8 @@ that owns all data/auth/business logic, and a Vite + React single-page app that 
 
 **Live:** frontend → `https://hms.pritamrao.tech` · API → `https://api-hms.pritamrao.tech`
 
+**Demo login:** `admin@hms.com` / `admin@123` (Admin role)
+
 ---
 
 ## Highlights

@@ -34,8 +34,14 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
   const [labOpen, setLabOpen] = useState(false)
 
   const handleLogout = async () => {
-    await apiFetch('/api/auth/logout', { method: 'POST' })
-    router.push('/login')
+    try {
+      await apiFetch('/api/auth/logout', { method: 'POST' })
+    } catch {
+      // ignore — clear client state regardless
+    }
+    // Hard redirect so all in-memory auth state (UserContext) is reset; a
+    // client-side push would bounce between /login and /dashboard on stale state.
+    window.location.href = '/login'
   }
 
   const menuItems = [
