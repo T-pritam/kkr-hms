@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, User, Stethoscope, DollarSign, CreditCard, FileText, Receipt } from 'lucide-react';
+import { ArrowLeft, User, Stethoscope, DollarSign, CreditCard, FileText, Receipt, FlaskConical } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import PatientInfoTab from '@/components/patients/patient-info-tab';
@@ -10,9 +10,10 @@ import ChargesTab from '@/components/patients/charges-tab';
 import PaymentsTab from '@/components/patients/payments-tab';
 import CaseSheetTab from '@/components/patients/case-sheet-tab';
 import BillingSettlementTab from '@/components/patients/billing-settlement-tab';
+import LabHistoryTab from '@/components/patients/lab-history-tab';
 import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch';
 
-type Tab = 'info' | 'visits' | 'charges' | 'payments' | 'casesheet' | 'billing';
+type Tab = 'info' | 'visits' | 'charges' | 'payments' | 'lab' | 'casesheet' | 'billing';
 
 export default function PatientDetailsPage() {
   const params = useParams();
@@ -127,6 +128,7 @@ export default function PatientDetailsPage() {
     { id: 'visits' as Tab, label: 'Doctor Visits', icon: Stethoscope },
     { id: 'charges' as Tab, label: 'Charges', icon: DollarSign },
     { id: 'payments' as Tab, label: 'Payments', icon: CreditCard },
+    { id: 'lab' as Tab, label: 'Lab', icon: FlaskConical },
     { id: 'casesheet' as Tab, label: 'Case Sheet & Discharge', icon: FileText },
     { id: 'billing' as Tab, label: 'Billing & Settlement', icon: Receipt },
   ];
@@ -236,6 +238,10 @@ export default function PatientDetailsPage() {
                 billing={billing}
                 onCreateBilling={createBilling}
               />
+            )}
+
+            {activeTab === 'lab' && (
+              <LabHistoryTab patientId={patientId} />
             )}
 
             {activeTab === 'casesheet' && (

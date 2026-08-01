@@ -61,8 +61,8 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
       icon: FlaskConical,
       roles: ['ADMIN', 'DOCTOR', 'NURSE', 'LAB_TECHNICIAN', 'RECEPTIONIST'],
       submenu: [
-        { name: 'Test Catalog', href: '/lab/tests', roles: ['ADMIN', 'DOCTOR', 'NURSE', 'LAB_TECHNICIAN', 'RECEPTIONIST'] },
-        { name: 'Test Results', href: '/lab/results', roles: ['ADMIN', 'DOCTOR', 'NURSE', 'LAB_TECHNICIAN', 'RECEPTIONIST'] },
+        { name: 'Lab Orders', href: '/lab/orders', roles: ['ADMIN', 'DOCTOR', 'NURSE', 'LAB_TECHNICIAN', 'RECEPTIONIST'] },
+        { name: 'Test Catalogue', href: '/lab/tests', roles: ['ADMIN', 'DOCTOR', 'NURSE', 'LAB_TECHNICIAN', 'RECEPTIONIST'] },
       ],
     },
     {

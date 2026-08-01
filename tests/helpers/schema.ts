@@ -41,9 +41,35 @@ export const SCHEMA: Record<string, string[]> = {
 
   expenses: ['id', 'expense_type', 'amount', 'expense_date', 'month_year', 'remarks', 'created_at'],
 
+  lab_interpretation_templates: [
+    'id', 'test_id', 'title', 'body', 'is_active', 'created_by', 'created_at', 'updated_at',
+  ],
+
+  lab_order_counters: ['year', 'last_no'],
+
+  lab_order_items: [
+    'id', 'order_id', 'test_id', 'test_name', 'test_code', 'category', 'specimen', 'method',
+    'price', 'status', 'interpretation', 'interpretation_by', 'interpretation_at',
+    'entered_by', 'entered_at', 'authorised_by', 'authorised_at', 'display_order',
+    'created_at', 'updated_at',
+  ],
+
+  lab_orders: [
+    'id', 'order_no', 'patient_id', 'patient_name', 'patient_phone', 'patient_age',
+    'patient_gender', 'patient_display_id', 'patient_status', 'referring_doctor_id',
+    'referring_doctor_name', 'priority', 'status', 'registered_at', 'collected_at',
+    'received_at', 'reported_at', 'collected_by', 'created_by', 'total_amount', 'discount',
+    'net_amount', 'notes', 'created_at', 'updated_at',
+  ],
+
+  lab_result_values: [
+    'id', 'order_item_id', 'parameter_id', 'value', 'text_value', 'unit', 'ref_display',
+    'ref_min', 'ref_max', 'abnormal', 'is_critical', 'notes', 'created_at', 'updated_at',
+  ],
+
   lab_tests: [
     'id', 'name', 'code', 'category', 'description', 'sample_type', 'price', 'is_active',
-    'created_at', 'updated_at',
+    'method', 'interpretation_template', 'created_at', 'updated_at',
   ],
 
   password_reset_tokens: ['id', 'user_id', 'token_hash', 'expires_at', 'is_used', 'created_at', 'used_at'],
@@ -97,9 +123,16 @@ export const SCHEMA: Record<string, string[]> = {
     'updated_at', 'ot_days',
   ],
 
+  test_parameter_ranges: [
+    'id', 'parameter_id', 'gender', 'age_min_years', 'age_max_years', 'range_type',
+    'min_value', 'max_value', 'text_range', 'display_text', 'normal_options',
+    'critical_low', 'critical_high', 'display_order', 'created_at', 'updated_at',
+  ],
+
   test_parameters: [
     'id', 'test_id', 'name', 'unit', 'min_value', 'max_value', 'gender_specific', 'male_min',
     'male_max', 'female_min', 'female_max', 'display_order', 'is_active', 'created_at',
+    'param_type', 'code', 'method', 'options', 'formula', 'decimals', 'group_name', 'updated_at',
   ],
 
   test_result_values: [

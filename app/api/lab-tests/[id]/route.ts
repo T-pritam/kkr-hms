@@ -1,23 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyToken } from '@/lib/auth/jwt'
 import { createClient } from '@/lib/supabase/server'
+import { requireLab } from '@/lib/lab/authz'
 
-// GET /api/lab-tests/:id - Get single lab test
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+type Params = { params: Promise<{ id: string }> }
+
+const WRITABLE = [
+  'name', 'code', 'category', 'description', 'sample_type',
+  'method', 'interpretation_template', 'price', 'is_active',
+] as const
+
+// GET /api/lab-tests/:id
+export async function GET(request: NextRequest, { params }: Params) {
   try {
-    // Verify authentication
-    const token = request.cookies.get('accessToken')?.value
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const payload = await verifyToken(token)
-    if (!payload) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
-    }
+    const auth = await requireLab(request, 'catalogue:read')
+    if (auth.response) return auth.response
 
     const { id } = await params
     const supabase = await createClient()
@@ -30,147 +26,150 @@ export async function GET(
 
     if (error) {
       if (error.code === 'PGRST116') {
-        return NextResponse.json(
-          { success: false, error: 'Lab test not found' },
-          { status: 404 }
-        )
+        return NextResponse.json({ success: false, error: 'Lab test not found' }, { status: 404 })
       }
       throw error
     }
 
-    return NextResponse.json({
-      success: true,
-      data
-    })
+    return NextResponse.json({ success: true, data })
   } catch (error: any) {
     console.error('Error fetching lab test:', error)
     return NextResponse.json(
       { success: false, error: error.message || 'Failed to fetch lab test' },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }
 
-// PUT /api/lab-tests/:id - Update lab test
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+// PUT /api/lab-tests/:id
+export async function PUT(request: NextRequest, { params }: Params) {
   try {
-    // Verify authentication
-    const token = request.cookies.get('accessToken')?.value
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const payload = await verifyToken(token)
-    if (!payload) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
-    }
+    const auth = await requireLab(request, 'catalogue:write')
+    if (auth.response) return auth.response
 
     const { id } = await params
     const body = await request.json()
-    const updateData: any = {}
 
-    // Only include fields that are provided
-    if (body.name !== undefined) updateData.name = body.name
-    if (body.code !== undefined) updateData.code = body.code
-    if (body.category !== undefined) updateData.category = body.category
-    if (body.description !== undefined) updateData.description = body.description
-    if (body.sample_type !== undefined) updateData.sample_type = body.sample_type
-    if (body.price !== undefined) updateData.price = body.price
-    if (body.is_active !== undefined) updateData.is_active = body.is_active
+    const update: Record<string, any> = {}
+    for (const field of WRITABLE) {
+      if (body[field] === undefined) continue
+      if (field === 'code') { update.code = String(body.code).trim().toUpperCase(); continue }
+      if (field === 'name') { update.name = String(body.name).trim(); continue }
+      if (field === 'price') {
+        const price = Number(body.price)
+        if (!isFinite(price) || price < 0) {
+          return NextResponse.json(
+            { success: false, error: 'Price must be zero or more' },
+            { status: 400 },
+          )
+        }
+        update.price = price
+        continue
+      }
+      update[field] = body[field] === '' ? null : body[field]
+    }
 
-    updateData.updated_at = new Date().toISOString()
+    if (Object.keys(update).length === 0) {
+      return NextResponse.json({ success: false, error: 'Nothing to update' }, { status: 400 })
+    }
+
+    update.updated_at = new Date().toISOString()
 
     const supabase = await createClient()
 
-    // If code is being updated, check for duplicates
-    if (body.code) {
+    if (update.code) {
       const { data: existing } = await supabase
         .from('lab_tests')
         .select('id')
-        .eq('code', body.code)
+        .eq('code', update.code)
         .neq('id', id)
-        .single()
+        .maybeSingle()
 
       if (existing) {
         return NextResponse.json(
           { success: false, error: 'Test code already exists' },
-          { status: 400 }
+          { status: 400 },
         )
       }
     }
 
     const { data, error } = await supabase
       .from('lab_tests')
-      .update(updateData)
+      .update(update)
       .eq('id', id)
       .select()
       .single()
 
     if (error) {
       if (error.code === 'PGRST116') {
-        return NextResponse.json(
-          { success: false, error: 'Lab test not found' },
-          { status: 404 }
-        )
+        return NextResponse.json({ success: false, error: 'Lab test not found' }, { status: 404 })
       }
       throw error
     }
 
-    return NextResponse.json({
-      success: true,
-      message: 'Lab test updated successfully',
-      data
-    })
+    return NextResponse.json({ success: true, message: 'Lab test updated successfully', data })
   } catch (error: any) {
     console.error('Error updating lab test:', error)
     return NextResponse.json(
       { success: false, error: error.message || 'Failed to update lab test' },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }
 
-// DELETE /api/lab-tests/:id - Delete lab test
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+/**
+ * DELETE /api/lab-tests/:id
+ *
+ * Retires the test rather than deleting it once it has been ordered. The old
+ * handler issued a hard delete and let the database's ON DELETE RESTRICT
+ * surface as a raw 500 (BUGS.md #58); a retired test simply stops appearing on
+ * new orders while old reports stay intact.
+ */
+export async function DELETE(request: NextRequest, { params }: Params) {
   try {
-    // Verify authentication
-    const token = request.cookies.get('accessToken')?.value
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const payload = await verifyToken(token)
-    if (!payload) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
-    }
+    const auth = await requireLab(request, 'catalogue:write')
+    if (auth.response) return auth.response
 
     const { id } = await params
     const supabase = await createClient()
 
-    const { error } = await supabase
+    const { data: test, error: findError } = await supabase
       .from('lab_tests')
-      .delete()
+      .select('id, name')
       .eq('id', id)
+      .single()
 
-    if (error) {
-      throw error
+    if (findError || !test) {
+      return NextResponse.json({ success: false, error: 'Lab test not found' }, { status: 404 })
     }
 
-    return NextResponse.json({
-      success: true,
-      message: 'Lab test deleted successfully'
-    })
+    const { count } = await supabase
+      .from('lab_order_items')
+      .select('id', { count: 'exact', head: true })
+      .eq('test_id', id)
+
+    if ((count || 0) > 0) {
+      const { error } = await supabase
+        .from('lab_tests')
+        .update({ is_active: false, updated_at: new Date().toISOString() })
+        .eq('id', id)
+      if (error) throw error
+
+      return NextResponse.json({
+        success: true,
+        message: `"${test.name}" has been ordered ${count} time(s), so it has been retired rather than deleted. It will not appear on new orders.`,
+      })
+    }
+
+    const { error } = await supabase.from('lab_tests').delete().eq('id', id)
+    if (error) throw error
+
+    return NextResponse.json({ success: true, message: 'Lab test deleted successfully' })
   } catch (error: any) {
     console.error('Error deleting lab test:', error)
     return NextResponse.json(
       { success: false, error: error.message || 'Failed to delete lab test' },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }

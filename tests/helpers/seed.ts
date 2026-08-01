@@ -270,9 +270,11 @@ export function aLabTest(overrides: Row = {}): Row {
     code: `CBC-${sequence}`,
     category: 'Hematology',
     description: null,
-    sample_type: 'Blood',
+    sample_type: 'Whole Blood (EDTA)',
     price: 350,
     is_active: true,
+    method: 'Automated Cell Counter',
+    interpretation_template: null,
     ...overrides,
   })[0]
 }
@@ -292,6 +294,106 @@ export function aTestParameter(overrides: Row = {}): Row {
     female_max: null,
     display_order: 1,
     is_active: true,
+    param_type: 'numeric',
+    code: null,
+    method: null,
+    options: null,
+    formula: null,
+    decimals: 2,
+    group_name: null,
+    ...overrides,
+  })[0]
+}
+
+export function aParameterRange(overrides: Row = {}): Row {
+  return db.seed('test_parameter_ranges', {
+    id: overrides.id ?? nextId('range'),
+    parameter_id: overrides.parameter_id ?? nextId('param'),
+    gender: null,
+    age_min_years: null,
+    age_max_years: null,
+    range_type: 'between',
+    min_value: 13,
+    max_value: 17,
+    text_range: null,
+    display_text: null,
+    normal_options: null,
+    critical_low: null,
+    critical_high: null,
+    display_order: 0,
+    ...overrides,
+  })[0]
+}
+
+export function aLabOrder(overrides: Row = {}): Row {
+  const total = overrides.total_amount ?? 350
+  const discount = overrides.discount ?? 0
+  return db.seed('lab_orders', {
+    id: overrides.id ?? nextId('laborder'),
+    order_no: overrides.order_no ?? `LAB/2026/${String(sequence).padStart(5, '0')}`,
+    patient_id: null,
+    patient_name: 'Walk-in Patient',
+    patient_phone: '9876522222',
+    patient_age: 35,
+    patient_gender: 'male',
+    patient_display_id: null,
+    patient_status: null,
+    referring_doctor_id: null,
+    referring_doctor_name: null,
+    priority: 'routine',
+    status: 'registered',
+    registered_at: `${TODAY}T09:00:00.000Z`,
+    collected_at: null,
+    received_at: null,
+    reported_at: null,
+    collected_by: null,
+    created_by: null,
+    total_amount: total,
+    discount,
+    net_amount: overrides.net_amount ?? total - discount,
+    notes: null,
+    ...overrides,
+  })[0]
+}
+
+export function aLabOrderItem(overrides: Row = {}): Row {
+  return db.seed('lab_order_items', {
+    id: overrides.id ?? nextId('orderitem'),
+    order_id: overrides.order_id ?? nextId('laborder'),
+    test_id: overrides.test_id ?? nextId('labtest'),
+    test_name: 'Complete Blood Count',
+    test_code: 'CBC',
+    category: 'Hematology',
+    specimen: 'Whole Blood (EDTA)',
+    method: 'Automated Cell Counter',
+    price: 350,
+    status: 'pending',
+    interpretation: null,
+    interpretation_by: null,
+    interpretation_at: null,
+    entered_by: null,
+    entered_at: null,
+    authorised_by: null,
+    authorised_at: null,
+    display_order: 0,
+    ...overrides,
+  })[0]
+}
+
+export function aLabResultValue(overrides: Row = {}): Row {
+  return db.seed('lab_result_values', {
+    id: overrides.id ?? nextId('value'),
+    order_item_id: overrides.order_item_id ?? nextId('orderitem'),
+    parameter_id: overrides.parameter_id ?? nextId('param'),
+    value: 14,
+    text_value: null,
+    unit: 'g/dL',
+    ref_display: '13 - 17',
+    ref_min: 13,
+    ref_max: 17,
+    abnormal: null,
+    is_critical: false,
+    notes: null,
     ...overrides,
   })[0]
 }

@@ -9,7 +9,7 @@ import { generateAccessToken, generateRefreshToken } from '@/lib/auth/jwt'
 import { cookieJar } from './cookie-jar'
 import { db } from './fake-supabase'
 
-export type Role = 'ADMIN' | 'DOCTOR' | 'NURSE' | 'RECEPTIONIST'
+export type Role = 'ADMIN' | 'DOCTOR' | 'NURSE' | 'RECEPTIONIST' | 'LAB_TECHNICIAN'
 
 export interface Session {
   userId: string

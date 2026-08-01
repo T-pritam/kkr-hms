@@ -1,112 +1,135 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyToken } from '@/lib/auth/jwt'
 import { createClient } from '@/lib/supabase/server'
+import { requireLab } from '@/lib/lab/authz'
+import { normaliseParameterBody, validateParameterPayload } from '@/lib/lab/validate'
 
-// PUT /api/test-parameters/:id - Update test parameter
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+type Params = { params: Promise<{ id: string }> }
+
+/**
+ * PUT /api/test-parameters/:id
+ *
+ * Validates the merged row rather than the patch. The previous version enforced
+ * the reference-interval invariants only on create, so a parameter could be
+ * edited into an invalid state (BUGS.md #59).
+ */
+export async function PUT(request: NextRequest, { params }: Params) {
   try {
-    // Verify authentication
-    const token = request.cookies.get('accessToken')?.value
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const payload = await verifyToken(token)
-    if (!payload) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
-    }
+    const auth = await requireLab(request, 'catalogue:write')
+    if (auth.response) return auth.response
 
     const { id } = await params
     const body = await request.json()
-    const updateData: any = {}
-
-    // Only include fields that are provided
-    if (body.name !== undefined) updateData.name = body.name
-    if (body.unit !== undefined) updateData.unit = body.unit
-    if (body.min_value !== undefined) updateData.min_value = body.min_value
-    if (body.max_value !== undefined) updateData.max_value = body.max_value
-    if (body.gender_specific !== undefined) updateData.gender_specific = body.gender_specific
-    if (body.male_min !== undefined) updateData.male_min = body.male_min
-    if (body.male_max !== undefined) updateData.male_max = body.male_max
-    if (body.female_min !== undefined) updateData.female_min = body.female_min
-    if (body.female_max !== undefined) updateData.female_max = body.female_max
-    if (body.display_order !== undefined) updateData.display_order = body.display_order
-    if (body.is_active !== undefined) updateData.is_active = body.is_active
-
     const supabase = await createClient()
+
+    const { data: existing, error: findError } = await supabase
+      .from('test_parameters')
+      .select('*')
+      .eq('id', id)
+      .single()
+
+    if (findError || !existing) {
+      return NextResponse.json({ success: false, error: 'Parameter not found' }, { status: 404 })
+    }
+
+    const fields = normaliseParameterBody(body)
+
+    if (Object.keys(fields).length === 0) {
+      return NextResponse.json({ success: false, error: 'Nothing to update' }, { status: 400 })
+    }
+
+    const check = validateParameterPayload({ ...existing, ...fields })
+    if (!check.ok) {
+      return NextResponse.json({ success: false, error: check.error }, { status: 400 })
+    }
+
+    if (fields.code && fields.code !== existing.code) {
+      const { data: clash } = await supabase
+        .from('test_parameters')
+        .select('id')
+        .eq('test_id', existing.test_id)
+        .eq('code', fields.code)
+        .neq('id', id)
+        .maybeSingle()
+
+      if (clash) {
+        return NextResponse.json(
+          { success: false, error: `Another parameter in this test already uses the code ${fields.code}` },
+          { status: 400 },
+        )
+      }
+    }
 
     const { data, error } = await supabase
       .from('test_parameters')
-      .update(updateData)
+      .update(fields)
       .eq('id', id)
       .select()
       .single()
 
-    if (error) {
-      if (error.code === 'PGRST116') {
-        return NextResponse.json(
-          { success: false, error: 'Test parameter not found' },
-          { status: 404 }
-        )
-      }
-      throw error
-    }
+    if (error) throw error
 
-    return NextResponse.json({
-      success: true,
-      message: 'Test parameter updated successfully',
-      data
-    })
+    return NextResponse.json({ success: true, message: 'Parameter updated', data })
   } catch (error: any) {
     console.error('Error updating test parameter:', error)
     return NextResponse.json(
       { success: false, error: error.message || 'Failed to update test parameter' },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }
 
-// DELETE /api/test-parameters/:id - Delete test parameter
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+/**
+ * DELETE /api/test-parameters/:id
+ *
+ * Deactivates rather than destroys once the parameter has been reported on:
+ * `lab_result_values.parameter_id` is ON DELETE RESTRICT, and an old report
+ * must stay reproducible.
+ */
+export async function DELETE(request: NextRequest, { params }: Params) {
   try {
-    // Verify authentication
-    const token = request.cookies.get('accessToken')?.value
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const payload = await verifyToken(token)
-    if (!payload) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
-    }
+    const auth = await requireLab(request, 'catalogue:write')
+    if (auth.response) return auth.response
 
     const { id } = await params
     const supabase = await createClient()
 
-    const { error } = await supabase
+    const { data: existing, error: findError } = await supabase
       .from('test_parameters')
-      .delete()
+      .select('id, name')
       .eq('id', id)
+      .single()
 
-    if (error) {
-      throw error
+    if (findError || !existing) {
+      return NextResponse.json({ success: false, error: 'Parameter not found' }, { status: 404 })
     }
 
-    return NextResponse.json({
-      success: true,
-      message: 'Test parameter deleted successfully'
-    })
+    const { count } = await supabase
+      .from('lab_result_values')
+      .select('id', { count: 'exact', head: true })
+      .eq('parameter_id', id)
+
+    if ((count || 0) > 0) {
+      const { error } = await supabase
+        .from('test_parameters')
+        .update({ is_active: false })
+        .eq('id', id)
+      if (error) throw error
+
+      return NextResponse.json({
+        success: true,
+        message: `"${existing.name}" already appears on ${count} report(s), so it has been deactivated rather than deleted. It will not appear on new orders.`,
+      })
+    }
+
+    const { error } = await supabase.from('test_parameters').delete().eq('id', id)
+    if (error) throw error
+
+    return NextResponse.json({ success: true, message: 'Parameter removed' })
   } catch (error: any) {
-    console.error('Error deleting test parameter:', error)
+    console.error('Error removing test parameter:', error)
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to delete test parameter' },
-      { status: 500 }
+      { success: false, error: error.message || 'Failed to remove test parameter' },
+      { status: 500 },
     )
   }
 }

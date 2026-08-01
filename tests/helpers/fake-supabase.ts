@@ -55,6 +55,17 @@ const RELATIONSHIPS: Record<string, { localKey?: string; foreignKey?: string; ma
   'test_result_values.patient_test_results': { localKey: 'result_id' },
   'patient_test_results.test_result_values': { foreignKey: 'result_id', many: true },
   'lab_tests.test_parameters': { foreignKey: 'test_id', many: true },
+
+  // Lab order model
+  'lab_orders.lab_order_items': { foreignKey: 'order_id', many: true },
+  'lab_order_items.lab_orders': { localKey: 'order_id' },
+  'lab_order_items.lab_tests': { localKey: 'test_id' },
+  'lab_order_items.lab_result_values': { foreignKey: 'order_item_id', many: true },
+  'lab_result_values.lab_order_items': { localKey: 'order_item_id' },
+  'lab_result_values.test_parameters': { localKey: 'parameter_id' },
+  'lab_orders.doctors': { localKey: 'referring_doctor_id' },
+  'test_parameters.test_parameter_ranges': { foreignKey: 'parameter_id', many: true },
+  'test_parameter_ranges.test_parameters': { localKey: 'parameter_id' },
 }
 
 /**
@@ -698,12 +709,46 @@ class QueryBuilder implements PromiseLike<any> {
 
 export interface FakeSupabaseClient {
   from(table: string): QueryBuilder
+  rpc(fn: string, args?: Record<string, unknown>): Promise<{ data: unknown; error: PostgrestError | null }>
   auth: { getUser(): Promise<{ data: { user: Row | null }; error: null }> }
+}
+
+/**
+ * Database functions the routes call through `supabase.rpc(...)`.
+ * `next_lab_order_no` mirrors the real one: a per-year counter row bumped
+ * atomically, formatted as LAB/<year>/<5 digits>.
+ */
+const RPCS: Record<string, (db: FakeDb, args: Record<string, unknown>) => unknown> = {
+  next_lab_order_no: (db) => {
+    const year = new Date().getFullYear()
+    const existing = db.find('lab_order_counters', (r) => r.year === year)
+    if (existing) {
+      existing.last_no = (existing.last_no as number) + 1
+      return `LAB/${year}/${String(existing.last_no).padStart(5, '0')}`
+    }
+    db.seed('lab_order_counters', { year, last_no: 1 })
+    return `LAB/${year}/00001`
+  },
 }
 
 export function createFakeClient(db: FakeDb): FakeSupabaseClient {
   return {
     from: (table: string) => new QueryBuilder(db, table),
+    rpc: async (fn: string, args: Record<string, unknown> = {}) => {
+      const impl = RPCS[fn]
+      if (!impl) {
+        return {
+          data: null,
+          error: {
+            code: '42883',
+            message: `function public.${fn}() does not exist`,
+            details: null as unknown as string,
+            hint: undefined,
+          } as PostgrestError,
+        }
+      }
+      return { data: impl(db, args), error: null }
+    },
     auth: {
       getUser: async () => ({ data: { user: db.getAuthUser() }, error: null }),
     },
