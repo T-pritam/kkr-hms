@@ -6,7 +6,19 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:harness": "vitest run tests/harness.test.ts",
+    "test:auth": "vitest run tests/api/auth tests/unit/auth",
+    "test:patients": "vitest run tests/api/patients",
+    "test:billing": "vitest run tests/api/billing",
+    "test:ledger": "vitest run tests/api/ledger",
+    "test:finances": "vitest run tests/api/finances",
+    "test:employees": "vitest run tests/api/employees",
+    "test:lab": "vitest run tests/api/lab",
+    "test:casesheets": "vitest run tests/api/case-sheets"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.985.0",
@@ -32,9 +44,11 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitest/coverage-v8": "^4.1.10",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.10"
   }
 }
