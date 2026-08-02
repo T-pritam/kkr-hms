@@ -76,6 +76,50 @@ const RELATIONSHIPS: Record<string, { localKey?: string; foreignKey?: string; ma
   'case_sheet_attachments.patient_case_sheets': { localKey: 'case_sheet_id' },
   'case_sheet_doctors.doctors': { localKey: 'doctor_id' },
   'case_sheet_medications.medicines': { localKey: 'medicine_id' },
+
+  // Patient registry
+  'patients.referrals': { localKey: 'referred_by' },
+}
+
+/**
+ * Unique indexes worth modelling.
+ *
+ * Not every constraint in the database is here — only the ones a route relies
+ * on to reject a write. `patients.patient_id` is the reason this exists: the
+ * route no longer does a check-then-insert (which raced) and instead lets the
+ * index reject the duplicate and maps 23505 to a 409. Without the constraint
+ * here, that branch would be untestable.
+ */
+const UNIQUE_INDEXES: Record<string, string[][]> = {
+  patients: [['patient_id']],
+}
+
+/** Postgres's error for a duplicate key, which routes match on by code. */
+function uniqueViolation(
+  table: string,
+  store: Row[],
+  candidate: Row,
+  ignore?: Row,
+): PostgrestError | null {
+  for (const columns of UNIQUE_INDEXES[table] ?? []) {
+    // NULLs are distinct in a Postgres unique index.
+    if (columns.some((c) => candidate[c] === null || candidate[c] === undefined)) continue
+
+    const clash = store.some(
+      (row) => row !== ignore && columns.every((c) => looseEquals(row[c], candidate[c])),
+    )
+
+    if (clash) {
+      return {
+        code: '23505',
+        message: `duplicate key value violates unique constraint "${table}_${columns.join('_')}_key"`,
+        details: `Key (${columns.join(', ')})=(${columns.map((c) => candidate[c]).join(', ')}) already exists.`,
+        hint: undefined,
+      }
+    }
+  }
+
+  return null
 }
 
 /**
@@ -282,6 +326,20 @@ export class FakeDb {
   /** Convenience: the single row matching a predicate. */
   find(table: string, predicate: (row: Row) => boolean): Row | undefined {
     return clone((this.tables.get(table) ?? []).find(predicate))
+  }
+
+  /**
+   * Merge a patch into the stored row, in place.
+   *
+   * `find` hands back a clone, so mutating its result changes nothing. The
+   * counter RPCs below need a real write — a sequence that hands out the same
+   * number twice is not a sequence.
+   */
+  patchRow(table: string, predicate: (row: Row) => boolean, patch: Row): Row | undefined {
+    const row = (this.tables.get(table) ?? []).find(predicate)
+    if (!row) return undefined
+    Object.assign(row, patch)
+    return clone(row)
   }
 
   count(table: string): number {
@@ -676,6 +734,9 @@ class QueryBuilder implements PromiseLike<any> {
           store[existingIndex] = { ...store[existingIndex], ...clone(value) }
           written.push(store[existingIndex])
         } else {
+          const conflict = uniqueViolation(this.table, store, value)
+          if (conflict) return { data: null, error: conflict, count: null, status: 409 }
+
           const created = this.db.withDefaults(this.table, clone(value))
           store.push(created)
           written.push(created)
@@ -690,7 +751,12 @@ class QueryBuilder implements PromiseLike<any> {
       const updated: Row[] = []
       for (const target of targets) {
         const index = store.indexOf(target)
-        store[index] = { ...store[index], ...clone(this.payload[0]) }
+        const merged = { ...store[index], ...clone(this.payload[0]) }
+
+        const conflict = uniqueViolation(this.table, store, merged, target)
+        if (conflict) return { data: null, error: conflict, count: null, status: 409 }
+
+        store[index] = merged
         updated.push(store[index])
       }
       if (!this.returnsRows) return { data: null, error: null, count: null, status: 204 }
@@ -724,32 +790,56 @@ export interface FakeSupabaseClient {
 }
 
 /**
- * Database functions the routes call through `supabase.rpc(...)`.
- * `next_lab_order_no` mirrors the real one: a per-year counter row bumped
- * atomically, formatted as LAB/<year>/<5 digits>.
+ * Bump a per-year counter row and return the new value.
+ *
+ * The real functions do this inside a single `INSERT ... ON CONFLICT DO UPDATE
+ * ... RETURNING`, which takes a row lock. Here it just has to persist: an
+ * earlier version incremented the clone `find()` returns, so two calls in one
+ * test handed back the same number — the exact failure these counters exist to
+ * prevent.
  */
+function bumpCounter(db: FakeDb, table: string, year: number): number {
+  const existing = db.find(table, (r) => r.year === year)
+  if (!existing) {
+    db.seed(table, { year, last_no: 1 })
+    return 1
+  }
+
+  const next = (existing.last_no as number) + 1
+  db.patchRow(table, (r) => r.year === year, { last_no: next })
+  return next
+}
+
+const peekCounter = (db: FakeDb, table: string, year: number): number =>
+  ((db.find(table, (r) => r.year === year)?.last_no as number) ?? 0) + 1
+
+/** Database functions the routes call through `supabase.rpc(...)`. */
 const RPCS: Record<string, (db: FakeDb, args: Record<string, unknown>) => unknown> = {
+  // LAB/<year>/<5 digits>.
   next_lab_order_no: (db) => {
     const year = new Date().getFullYear()
-    const existing = db.find('lab_order_counters', (r) => r.year === year)
-    if (existing) {
-      existing.last_no = (existing.last_no as number) + 1
-      return `LAB/${year}/${String(existing.last_no).padStart(5, '0')}`
-    }
-    db.seed('lab_order_counters', { year, last_no: 1 })
-    return `LAB/${year}/00001`
+    return `LAB/${year}/${String(bumpCounter(db, 'lab_order_counters', year)).padStart(5, '0')}`
   },
 
-  // Mirrors next_discharge_summary_no(): DS/<year>/<5 digits>.
+  // DS/<year>/<5 digits>.
   next_discharge_summary_no: (db) => {
     const year = new Date().getFullYear()
-    const existing = db.find('case_sheet_counters', (r) => r.year === year)
-    if (existing) {
-      existing.last_no = (existing.last_no as number) + 1
-      return `DS/${year}/${String(existing.last_no).padStart(5, '0')}`
-    }
-    db.seed('case_sheet_counters', { year, last_no: 1 })
-    return `DS/${year}/00001`
+    return `DS/${year}/${String(bumpCounter(db, 'case_sheet_counters', year)).padStart(5, '0')}`
+  },
+
+  // <serial>/<2-digit year>, restarting each year. This one *consumes* a number;
+  // peek_next_patient_id does not, and that difference is what stops two
+  // receptionists registering at the same moment from both getting 5/26.
+  next_patient_id: (db) => {
+    const year = new Date().getFullYear()
+    const yy = String(year % 100).padStart(2, '0')
+    return `${bumpCounter(db, 'patient_counters', year)}/${yy}`
+  },
+
+  peek_next_patient_id: (db) => {
+    const year = new Date().getFullYear()
+    const yy = String(year % 100).padStart(2, '0')
+    return `${peekCounter(db, 'patient_counters', year)}/${yy}`
   },
 }
 

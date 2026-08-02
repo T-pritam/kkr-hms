@@ -1,39 +1,39 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { verifyToken } from '@/lib/auth/jwt';
-import { createClient } from '@/lib/supabase/server';
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import { requirePatient } from '@/lib/patients/authz'
 
+/**
+ * Patients currently under care, for the pickers that should not offer someone
+ * who has already gone home.
+ *
+ * This filtered on `.neq('status', 'discharge')` — a value nothing in the app
+ * has ever written. The real value is 'Discharged', so the filter matched
+ * everything and the endpoint returned discharged patients as active
+ * (BUGS.md #13). Now filtering positively on the one status that means "here",
+ * which cannot drift the same way: a new status added later is excluded by
+ * default rather than silently included.
+ */
 export async function GET(request: NextRequest) {
   try {
-    // Verify authentication
-    const token = request.cookies.get('accessToken')?.value;
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requirePatient(request, 'patient:read')
+    if (auth.response) return auth.response
 
-    const payload = await verifyToken(token);
-    if (!payload) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
-    }
+    const supabase = await createClient()
 
-    const supabase = await createClient();
-
-    // Get only active patients (not discharged) with minimal fields
     const { data: patients, error } = await supabase
       .from('patients')
       .select('id, patient_id, name')
-      .neq('status', 'discharge')
-      .order('name', { ascending: true });
+      .eq('status', 'Active')
+      .order('name', { ascending: true })
 
-    if (error) {
-      throw error;
-    }
+    if (error) throw error
 
-    return NextResponse.json(patients || []);
+    return NextResponse.json({ success: true, data: patients || [] })
   } catch (error) {
-    console.error('Error fetching active patients:', error);
+    console.error('Error fetching active patients:', error)
     return NextResponse.json(
       { error: 'Failed to fetch patients' },
       { status: 500 }
-    );
+    )
   }
 }

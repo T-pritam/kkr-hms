@@ -184,6 +184,42 @@ describe('POST /api/patients/[id]/case-sheets', () => {
     expect(db.find('patients', r => r.id === 'p1')!.status).toBe('Active')
   })
 
+  /**
+   * The admission date printed blank on every discharge summary, because
+   * `patients.date_of_join` and `patient_case_sheets.admission_date` were two
+   * unconnected columns and nothing ever bridged them.
+   */
+  it('inherits the admission date from the date of joining', async () => {
+    db.reset()
+    await signInAs('DOCTOR', { userId: 'u-doc' })
+    aPatient({ id: 'p1', date_of_join: '2026-03-01' })
+
+    const { body } = await create({ diagnosis: 'Acute gastroenteritis' })
+
+    expect(body.data.admission_date).toBe('2026-03-01')
+  })
+
+  /** A readmission is a new admission, not the original registration. */
+  it('lets an explicit admission date win over the joining date', async () => {
+    db.reset()
+    await signInAs('DOCTOR', { userId: 'u-doc' })
+    aPatient({ id: 'p1', date_of_join: '2026-03-01' })
+
+    const { body } = await create({ admission_date: '2026-07-20' })
+
+    expect(body.data.admission_date).toBe('2026-07-20')
+  })
+
+  it('leaves the admission date empty when the patient has no joining date', async () => {
+    db.reset()
+    await signInAs('DOCTOR', { userId: 'u-doc' })
+    aPatient({ id: 'p1', date_of_join: null })
+
+    const { body } = await create({})
+
+    expect(body.data.admission_date ?? null).toBeNull()
+  })
+
   it('stores consulting doctors and medication', async () => {
     const { body } = await create({
       doctors: [{ doctor_id: null, doctor_name: 'Dr. S. Rao', doctor_specialist: 'Medicine' }],

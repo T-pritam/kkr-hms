@@ -29,6 +29,8 @@ interface CaseSheetTabProps {
   patientId: string
   billing: any
   patientName?: string
+  /** Seeds the admission date on a new draft. */
+  patientJoinDate?: string | null
   onStatusChange?: (status: string) => void
 }
 
@@ -44,6 +46,7 @@ export default function CaseSheetTab({
   patientId,
   billing,
   patientName,
+  patientJoinDate,
   onStatusChange,
 }: CaseSheetTabProps) {
   const { user } = useUser()
@@ -279,6 +282,7 @@ export default function CaseSheetTab({
           onClose={() => { setShowEditor(false); setEditing(null) }}
           patientId={patientId}
           billingId={billing?.id ?? null}
+          patientJoinDate={patientJoinDate}
           caseSheet={editing}
           onSaved={onSaved}
         />

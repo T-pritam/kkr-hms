@@ -76,9 +76,12 @@ export function AddPatientInstallmentModal({
     try {
       const response = await fetch('/api/patients/active');
       if (response.ok) {
-        const data = await response.json();
-        setPatients(Array.isArray(data) ? data : []);
-        setFilteredPatients(Array.isArray(data) ? data : []);
+        const body = await response.json();
+        // The route used to return a bare array; it now uses the same
+        // { success, data } envelope as everything else.
+        const rows = Array.isArray(body) ? body : (body?.data ?? []);
+        setPatients(rows);
+        setFilteredPatients(rows);
       }
     } catch (error) {
       console.error('Error fetching patients:', error);

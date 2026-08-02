@@ -57,9 +57,10 @@ export async function POST(
     const body = await request.json().catch(() => ({}))
 
     // The patient must exist — a case sheet with no patient is unprintable.
+    // `date_of_join` comes back too: it is what the admission date defaults to.
     const { data: patient } = await supabase
       .from('patients')
-      .select('id')
+      .select('id, date_of_join')
       .eq('id', patientId)
       .maybeSingle()
 
@@ -68,6 +69,15 @@ export async function POST(
     }
 
     const values = normaliseCaseSheetBody(body)
+
+    // The admission date printed blank on every discharge summary because
+    // nothing ever connected it to the date captured at registration. It stays
+    // editable — a readmission is a new admission, not the original one — but
+    // it starts from the only date the hospital actually has.
+    if (values.admission_date == null && patient.date_of_join) {
+      values.admission_date = patient.date_of_join
+    }
+
     const check = validateCaseSheet(values)
     if (!check.ok) {
       return NextResponse.json(

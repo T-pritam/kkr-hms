@@ -36,6 +36,14 @@ interface CaseSheetEditorModalProps {
   onClose: () => void
   patientId: string
   billingId?: string | null
+  /**
+   * The patient's date of joining, used as the admission date on a new draft.
+   *
+   * Without it the field opened blank and stayed blank, so the admission date
+   * printed empty on every discharge summary. It is still editable — a
+   * readmission is a new admission, not the original registration.
+   */
+  patientJoinDate?: string | null
   /** null creates a new draft. */
   caseSheet: CaseSheet | null
   /** `finalised` is true only when the save also signed the summary off. */
@@ -151,6 +159,7 @@ export function CaseSheetEditorModal({
   onClose,
   patientId,
   billingId,
+  patientJoinDate,
   caseSheet,
   onSaved,
 }: CaseSheetEditorModalProps) {
@@ -186,11 +195,14 @@ export function CaseSheetEditorModal({
           : [{ ...BLANK_MEDICATION }],
       )
     } else {
-      setForm(EMPTY)
+      // A new draft starts from the date the patient was registered. The server
+      // applies the same default, so an API client gets it too; doing it here as
+      // well means the clinician can see and change it before saving.
+      setForm({ ...EMPTY, admission_date: dateValue(patientJoinDate) })
       setDoctors([])
       setMedications([{ ...BLANK_MEDICATION }])
     }
-  }, [isOpen, caseSheet])
+  }, [isOpen, caseSheet, patientJoinDate])
 
   const set = (patch: Partial<FormState>) => setForm(prev => ({ ...prev, ...patch }))
 

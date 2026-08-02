@@ -90,10 +90,13 @@ export default function BillingSettlementTab({
 
   const fetchDoctors = async () => {
     try {
-      const response = await fetch('/api/doctors');
+      // Was `/api/doctors`, whose envelope is `{ doctors, total, … }` — so
+      // `data.data` was always undefined and this picker was permanently empty.
+      // It was also paginated, meaning at best it would have shown 10 doctors.
+      const response = await fetch('/api/doctors/all');
       if (response.ok) {
         const data = await response.json();
-        setDoctors(data.data || []);
+        setDoctors(Array.isArray(data) ? data : []);
       }
     } catch (error) {
       console.error('Error fetching doctors:', error);

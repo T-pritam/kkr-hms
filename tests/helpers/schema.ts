@@ -38,6 +38,8 @@ export const SCHEMA: Record<string, string[]> = {
   doctors: [
     'id', 'name', 'mobile', 'email', 'designation', 'specialist', 'created_at', 'updated_at',
     'created_by', 'updated_by',
+    // 20260803000004 — registry upgrade
+    'qualification', 'registration_no', 'department', 'is_active',
   ],
 
   case_sheet_attachments: [
@@ -147,7 +149,12 @@ export const SCHEMA: Record<string, string[]> = {
     'id', 'patient_id', 'name', 'phone', 'gender', 'date_of_birth', 'date_of_join', 'address',
     'referred_by', 'emergency_contact_name', 'emergency_contact_phone', 'medical_history', 'allergies',
     'current_medications', 'status', 'created_at', 'updated_at', 'created_by', 'updated_by',
+    // 20260803000001 — registration fields
+    'age_years', 'age_recorded_on', 'blood_group', 'email', 'alternate_phone',
+    'emergency_contact_relation', 'id_proof_type', 'id_proof_number',
   ],
+
+  patient_counters: ['year', 'last_no'],
 
   referrals: ['id', 'name', 'phone', 'status', 'created_at', 'updated_at', 'created_by', 'updated_by'],
 

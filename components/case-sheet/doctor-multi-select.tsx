@@ -2,9 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Modal } from '@/components/ui/modal'
+import {
+  BLANK_DOCTOR as BLANK_DOCTOR_FORM,
+  DoctorFields,
+  type DoctorFormState,
+} from '@/components/doctors/doctor-form-modal'
 import { Plus, Search, X } from 'lucide-react'
 
 /**
@@ -31,6 +35,8 @@ interface Doctor {
   name: string
   specialist?: string | null
   designation?: string | null
+  qualification?: string | null
+  department?: string | null
 }
 
 interface DoctorMultiSelectProps {
@@ -40,8 +46,6 @@ interface DoctorMultiSelectProps {
   error?: string
 }
 
-const BLANK_DOCTOR = { name: '', mobile: '', email: '', designation: '', specialist: '' }
-
 export function DoctorMultiSelect({ value, onChange, disabled, error }: DoctorMultiSelectProps) {
   const [doctors, setDoctors] = useState<Doctor[]>([])
   const [query, setQuery] = useState('')
@@ -49,7 +53,7 @@ export function DoctorMultiSelect({ value, onChange, disabled, error }: DoctorMu
   const [showCreate, setShowCreate] = useState(false)
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState('')
-  const [form, setForm] = useState(BLANK_DOCTOR)
+  const [form, setForm] = useState<DoctorFormState>(BLANK_DOCTOR_FORM)
 
   const wrapperRef = useRef<HTMLDivElement>(null)
 
@@ -140,7 +144,7 @@ export function DoctorMultiSelect({ value, onChange, disabled, error }: DoctorMu
         ])
       }
 
-      setForm(BLANK_DOCTOR)
+      setForm(BLANK_DOCTOR_FORM)
       setShowCreate(false)
     } catch (err: any) {
       setCreateError(err.message)
@@ -222,7 +226,7 @@ export function DoctorMultiSelect({ value, onChange, disabled, error }: DoctorMu
               <button
                 type="button"
                 onMouseDown={() => {
-                  setForm({ ...BLANK_DOCTOR, name: query.trim() })
+                  setForm({ ...BLANK_DOCTOR_FORM, name: query.trim() })
                   setShowCreate(true)
                   setOpen(false)
                 }}
@@ -252,61 +256,14 @@ export function DoctorMultiSelect({ value, onChange, disabled, error }: DoctorMu
             </div>
           )}
 
-          <div className="space-y-2">
-            <Label htmlFor="new-doctor-name">
-              Name <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              id="new-doctor-name"
-              value={form.name}
-              onChange={e => setForm({ ...form, name: e.target.value })}
-              placeholder="Dr. S. Rao"
-              disabled={creating}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="new-doctor-specialist">Speciality</Label>
-              <Input
-                id="new-doctor-specialist"
-                value={form.specialist}
-                onChange={e => setForm({ ...form, specialist: e.target.value })}
-                placeholder="General Medicine"
-                disabled={creating}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="new-doctor-designation">Designation</Label>
-              <Input
-                id="new-doctor-designation"
-                value={form.designation}
-                onChange={e => setForm({ ...form, designation: e.target.value })}
-                placeholder="Consultant"
-                disabled={creating}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="new-doctor-mobile">Mobile</Label>
-              <Input
-                id="new-doctor-mobile"
-                value={form.mobile}
-                onChange={e => setForm({ ...form, mobile: e.target.value })}
-                placeholder="+91 98765 43210"
-                disabled={creating}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="new-doctor-email">Email</Label>
-              <Input
-                id="new-doctor-email"
-                type="email"
-                value={form.email}
-                onChange={e => setForm({ ...form, email: e.target.value })}
-                disabled={creating}
-              />
-            </div>
-          </div>
+          {/* The same fields as the doctors screen, from the same component, so
+              a doctor added mid-summary is not a second-class record. */}
+          <DoctorFields
+            form={form}
+            onChange={patch => setForm(prev => ({ ...prev, ...patch }))}
+            disabled={creating}
+            idPrefix="new-doctor-"
+          />
 
           <div className="flex flex-col-reverse sm:flex-row gap-3 pt-2">
             <Button

@@ -12,6 +12,7 @@ import CaseSheetTab from '@/components/patients/case-sheet-tab';
 import BillingSettlementTab from '@/components/patients/billing-settlement-tab';
 import LabHistoryTab from '@/components/patients/lab-history-tab';
 import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch';
+import { formatAgeSex } from '@/lib/patients/age';
 
 type Tab = 'info' | 'visits' | 'charges' | 'payments' | 'lab' | 'casesheet' | 'billing';
 
@@ -172,11 +173,22 @@ export default function PatientDetailsPage() {
                 </div>
                 <div>
                   <p className="text-muted">Joined</p>
-                  <p className="text-foreground">{patientData?.date_of_join}</p>
+                  <p className="text-foreground">
+                    {patientData?.date_of_join
+                      ? new Date(patientData.date_of_join).toLocaleDateString('en-IN', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                        })
+                      : 'N/A'}
+                  </p>
                 </div>
                 <div>
-                  <p className="text-muted">Age</p>
-                  <p className="text-foreground">{patientData?.age || 'N/A'}</p>
+                  <p className="text-muted">Age / Sex</p>
+                  {/* `patientData.age` was read here for months. There has never
+                      been such a column — resolveAge derives it from the date of
+                      birth, or from the age the patient stated at the desk. */}
+                  <p className="text-foreground">{formatAgeSex(patientData) || 'N/A'}</p>
                 </div>
                 <div>
                   <p className="text-muted">Phone</p>
@@ -251,6 +263,7 @@ export default function PatientDetailsPage() {
                 patientId={patientId}
                 billing={billing}
                 patientName={patientData?.name}
+                patientJoinDate={patientData?.date_of_join}
                 onStatusChange={(s) => setPatientData((prev: any) => ({ ...prev, status: s }))}
               />
             )}

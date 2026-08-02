@@ -1,6 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyToken } from '@/lib/auth/jwt'
 import { createClient } from '@/lib/supabase/server'
+import { requirePatient } from '@/lib/patients/authz'
+import { normalisePatientBody, validatePatient, firstError } from '@/lib/patients/validate'
+
+/**
+ * A single patient.
+ *
+ * Every handler here except DELETE previously verified the token and then never
+ * looked at the role (BUGS.md #9), and PUT coerced `status || 'Active'`, so
+ * editing a discharged patient's phone number quietly re-admitted them
+ * (BUGS.md #12).
+ */
+
+const DETAIL_SELECT = `
+  *,
+  updated_by_user:users!updated_by(id, username),
+  created_by_user:users!created_by(id, username),
+  referral:referrals!referred_by(id, name)
+`
+
+/** 409 when the typed ID collides, so the form can mark the field. */
+function duplicateIdResponse(patientId: unknown) {
+  return NextResponse.json(
+    {
+      error: `Patient ID ${patientId} is already in use`,
+      fieldErrors: { patient_id: 'This ID is already in use' },
+    },
+    { status: 409 }
+  )
+}
 
 export async function GET(
   request: NextRequest,
@@ -9,26 +37,14 @@ export async function GET(
   try {
     const { id } = await params
 
-    // Verify authentication
-    const token = request.cookies.get('accessToken')?.value
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const payload = await verifyToken(token)
-    if (!payload) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
-    }
+    const auth = await requirePatient(request, 'patient:read')
+    if (auth.response) return auth.response
 
     const supabase = await createClient()
 
-    // Get patient by ID
     const { data: patient, error } = await supabase
       .from('patients')
-      .select(`
-        *,
-        updated_by_user:users!updated_by(id, username)
-      `)
+      .select(DETAIL_SELECT)
       .eq('id', id)
       .single()
 
@@ -53,87 +69,42 @@ export async function PUT(
   try {
     const { id } = await params
 
-    // Verify authentication
-    const token = request.cookies.get('accessToken')?.value
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const payload = await verifyToken(token)
-    if (!payload) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
-    }
+    const auth = await requirePatient(request, 'patient:write')
+    if (auth.response) return auth.response
+    const { user } = auth
 
     const body = await request.json()
-    const {
-      patient_id,
-      name,
-      phone,
-      gender,
-      date_of_birth,
-      date_of_join,
-      address,
-      referred_by,
-      emergency_contact_name,
-      emergency_contact_phone,
-      medical_history,
-      allergies,
-      current_medications,
-      status,
-    } = body
+    const values = normalisePatientBody(body)
 
-    // Validate required fields
-    if (!patient_id || !name) {
+    const check = validatePatient(values, 'update')
+    if (!check.ok) {
       return NextResponse.json(
-        { error: 'Patient ID and name are required' },
+        { error: firstError(check.errors), fieldErrors: check.errors },
         { status: 400 }
       )
     }
 
     const supabase = await createClient()
 
-    // Check if patient_id already exists for a different patient
-    const { data: existingPatient } = await supabase
+    // `status` is only written when the caller actually sent one. The old
+    // handler defaulted it to 'Active', so any edit un-discharged the patient.
+    const { data: patient, error } = await supabase
       .from('patients')
-      .select('id')
-      .eq('patient_id', patient_id)
-      .neq('id', id)
-      .single()
-
-    if (existingPatient) {
-      return NextResponse.json(
-        { error: 'Patient ID already exists' },
-        { status: 400 }
-      )
-    }
-
-    // Update patient
-    const { error } = await supabase
-      .from('patients')
-      .update({
-        patient_id,
-        name,
-        phone: phone || null,
-        gender: gender || 'Male',
-        date_of_birth: date_of_birth || null,
-        date_of_join: date_of_join || null,
-        address: address || null,
-        referred_by: referred_by || null,
-        emergency_contact_name: emergency_contact_name || null,
-        emergency_contact_phone: emergency_contact_phone || null,
-        medical_history: medical_history || null,
-        allergies: allergies || null,
-        current_medications: current_medications || null,
-        status: status || 'Active',
-        updated_by: payload.userId,
-      })
+      .update({ ...values, updated_by: user.id })
       .eq('id', id)
+      .select()
+      .maybeSingle()
 
     if (error) {
+      if (error.code === '23505') return duplicateIdResponse(values.patient_id)
       throw error
     }
 
-    return NextResponse.json({ message: 'Patient updated successfully' })
+    if (!patient) {
+      return NextResponse.json({ error: 'Patient not found' }, { status: 404 })
+    }
+
+    return NextResponse.json({ message: 'Patient updated successfully', patient })
   } catch (error: any) {
     console.error('Error updating patient:', error)
     return NextResponse.json(
@@ -150,44 +121,47 @@ export async function PATCH(
   try {
     const { id } = await params
 
-    const token = request.cookies.get('accessToken')?.value
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const payload = await verifyToken(token)
-    if (!payload) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
-    }
+    const auth = await requirePatient(request, 'patient:write')
+    if (auth.response) return auth.response
+    const { user } = auth
 
     const body = await request.json()
-    const supabase = await createClient()
 
-    // Only update the fields that are provided
-    const updateData: Record<string, any> = {}
-    if (body.status !== undefined) updateData.status = body.status
-    if (body.phone !== undefined) updateData.phone = body.phone
-    if (body.address !== undefined) updateData.address = body.address
-    if (body.medical_history !== undefined) updateData.medical_history = body.medical_history
-    if (body.allergies !== undefined) updateData.allergies = body.allergies
-    if (body.current_medications !== undefined) updateData.current_medications = body.current_medications
-    if (body.emergency_contact_name !== undefined) updateData.emergency_contact_name = body.emergency_contact_name
-    if (body.emergency_contact_phone !== undefined) updateData.emergency_contact_phone = body.emergency_contact_phone
+    // Same whitelist as PUT — the previous PATCH kept its own shorter list, so
+    // the info tab could fix an address but not a misspelled name.
+    const values = normalisePatientBody(body)
 
-    if (Object.keys(updateData).length === 0) {
+    if (Object.keys(values).length === 0) {
       return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
     }
 
-    updateData.updated_by = payload.userId
+    const check = validatePatient(values, 'patch')
+    if (!check.ok) {
+      return NextResponse.json(
+        { error: firstError(check.errors), fieldErrors: check.errors },
+        { status: 400 }
+      )
+    }
 
-    const { error } = await supabase
+    const supabase = await createClient()
+
+    const { data: patient, error } = await supabase
       .from('patients')
-      .update(updateData)
+      .update({ ...values, updated_by: user.id })
       .eq('id', id)
+      .select()
+      .maybeSingle()
 
-    if (error) throw error
+    if (error) {
+      if (error.code === '23505') return duplicateIdResponse(values.patient_id)
+      throw error
+    }
 
-    return NextResponse.json({ message: 'Patient updated successfully' })
+    if (!patient) {
+      return NextResponse.json({ error: 'Patient not found' }, { status: 404 })
+    }
+
+    return NextResponse.json({ message: 'Patient updated successfully', patient })
   } catch (error: any) {
     console.error('Error patching patient:', error)
     return NextResponse.json(
@@ -204,38 +178,17 @@ export async function DELETE(
   try {
     const { id } = await params
 
-    // Verify authentication
-    const token = request.cookies.get('accessToken')?.value
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const payload = await verifyToken(token)
-    if (!payload) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
-    }
-
     // Destroying a patient record takes their billing, charges, consultations,
     // lab orders and discharge summaries with it. Previously any authenticated
     // role could do it, including a lab technician (BUGS.md #9).
-    if (payload.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Only admins can delete a patient' },
-        { status: 403 }
-      )
-    }
+    const auth = await requirePatient(request, 'patient:delete')
+    if (auth.response) return auth.response
 
     const supabase = await createClient()
 
-    // Delete patient
-    const { error } = await supabase
-      .from('patients')
-      .delete()
-      .eq('id', id)
+    const { error } = await supabase.from('patients').delete().eq('id', id)
 
-    if (error) {
-      throw error
-    }
+    if (error) throw error
 
     return NextResponse.json({ message: 'Patient deleted successfully' })
   } catch (error: any) {

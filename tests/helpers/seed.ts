@@ -43,6 +43,14 @@ export function aPatient(overrides: Row = {}): Row {
     allergies: null,
     current_medications: null,
     status: 'Active',
+    age_years: null,
+    age_recorded_on: null,
+    blood_group: null,
+    email: null,
+    alternate_phone: null,
+    emergency_contact_relation: null,
+    id_proof_type: null,
+    id_proof_number: null,
     ...overrides,
   })[0]
 }
@@ -75,6 +83,10 @@ export function aDoctor(overrides: Row = {}): Row {
     email: `doctor${sequence}@hms.test`,
     designation: 'Consultant',
     specialist: 'General Medicine',
+    qualification: null,
+    registration_no: null,
+    department: null,
+    is_active: true,
     ...overrides,
   })[0]
 }

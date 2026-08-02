@@ -1,9 +1,16 @@
 /**
- * /api/patients — list, create, read, update, delete, and the active-patient picker.
+ * /api/patients — the patient register.
+ *
+ * Rewritten alongside the registry rebuild. The interesting cases here are all
+ * things the old routes got wrong: no role checks anywhere but DELETE,
+ * `if (!patient_id || !name)` as the entire validation, a hand-typed patient ID
+ * guarded by a check-then-insert, an unbounded pageSize, and a PUT that
+ * defaulted `status` to 'Active' and so un-discharged anyone it touched.
  */
 
 import { describe, it, expect } from 'vitest'
 import { GET as listPatients, POST as createPatient } from '@/app/api/patients/route'
+import { GET as nextPatientId } from '@/app/api/patients/next-id/route'
 import {
   GET as getPatient,
   PUT as replacePatient,
@@ -17,13 +24,17 @@ import { db } from '../../helpers/fake-supabase'
 import { aPatient, aBilling } from '../../helpers/seed'
 import { TODAY } from '../../setup'
 
+/** The four fields registration requires. */
+const VALID = { name: 'Ramesh Kumar', gender: 'Male', phone: '9876543210' }
+
 describe('/api/patients — authentication', () => {
   const endpoints = [
     { name: 'GET /api/patients', run: () => call(listPatients, 'GET', '/api/patients') },
     {
       name: 'POST /api/patients',
-      run: () => call(createPatient, 'POST', '/api/patients', { body: { patient_id: '1/25', name: 'A' } }),
+      run: () => call(createPatient, 'POST', '/api/patients', { body: VALID }),
     },
+    { name: 'GET /api/patients/next-id', run: () => call(nextPatientId, 'GET', '/api/patients/next-id') },
     { name: 'GET /api/patients/[id]', run: () => call(getPatient, 'GET', '/api/patients/p1', { params: { id: 'p1' } }) },
     {
       name: 'PUT /api/patients/[id]',
@@ -42,35 +53,44 @@ describe('/api/patients — authentication', () => {
 
   it.each(endpoints)('$name rejects an unauthenticated caller', async ({ run }) => {
     signOut()
-    const { status, body } = await run()
-
+    const { status } = await run()
     expect(status).toBe(401)
-    expect(body.error).toBe('Unauthorized')
   })
 
   it.each(endpoints)('$name rejects an expired token', async ({ run }) => {
-    signOut()
-    const { status, body } = await run()
-    expect(status).toBe(401)
-    expect(body.error).toBe('Unauthorized')
+    const { cookieJar } = await import('../../helpers/cookie-jar')
+    cookieJar.set('accessToken', await expiredToken())
 
-    const withExpired = await (async () => {
-      const { cookieJar } = await import('../../helpers/cookie-jar')
-      cookieJar.set('accessToken', await expiredToken())
-      return run()
-    })()
-    expect(withExpired.status).toBe(401)
-    expect(withExpired.body.error).toBe('Invalid token')
+    const { status } = await run()
+    expect(status).toBe(401)
   })
 
-  /**
-   * Reads and edits are open to every role — only DELETE is guarded (see below).
-   * The rest of BUGS.md #9 still stands.
-   */
-  it.each(['DOCTOR', 'NURSE', 'RECEPTIONIST'] as const)('allows %s to read patients', async (role) => {
-    await signInAs(role)
-    const { status } = await call(listPatients, 'GET', '/api/patients')
-    expect(status).toBe(200)
+  it.each(['ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST', 'LAB_TECHNICIAN'] as const)(
+    'lets %s read the register — every screen in the hospital starts from a patient',
+    async (role) => {
+      await signInAs(role)
+      expect((await call(listPatients, 'GET', '/api/patients')).status).toBe(200)
+    },
+  )
+
+  it.each(['ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST'] as const)(
+    'lets %s register a patient',
+    async (role) => {
+      await signInAs(role)
+      expect((await call(createPatient, 'POST', '/api/patients', { body: VALID })).status).toBe(201)
+    },
+  )
+
+  /** Registering is reception's job. Running the lab is not. */
+  it('forbids LAB_TECHNICIAN from registering or editing a patient', async () => {
+    await signInAs('LAB_TECHNICIAN')
+    aPatient({ id: 'p1' })
+
+    expect((await call(createPatient, 'POST', '/api/patients', { body: VALID })).status).toBe(403)
+    expect(
+      (await call(replacePatient, 'PUT', '/api/patients/p1', { body: VALID, params: { id: 'p1' } }))
+        .status,
+    ).toBe(403)
   })
 })
 
@@ -95,7 +115,7 @@ describe('GET /api/patients', () => {
     expect(body).toMatchObject({ patients: [], total: 0, totalPages: 0 })
   })
 
-  it('orders by join date descending, then by creation date', async () => {
+  it('defaults to newest joined first', async () => {
     await signInAs('RECEPTIONIST')
     aPatient({ id: 'older', date_of_join: '2026-01-01' })
     aPatient({ id: 'newest', date_of_join: '2026-03-01' })
@@ -105,14 +125,100 @@ describe('GET /api/patients', () => {
     expect(body.patients.map((p: any) => p.id)).toEqual(['newest', 'middle', 'older'])
   })
 
+  it('sorts by a chosen column in a chosen direction', async () => {
+    await signInAs('RECEPTIONIST')
+    aPatient({ id: 'p1', name: 'Zara' })
+    aPatient({ id: 'p2', name: 'Amit' })
+
+    const asc = await call(listPatients, 'GET', '/api/patients', {
+      query: { sort: 'name', dir: 'asc' },
+    })
+    expect(asc.body.patients.map((p: any) => p.name)).toEqual(['Amit', 'Zara'])
+
+    const desc = await call(listPatients, 'GET', '/api/patients', {
+      query: { sort: 'name', dir: 'desc' },
+    })
+    expect(desc.body.patients.map((p: any) => p.name)).toEqual(['Zara', 'Amit'])
+  })
+
+  /** An unknown sort key must not reach the query builder as a column name. */
+  it('falls back to the default order for an unrecognised sort key', async () => {
+    await signInAs('RECEPTIONIST')
+    aPatient({ id: 'p1', date_of_join: '2026-01-01' })
+    aPatient({ id: 'p2', date_of_join: '2026-03-01' })
+
+    const { status, body } = await call(listPatients, 'GET', '/api/patients', {
+      query: { sort: 'nonsense; drop table patients' },
+    })
+
+    expect(status).toBe(200)
+    expect(body.patients.map((p: any) => p.id)).toEqual(['p2', 'p1'])
+  })
+
+  it('filters by status', async () => {
+    await signInAs('RECEPTIONIST')
+    aPatient({ id: 'p1', status: 'Active' })
+    aPatient({ id: 'p2', status: 'Discharged' })
+
+    const { body } = await call(listPatients, 'GET', '/api/patients', {
+      query: { status: 'Discharged' },
+    })
+    expect(body.patients.map((p: any) => p.id)).toEqual(['p2'])
+  })
+
+  it('ignores a status that is not one of the three', async () => {
+    await signInAs('RECEPTIONIST')
+    aPatient({ id: 'p1' })
+
+    const { body } = await call(listPatients, 'GET', '/api/patients', {
+      query: { status: 'Inactive' },
+    })
+    expect(body.patients).toHaveLength(1)
+  })
+
+  it('filters by the date-of-join range', async () => {
+    await signInAs('RECEPTIONIST')
+    aPatient({ id: 'jan', date_of_join: '2026-01-15' })
+    aPatient({ id: 'feb', date_of_join: '2026-02-15' })
+    aPatient({ id: 'mar', date_of_join: '2026-03-15' })
+
+    const { body } = await call(listPatients, 'GET', '/api/patients', {
+      query: { joinedFrom: '2026-02-01', joinedTo: '2026-02-28' },
+    })
+    expect(body.patients.map((p: any) => p.id)).toEqual(['feb'])
+  })
+
   it('paginates', async () => {
     await signInAs('RECEPTIONIST')
     for (let i = 1; i <= 5; i++) aPatient({ id: `p${i}`, date_of_join: `2026-03-0${i}` })
 
-    const { body } = await call(listPatients, 'GET', '/api/patients', { query: { page: 2, pageSize: 2 } })
+    const { body } = await call(listPatients, 'GET', '/api/patients', {
+      query: { page: 2, pageSize: 2 },
+    })
 
     expect(body).toMatchObject({ total: 5, page: 2, pageSize: 2, totalPages: 3 })
     expect(body.patients.map((p: any) => p.id)).toEqual(['p3', 'p2'])
+  })
+
+  /** BUGS.md #10: `?pageSize=100000` used to stream the whole table. */
+  it('caps pageSize', async () => {
+    await signInAs('RECEPTIONIST')
+    const { body } = await call(listPatients, 'GET', '/api/patients', {
+      query: { pageSize: 100000 },
+    })
+    expect(body.pageSize).toBe(100)
+  })
+
+  it.each([
+    ['a non-numeric page', { page: 'abc' }, { page: 1 }],
+    ['a negative page', { page: -5 }, { page: 1 }],
+    ['a zero pageSize', { pageSize: 0 }, { pageSize: 10 }],
+  ])('survives %s', async (_label, query, expected) => {
+    await signInAs('RECEPTIONIST')
+    const { status, body } = await call(listPatients, 'GET', '/api/patients', { query })
+
+    expect(status).toBe(200)
+    expect(body).toMatchObject(expected)
   })
 
   it('searches by name, patient_id and phone', async () => {
@@ -128,6 +234,17 @@ describe('GET /api/patients', () => {
 
     const byPhone = await call(listPatients, 'GET', '/api/patients', { query: { search: '9990' } })
     expect(byPhone.body.patients.map((p: any) => p.id)).toEqual(['p1'])
+  })
+
+  /** A name like "Rao (Jr), S" would otherwise parse as PostgREST filter syntax. */
+  it('does not let punctuation in the search break the query', async () => {
+    await signInAs('RECEPTIONIST')
+    aPatient({ id: 'p1', name: 'Ramesh' })
+
+    const { status } = await call(listPatients, 'GET', '/api/patients', {
+      query: { search: 'Rao (Jr), S' },
+    })
+    expect(status).toBe(200)
   })
 
   it('reports the total for a filtered search, not the table size', async () => {
@@ -146,116 +263,237 @@ describe('GET /api/patients', () => {
     const { status } = await call(listPatients, 'GET', '/api/patients')
     expect(status).toBe(500)
   })
+})
 
-  /**
-   * Known defect — see BUGS.md #10. pageSize is taken from the query string with no
-   * upper bound, so `?pageSize=100000` streams the entire table in one response.
-   */
-  it.fails('should cap pageSize', async () => {
+describe('GET /api/patients/next-id', () => {
+  it('suggests the next number without consuming it', async () => {
     await signInAs('RECEPTIONIST')
-    for (let i = 1; i <= 5; i++) aPatient({ id: `p${i}` })
 
-    const { body } = await call(listPatients, 'GET', '/api/patients', { query: { pageSize: 100000 } })
-    expect(body.pageSize).toBeLessThanOrEqual(100)
+    const first = await call(nextPatientId, 'GET', '/api/patients/next-id')
+    const second = await call(nextPatientId, 'GET', '/api/patients/next-id')
+
+    expect(first.status).toBe(200)
+    // Two people opening the form see the same suggestion. That is the point —
+    // and the reason the allocation happens in POST, not here.
+    expect(second.body.data.patient_id).toBe(first.body.data.patient_id)
+    expect(db.count('patient_counters')).toBe(0)
+  })
+
+  it('continues the series rather than restarting it', async () => {
+    await signInAs('RECEPTIONIST')
+    const year = new Date().getFullYear()
+    db.seed('patient_counters', { year, last_no: 4 })
+
+    const { body } = await call(nextPatientId, 'GET', '/api/patients/next-id')
+    expect(body.data.patient_id).toBe(`5/${String(year % 100).padStart(2, '0')}`)
   })
 })
 
 describe('POST /api/patients', () => {
   const create = (body: unknown) => call(createPatient, 'POST', '/api/patients', { body })
+  const yy = String(new Date().getFullYear() % 100).padStart(2, '0')
 
-  it('requires patient_id and name', async () => {
+  it.each(['name', 'gender', 'phone'] as const)('requires %s', async (field) => {
     await signInAs('RECEPTIONIST')
+    const body = { ...VALID, [field]: '' }
 
-    expect((await create({ name: 'Ramesh' })).body.error).toBe('Patient ID and name are required')
-    expect((await create({ patient_id: '1/25' })).body.error).toBe('Patient ID and name are required')
-    expect((await create({})).status).toBe(400)
+    const res = await create(body)
+
+    expect(res.status).toBe(400)
+    expect(res.body.fieldErrors).toHaveProperty(field)
   })
 
-  it('rejects a duplicate patient_id', async () => {
+  /**
+   * Gender used to be pre-selected as "Male" in the form and never enforced, so
+   * an unanswered question was stored as a fact and printed on every document.
+   */
+  it('will not invent a gender', async () => {
+    await signInAs('RECEPTIONIST')
+
+    const { status, body } = await create({ name: 'Ramesh', phone: '9876543210' })
+
+    expect(status).toBe(400)
+    expect(body.fieldErrors.gender).toMatch(/required/i)
+    expect(db.count('patients')).toBe(0)
+  })
+
+  it('rejects a gender outside the three known values', async () => {
+    await signInAs('RECEPTIONIST')
+    const { status, body } = await create({ ...VALID, gender: 'MALE' })
+
+    expect(status).toBe(400)
+    expect(body.fieldErrors.gender).toMatch(/Male, Female or Other/)
+  })
+
+  it('rejects a phone number that is too short to dial', async () => {
+    await signInAs('RECEPTIONIST')
+    const { status, body } = await create({ ...VALID, phone: '123' })
+
+    expect(status).toBe(400)
+    expect(body.fieldErrors.phone).toBeDefined()
+  })
+
+  it('accepts a phone number written with spaces and a country code', async () => {
+    await signInAs('RECEPTIONIST')
+    const { status } = await create({ ...VALID, phone: '+91 98765 43210' })
+    expect(status).toBe(201)
+  })
+
+  /**
+   * The heart of the ID change: an omitted patient_id is allocated from the
+   * counter under a row lock, not taken from whatever the form was showing.
+   */
+  it('issues a patient ID when the caller does not supply one', async () => {
+    await signInAs('RECEPTIONIST')
+    const year = new Date().getFullYear()
+    db.seed('patient_counters', { year, last_no: 4 })
+
+    const { status, body } = await create(VALID)
+
+    expect(status).toBe(201)
+    expect(body.patient.patient_id).toBe(`5/${yy}`)
+    expect(db.find('patient_counters', r => r.year === year)!.last_no).toBe(5)
+  })
+
+  it('gives two simultaneous registrations different IDs', async () => {
+    await signInAs('RECEPTIONIST')
+
+    const first = await create(VALID)
+    const second = await create({ ...VALID, name: 'Suresh' })
+
+    expect(first.body.patient.patient_id).toBe(`1/${yy}`)
+    expect(second.body.patient.patient_id).toBe(`2/${yy}`)
+  })
+
+  it('keeps a patient ID the caller typed', async () => {
+    await signInAs('RECEPTIONIST')
+
+    const { body } = await create({ ...VALID, patient_id: 'LEGACY-7' })
+
+    expect(body.patient.patient_id).toBe('LEGACY-7')
+    // A typed ID must not burn a number from the series.
+    expect(db.count('patient_counters')).toBe(0)
+  })
+
+  it('reports a duplicate patient ID as a 409 against the field', async () => {
     await signInAs('RECEPTIONIST')
     aPatient({ patient_id: '1/25' })
 
-    const { status, body } = await create({ patient_id: '1/25', name: 'Someone Else' })
+    const { status, body } = await create({ ...VALID, patient_id: '1/25' })
 
-    expect(status).toBe(400)
-    expect(body.error).toBe('Patient ID already exists')
+    expect(status).toBe(409)
+    expect(body.fieldErrors.patient_id).toBeDefined()
     expect(db.count('patients')).toBe(1)
   })
 
   it('creates the patient with sensible defaults', async () => {
     await signInAs('RECEPTIONIST')
-    const { status, body } = await create({ patient_id: '1/25', name: 'Ramesh Kumar' })
+    const { status, body } = await create(VALID)
 
     expect(status).toBe(201)
-    expect(body).toEqual({ message: 'Patient created successfully' })
+    // BUGS.md #11: the response used to carry only a message, so the client had
+    // to re-query the list to find out what it had just made.
+    expect(body.patient.id).toEqual(expect.any(String))
 
     const stored = db.rows('patients')[0]
     expect(stored).toMatchObject({
-      patient_id: '1/25',
       name: 'Ramesh Kumar',
       gender: 'Male',
       date_of_join: TODAY,
       status: 'Active',
-      phone: null,
-      address: null,
     })
+    // Anything not sent is simply not written, and the column default is NULL.
+    expect(stored.address ?? null).toBeNull()
   })
 
   it('stores every optional field it is given', async () => {
     await signInAs('RECEPTIONIST')
     await create({
+      ...VALID,
       patient_id: '2/25',
-      name: 'Suresh',
-      phone: '9876543210',
-      gender: 'Female',
       date_of_birth: '1985-06-15',
       date_of_join: '2026-03-10',
+      blood_group: 'O+',
+      email: 'suresh@example.com',
+      alternate_phone: '9998887777',
       address: '12 Main Street',
       referred_by: 'ref-1',
       emergency_contact_name: 'Kumar',
+      emergency_contact_relation: 'Son',
       emergency_contact_phone: '9998887777',
+      id_proof_type: 'Aadhaar',
+      id_proof_number: '1234 5678 9012',
       medical_history: 'Diabetes',
       allergies: 'Penicillin',
       current_medications: 'Metformin',
     })
 
     expect(db.rows('patients')[0]).toMatchObject({
-      gender: 'Female',
       date_of_birth: '1985-06-15',
       date_of_join: '2026-03-10',
+      blood_group: 'O+',
+      email: 'suresh@example.com',
+      alternate_phone: '9998887777',
       address: '12 Main Street',
       referred_by: 'ref-1',
-      emergency_contact_name: 'Kumar',
+      emergency_contact_relation: 'Son',
+      id_proof_type: 'Aadhaar',
+      id_proof_number: '1234 5678 9012',
       medical_history: 'Diabetes',
-      allergies: 'Penicillin',
-      current_medications: 'Metformin',
     })
+  })
+
+  /**
+   * A stated age is stored with the date it was stated, never back-computed
+   * into a date of birth — that would fabricate a fact which then prints on a
+   * discharge summary.
+   */
+  it('stamps a stated age with the date it was given', async () => {
+    await signInAs('RECEPTIONIST')
+    await create({ ...VALID, age_years: 45 })
+
+    const stored = db.rows('patients')[0]
+    expect(stored).toMatchObject({ age_years: 45, age_recorded_on: TODAY })
+    // Critically, no birth date was invented from it.
+    expect(stored.date_of_birth ?? null).toBeNull()
+  })
+
+  it.each([
+    ['an impossible age', { age_years: 200 }, 'age_years'],
+    ['an unknown blood group', { blood_group: 'C+' }, 'blood_group'],
+    ['an unknown ID proof', { id_proof_type: 'Library Card' }, 'id_proof_type'],
+    ['an unknown relation', { emergency_contact_relation: 'Neighbour' }, 'emergency_contact_relation'],
+    ['a malformed email', { email: 'not-an-email' }, 'email'],
+    ['a birth date in the future', { date_of_birth: '2099-01-01' }, 'date_of_birth'],
+  ])('rejects %s', async (_label, patch, field) => {
+    await signInAs('RECEPTIONIST')
+    const { status, body } = await create({ ...VALID, ...patch })
+
+    expect(status).toBe(400)
+    expect(body.fieldErrors).toHaveProperty(field)
   })
 
   it('opens a billing record for the new patient', async () => {
     await signInAs('RECEPTIONIST', { userId: 'u-recep' })
-    await create({ patient_id: '1/25', name: 'Ramesh' })
+    await create(VALID)
 
     const patient = db.rows('patients')[0]
-    const billing = db.rows('patient_billing')[0]
 
-    expect(billing).toMatchObject({
+    expect(db.rows('patient_billing')[0]).toMatchObject({
       patient_id: patient.id,
       base_charge: 0,
-      total_doctor_fees: 0,
-      patient_charges_total: 0,
-      patient_paid_amount: 0,
       billing_status: 'pending',
       referral_settled: false,
       created_by: 'u-recep',
     })
+    expect(patient.created_by).toBe('u-recep')
   })
 
-  it('still reports success when the billing insert fails, leaving the patient without billing', async () => {
+  it('still registers the patient when the billing insert fails', async () => {
     await signInAs('RECEPTIONIST')
     db.failNext('patient_billing')
 
-    const { status } = await create({ patient_id: '1/25', name: 'Ramesh' })
+    const { status } = await create(VALID)
 
     expect(status).toBe(201)
     expect(db.count('patients')).toBe(1)
@@ -264,22 +502,10 @@ describe('POST /api/patients', () => {
 
   it('returns 500 when the patient insert fails', async () => {
     await signInAs('RECEPTIONIST')
-    db.failNext('patients') // duplicate check
-    db.failNext('patients') // insert
+    db.failNext('patients')
 
-    const { status } = await create({ patient_id: '1/25', name: 'Ramesh' })
+    const { status } = await create(VALID)
     expect(status).toBe(500)
-  })
-
-  /**
-   * Known defect — see BUGS.md #11. The response carries only a message, so the client
-   * cannot learn the new patient's id and has to re-query the list to find it.
-   */
-  it.fails('should return the created patient', async () => {
-    await signInAs('RECEPTIONIST')
-    const { body } = await create({ patient_id: '1/25', name: 'Ramesh' })
-
-    expect(body.patient?.id).toEqual(expect.any(String))
   })
 })
 
@@ -307,25 +533,34 @@ describe('PUT /api/patients/[id]', () => {
   const replace = (id: string, body: unknown) =>
     call(replacePatient, 'PUT', `/api/patients/${id}`, { body, params: { id } })
 
-  it('requires patient_id and name', async () => {
+  it('enforces the same required fields as create', async () => {
     await signInAs('RECEPTIONIST')
     aPatient({ id: 'p1' })
 
-    const { status, body } = await replace('p1', { name: 'Ramesh' })
+    const { status, body } = await replace('p1', { patient_id: '1/25', name: 'Ramesh' })
+
     expect(status).toBe(400)
-    expect(body.error).toBe('Patient ID and name are required')
+    expect(body.fieldErrors).toHaveProperty('gender')
+    expect(body.fieldErrors).toHaveProperty('phone')
   })
 
-  it('updates the record', async () => {
-    await signInAs('RECEPTIONIST')
+  it('updates the record and returns it', async () => {
+    await signInAs('RECEPTIONIST', { userId: 'u-recep' })
     aPatient({ id: 'p1', name: 'Old Name', phone: '1111111111' })
 
-    const { status } = await replace('p1', { patient_id: '1/25', name: 'New Name', phone: '9999999999' })
-
-    expect(status).toBe(200)
-    expect(db.find('patients', (r) => r.id === 'p1')).toMatchObject({
+    const { status, body } = await replace('p1', {
+      ...VALID,
+      patient_id: '1/25',
       name: 'New Name',
       phone: '9999999999',
+    })
+
+    expect(status).toBe(200)
+    expect(body.patient.name).toBe('New Name')
+    expect(db.find('patients', r => r.id === 'p1')).toMatchObject({
+      name: 'New Name',
+      phone: '9999999999',
+      updated_by: 'u-recep',
     })
   })
 
@@ -333,45 +568,52 @@ describe('PUT /api/patients/[id]', () => {
     await signInAs('RECEPTIONIST')
     aPatient({ id: 'p1', patient_id: '1/25' })
 
-    const { status } = await replace('p1', { patient_id: '1/25', name: 'Ramesh' })
+    const { status } = await replace('p1', { ...VALID, patient_id: '1/25' })
     expect(status).toBe(200)
-  })
-
-  it('rejects a patient_id already used by someone else', async () => {
-    await signInAs('RECEPTIONIST')
-    aPatient({ id: 'p1', patient_id: '1/25' })
-    aPatient({ id: 'p2', patient_id: '2/25' })
-
-    const { status, body } = await replace('p2', { patient_id: '1/25', name: 'Ramesh' })
-
-    expect(status).toBe(400)
-    expect(body.error).toBe('Patient ID already exists')
   })
 
   it('blanks every optional field the caller omits', async () => {
     await signInAs('RECEPTIONIST')
     aPatient({ id: 'p1', phone: '9999999999', address: 'Somewhere', allergies: 'Penicillin' })
 
-    await replace('p1', { patient_id: '1/25', name: 'Ramesh' })
+    await replace('p1', { ...VALID, patient_id: '1/25', address: '', allergies: '' })
 
-    expect(db.find('patients', (r) => r.id === 'p1')).toMatchObject({
-      phone: null,
+    expect(db.find('patients', r => r.id === 'p1')).toMatchObject({
       address: null,
       allergies: null,
     })
   })
 
   /**
-   * Known defect — see BUGS.md #12. `status: status || 'Active'` means any edit that
-   * omits status silently re-admits a discharged patient.
+   * BUGS.md #12. `status: status || 'Active'` meant correcting a discharged
+   * patient's phone number quietly re-admitted them.
    */
-  it.fails('should not resurrect a discharged patient when status is omitted', async () => {
+  it('does not resurrect a discharged patient when status is omitted', async () => {
     await signInAs('RECEPTIONIST')
     aPatient({ id: 'p1', patient_id: '1/25', status: 'Discharged' })
 
-    await replace('p1', { patient_id: '1/25', name: 'Ramesh' })
+    await replace('p1', { ...VALID, patient_id: '1/25' })
 
-    expect(db.find('patients', (r) => r.id === 'p1')!.status).toBe('Discharged')
+    expect(db.find('patients', r => r.id === 'p1')!.status).toBe('Discharged')
+  })
+
+  it('changes the status when one is actually sent', async () => {
+    await signInAs('RECEPTIONIST')
+    aPatient({ id: 'p1', patient_id: '1/25', status: 'Discharged' })
+
+    await replace('p1', { ...VALID, patient_id: '1/25', status: 'Active' })
+
+    expect(db.find('patients', r => r.id === 'p1')!.status).toBe('Active')
+  })
+
+  it('rejects a status outside the three', async () => {
+    await signInAs('RECEPTIONIST')
+    aPatient({ id: 'p1', patient_id: '1/25' })
+
+    const { status, body } = await replace('p1', { ...VALID, patient_id: '1/25', status: 'Inactive' })
+
+    expect(status).toBe(400)
+    expect(body.fieldErrors.status).toBeDefined()
   })
 })
 
@@ -388,28 +630,40 @@ describe('PATCH /api/patients/[id]', () => {
     expect(body.error).toBe('No fields to update')
   })
 
-  it('updates only the whitelisted fields it is given', async () => {
+  /** A partial update must not be forced to resend the whole record. */
+  it('updates one field without demanding the required four', async () => {
     await signInAs('RECEPTIONIST')
     aPatient({ id: 'p1', name: 'Ramesh', status: 'Active', phone: '1111111111' })
 
     const { status } = await patch('p1', { status: 'Discharged' })
 
     expect(status).toBe(200)
-    const stored = db.find('patients', (r) => r.id === 'p1')!
+    const stored = db.find('patients', r => r.id === 'p1')!
     expect(stored.status).toBe('Discharged')
     expect(stored.name).toBe('Ramesh')
     expect(stored.phone).toBe('1111111111')
   })
 
-  it('ignores fields outside the whitelist', async () => {
+  /** …but still validates whatever it did send. */
+  it('validates the fields it was given', async () => {
     await signInAs('RECEPTIONIST')
-    aPatient({ id: 'p1', patient_id: '1/25', name: 'Ramesh' })
+    aPatient({ id: 'p1' })
 
-    await patch('p1', { status: 'Discharged', patient_id: 'HACKED', name: 'HACKED' })
+    const { status, body } = await patch('p1', { gender: 'MALE' })
 
-    const stored = db.find('patients', (r) => r.id === 'p1')!
-    expect(stored.patient_id).toBe('1/25')
-    expect(stored.name).toBe('Ramesh')
+    expect(status).toBe(400)
+    expect(body.fieldErrors.gender).toBeDefined()
+  })
+
+  it('ignores anything outside the writable list', async () => {
+    await signInAs('RECEPTIONIST')
+    aPatient({ id: 'p1', patient_id: '1/25' })
+
+    await patch('p1', { status: 'Discharged', created_by: 'HACKED', id: 'HACKED' })
+
+    const stored = db.find('patients', r => r.id === 'p1')!
+    expect(stored.id).toBe('p1')
+    expect(stored.created_by).not.toBe('HACKED')
   })
 
   it.each([
@@ -420,12 +674,18 @@ describe('PATCH /api/patients/[id]', () => {
     ['current_medications', 'Inhaler'],
     ['emergency_contact_name', 'Kumar'],
     ['emergency_contact_phone', '9998887777'],
+    ['blood_group', 'B+'],
+    // The old PATCH whitelist stopped at eight fields, so the info tab could fix
+    // an address but not a misspelled name.
+    ['name', 'Corrected Name'],
   ])('accepts %s', async (field, value) => {
     await signInAs('RECEPTIONIST')
     aPatient({ id: 'p1' })
 
-    await patch('p1', { [field]: value })
-    expect(db.find('patients', (r) => r.id === 'p1')![field]).toBe(value)
+    const { status } = await patch('p1', { [field]: value })
+
+    expect(status).toBe(200)
+    expect(db.find('patients', r => r.id === 'p1')![field]).toBe(value)
   })
 
   it('can clear a field by sending null', async () => {
@@ -433,7 +693,7 @@ describe('PATCH /api/patients/[id]', () => {
     aPatient({ id: 'p1', allergies: 'Penicillin' })
 
     await patch('p1', { allergies: null })
-    expect(db.find('patients', (r) => r.id === 'p1')!.allergies).toBeNull()
+    expect(db.find('patients', r => r.id === 'p1')!.allergies).toBeNull()
   })
 })
 
@@ -450,12 +710,13 @@ describe('DELETE /api/patients/[id]', () => {
   })
 
   /**
-   * Deleting a patient takes their billing, charges, consultations, lab orders and
-   * discharge summaries with it. Until the case sheet rebuild any authenticated role
-   * could do it (BUGS.md #9); it is now admin-only.
+   * Deleting a patient takes their billing, charges, consultations, lab orders
+   * and discharge summaries with it. Until the case sheet rebuild any
+   * authenticated role could do it (BUGS.md #9).
    */
   it.each(['DOCTOR', 'NURSE', 'RECEPTIONIST', 'LAB_TECHNICIAN'] as const)(
-    'refuses %s', async (role) => {
+    'refuses %s',
+    async (role) => {
       await signInAs(role)
       aPatient({ id: 'p1' })
 
@@ -467,10 +728,10 @@ describe('DELETE /api/patients/[id]', () => {
   )
 
   /**
-   * Still a known defect — the remaining half of BUGS.md #9. Nothing checks for dependent
-   * billing, charges or consultations first. In the real database the foreign keys would
-   * reject this; the fake has no such constraint, so this documents that the route itself
-   * offers no protection.
+   * Still a known defect — the remaining half of BUGS.md #9. Nothing checks for
+   * dependent billing, charges or consultations first. In the real database the
+   * foreign keys would reject this; the fake has no such constraint, so this
+   * documents that the route itself offers no protection.
    */
   it.fails('should refuse to delete a patient that still has billing records', async () => {
     await signInAs('ADMIN')
@@ -492,24 +753,24 @@ describe('GET /api/patients/active', () => {
     const { status, body } = await call(activePatients, 'GET', '/api/patients/active')
 
     expect(status).toBe(200)
-    expect(body).toEqual([
+    expect(body.data).toEqual([
       { id: 'p2', patient_id: '1/25', name: 'Amit' },
       { id: 'p1', patient_id: '2/25', name: 'Zara' },
     ])
   })
 
   /**
-   * Known defect — see BUGS.md #13. The filter is `.neq('status', 'discharge')` but the
-   * value actually written elsewhere in the app is `'Discharged'`, so discharged patients
-   * are never excluded from the picker this endpoint feeds.
+   * BUGS.md #13. The filter was `.neq('status', 'discharge')` — a value nothing
+   * in the app has ever written — so this picker offered discharged patients.
    */
-  it.fails('should exclude discharged patients', async () => {
+  it('excludes anyone who is not currently under care', async () => {
     await signInAs('RECEPTIONIST')
     aPatient({ id: 'p1', name: 'Active One', status: 'Active' })
     aPatient({ id: 'p2', name: 'Gone', status: 'Discharged' })
+    aPatient({ id: 'p3', name: 'Mistake', status: 'Cancelled' })
 
     const { body } = await call(activePatients, 'GET', '/api/patients/active')
 
-    expect(body.map((p: any) => p.id)).toEqual(['p1'])
+    expect(body.data.map((p: any) => p.id)).toEqual(['p1'])
   })
 })

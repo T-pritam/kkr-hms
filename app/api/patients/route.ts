@@ -1,57 +1,73 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyToken } from '@/lib/auth/jwt'
 import { createClient } from '@/lib/supabase/server'
+import { requirePatient } from '@/lib/patients/authz'
+import { normalisePatientBody, validatePatient, firstError } from '@/lib/patients/validate'
+import { PATIENT_SORTS, PATIENT_STATUSES, type PatientSort } from '@/lib/patients/constants'
+import { pageMeta, parsePaging, safeSearch } from '@/lib/api/query'
+
+/**
+ * The patient registry.
+ *
+ * Rewritten from a handler whose entire validation was
+ * `if (!patient_id || !name)` and whose only authorisation was a token check —
+ * a lab technician could register and edit patients. See lib/patients/authz.ts
+ * and lib/patients/validate.ts.
+ */
+
+/** Everything the list and detail screens need, and nothing else. */
+const LIST_SELECT = `
+  id, patient_id, name, gender, phone, alternate_phone, date_of_birth,
+  date_of_join, age_years, age_recorded_on, blood_group, email, address,
+  status, referred_by, created_at, updated_at,
+  updated_by_user:users!updated_by(id, username)
+`
 
 export async function GET(request: NextRequest) {
   try {
-    // Verify authentication
-    const token = request.cookies.get('accessToken')?.value
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const auth = await requirePatient(request, 'patient:read')
+    if (auth.response) return auth.response
 
-    const payload = await verifyToken(token)
-    if (!payload) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
-    }
-
-    // Get query parameters
-    const searchParams = request.nextUrl.searchParams
-    const page = parseInt(searchParams.get('page') || '1')
-    const pageSize = parseInt(searchParams.get('pageSize') || '10')
-    const search = searchParams.get('search') || ''
+    const params = request.nextUrl.searchParams
+    const paging = parsePaging(params)
+    const search = safeSearch(params.get('search'))
 
     const supabase = await createClient()
 
-    // Build query with search
-    let query = supabase
-      .from('patients')
-      .select('*', { count: 'exact' })
+    let query = supabase.from('patients').select(LIST_SELECT, { count: 'exact' })
 
-    // Apply search filter if provided
     if (search) {
-      query = query.or(`name.ilike.%${search}%,patient_id.ilike.%${search}%,phone.ilike.%${search}%`)
+      query = query.or(
+        `name.ilike.%${search}%,patient_id.ilike.%${search}%,phone.ilike.%${search}%`
+      )
     }
 
-    // Apply pagination
-    const from = (page - 1) * pageSize
-    const to = from + pageSize - 1
+    const status = params.get('status')
+    if (status && (PATIENT_STATUSES as readonly string[]).includes(status)) {
+      query = query.eq('status', status)
+    }
+
+    // Registered-between, so "everyone who joined this month" is one query.
+    const joinedFrom = params.get('joinedFrom')
+    const joinedTo = params.get('joinedTo')
+    if (joinedFrom) query = query.gte('date_of_join', joinedFrom)
+    if (joinedTo) query = query.lte('date_of_join', joinedTo)
+
+    const sortKey = (params.get('sort') || 'date_of_join') as PatientSort
+    const column = PATIENT_SORTS[sortKey] ?? PATIENT_SORTS.date_of_join
+    const ascending = params.get('dir') === 'asc'
 
     const { data: patients, error, count } = await query
-      .order('date_of_join', { ascending: false })
+      .order(column, { ascending })
+      // Ties on a date column would otherwise come back in an arbitrary order
+      // and rows could shuffle between pages.
       .order('created_at', { ascending: false })
-      .range(from, to)
+      .range(paging.from, paging.to)
 
-    if (error) {
-      throw error
-    }
+    if (error) throw error
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       patients: patients || [],
-      total: count || 0,
-      page,
-      pageSize,
-      totalPages: Math.ceil((count || 0) / pageSize)
+      ...pageMeta(count, paging),
     })
   } catch (error: any) {
     console.error('Error fetching patients:', error)
@@ -64,103 +80,92 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    // Verify authentication
-    const token = request.cookies.get('accessToken')?.value
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const payload = await verifyToken(token)
-    if (!payload) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
-    }
+    const auth = await requirePatient(request, 'patient:write')
+    if (auth.response) return auth.response
+    const { user } = auth
 
     const body = await request.json()
-    const {
-      patient_id,
-      name,
-      phone,
-      gender,
-      date_of_birth,
-      date_of_join,
-      address,
-      referred_by,
-      emergency_contact_name,
-      emergency_contact_phone,
-      medical_history,
-      allergies,
-      current_medications,
-    } = body
-
-    // Validate required fields
-    if (!patient_id || !name) {
-      return NextResponse.json(
-        { error: 'Patient ID and name are required' },
-        { status: 400 }
-      )
-    }
-
     const supabase = await createClient()
 
-    // Check if patient_id already exists
-    const { data: existingPatient } = await supabase
-      .from('patients')
-      .select('id')
-      .eq('patient_id', patient_id)
-      .single()
+    const values = normalisePatientBody(body)
 
-    if (existingPatient) {
+    /**
+     * The patient ID.
+     *
+     * The form prefills a peeked number so reception can see and override it,
+     * but an untouched field is sent as blank and the real number is issued
+     * here, from the counter, under a row lock. That is the difference between
+     * a preview and an allocation: two people registering at the same moment
+     * both saw "5/26" and must not both get it.
+     */
+    if (!values.patient_id) {
+      const { data: issued, error: rpcError } = await supabase.rpc('next_patient_id')
+      if (rpcError || !issued) {
+        throw rpcError || new Error('Could not issue a patient ID')
+      }
+      values.patient_id = issued
+    }
+
+    // Registration date defaults to today. Computed here rather than in the
+    // form so an API client gets the same behaviour.
+    if (!values.date_of_join) {
+      values.date_of_join = new Date().toISOString().slice(0, 10)
+    }
+
+    const check = validatePatient(values, 'create')
+    if (!check.ok) {
       return NextResponse.json(
-        { error: 'Patient ID already exists' },
+        { error: firstError(check.errors), fieldErrors: check.errors },
         { status: 400 }
       )
     }
 
-    // Insert new patient
-    const { data: patientData, error: patientError } = await supabase.from('patients').insert({
-      patient_id,
-      name,
-      phone: phone || null,
-      gender: gender || 'Male',
-      date_of_birth: date_of_birth || null,
-      date_of_join: date_of_join || new Date().toISOString().split('T')[0],
-      address: address || null,
-      referred_by: referred_by || null,
-      emergency_contact_name: emergency_contact_name || null,
-      emergency_contact_phone: emergency_contact_phone || null,
-      medical_history: medical_history || null,
-      allergies: allergies || null,
-      current_medications: current_medications || null,
-      status: 'Active',
-      created_by: payload.userId,
-      updated_by: payload.userId,
-    }).select()
+    const { data: patient, error: patientError } = await supabase
+      .from('patients')
+      .insert({
+        ...values,
+        status: values.status || 'Active',
+        created_by: user.id,
+        updated_by: user.id,
+      })
+      .select()
+      .single()
 
     if (patientError) {
+      // The UNIQUE index added in 20260803000002 is what actually enforces
+      // this; the pre-flight SELECT it replaced could not.
+      if (patientError.code === '23505') {
+        return NextResponse.json(
+          {
+            error: `Patient ID ${values.patient_id} is already in use`,
+            fieldErrors: { patient_id: 'This ID is already in use' },
+          },
+          { status: 409 }
+        )
+      }
       throw patientError
     }
 
-    // Create corresponding billing record
-    const newPatientId = patientData[0]?.id
-    if (newPatientId) {
-      const { error: billingError } = await supabase.from('patient_billing').insert({
-        patient_id: newPatientId,
-        base_charge: 0,
-        total_doctor_fees: 0,
-        patient_charges_total: 0,
-        patient_paid_amount: 0,
-        billing_status: 'pending',
-        referral_settled: false,
-        created_by: payload.userId,
-      })
+    // Every patient needs a billing row for the charges and payments tabs to
+    // have somewhere to write. A failure here is logged rather than thrown: the
+    // patient is registered, and the billing row is recreated on demand.
+    const { error: billingError } = await supabase.from('patient_billing').insert({
+      patient_id: patient.id,
+      base_charge: 0,
+      total_doctor_fees: 0,
+      patient_charges_total: 0,
+      patient_paid_amount: 0,
+      billing_status: 'pending',
+      referral_settled: false,
+      created_by: user.id,
+    })
 
-      if (billingError) {
-        console.error('Error creating billing record:', billingError)
-      }
+    if (billingError) {
+      console.error('Error creating billing record:', billingError)
     }
 
     return NextResponse.json(
-      { message: 'Patient created successfully' },
+      { message: 'Patient created successfully', patient },
       { status: 201 }
     )
   } catch (error: any) {

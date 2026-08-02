@@ -76,9 +76,17 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate, billing, o
         }
     };
 
-    const fetchDoctors = async () => {
+    /**
+     * `/api/doctors/all` only returns active doctors. Editing a visit whose
+     * doctor has since been deactivated would otherwise open with an empty
+     * picker and no way to save, so that one doctor is asked for by id.
+     */
+    const fetchDoctors = async (includeId?: string | null) => {
         try {
-            const response = await fetch('/api/doctors/all');
+            const url = includeId
+                ? `/api/doctors/all?includeId=${encodeURIComponent(includeId)}`
+                : '/api/doctors/all';
+            const response = await fetch(url);
             if (response.ok) {
                 const data = await response.json();
                 setDoctors(Array.isArray(data) ? data : []);
@@ -162,6 +170,7 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate, billing, o
 
     const handleEdit = (consultation: any) => {
         setEditingId(consultation.id);
+        if (consultation.doctor_id) void fetchDoctors(consultation.doctor_id);
         const dateTime = new Date(consultation.consultation_date);
         setFormData({
             doctor_id: consultation.doctor_id,

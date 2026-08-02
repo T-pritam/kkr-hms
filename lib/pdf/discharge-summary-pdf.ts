@@ -18,6 +18,7 @@
 
 import { C, M, fmtDate, fmtDateTime, mkDoc, footers } from './base'
 import { BRANDING } from './branding'
+import { resolveAge } from '@/lib/patients/age'
 import type { H } from './base'
 
 // ── Geometry (portrait: pw 210, cw 182, right edge 196) ──────────────────────
@@ -35,9 +36,12 @@ export interface DischargePatient {
   name: string
   patient_id: string | null
   age: number | null
+  /** True when the age was stated by the patient rather than derived from a DOB. */
+  age_approx?: boolean
   gender: string | null
   phone: string | null
   address: string | null
+  blood_group?: string | null
 }
 
 export interface DischargeDoctor {
@@ -108,26 +112,25 @@ export async function fetchDischargeSummaryData(
   const patientJson = await patientRes.json().catch(() => null)
   const raw = patientJson?.patient ?? null
   const sheet = sheetJson.data
+  const age = resolveAge(raw)
 
   return {
     ...sheet,
     patient: {
       name: raw?.name || 'Patient',
       patient_id: raw?.patient_id ?? null,
-      age: ageFromDob(raw?.date_of_birth),
+      // Age used to be derived from the date of birth alone, so any patient who
+      // gave their age at the desk rather than a birth date printed a blank one.
+      // resolveAge covers both, and flags the approximate case so the cover can
+      // say so rather than passing an estimate off as exact.
+      age: age?.years ?? null,
+      age_approx: age?.source === 'stated',
       gender: raw?.gender ?? null,
       phone: raw?.phone ?? null,
       address: raw?.address ?? null,
+      blood_group: raw?.blood_group ?? null,
     },
   } as DischargeSummaryData
-}
-
-function ageFromDob(dob?: string | null): number | null {
-  if (!dob) return null
-  const d = new Date(dob)
-  if (isNaN(d.getTime())) return null
-  const years = (Date.now() - d.getTime()) / (365.25 * 24 * 60 * 60 * 1000)
-  return years >= 0 ? Math.floor(years) : null
 }
 
 // ── Primitives ───────────────────────────────────────────────────────────────
@@ -263,18 +266,25 @@ function detailColumns(h: H, left: [string, string][], right: [string, string][]
 function coverDetails(h: H, data: DischargeSummaryData): void {
   const { patient } = data
 
-  const ageSex = [
-    patient.age !== null && patient.age !== undefined ? `${patient.age} Y` : null,
-    patient.gender || null,
-  ].filter(Boolean).join(' / ') || '—'
+  // "~45 Y" when the patient stated an age rather than a birth date. The tilde
+  // is deliberate: a treating doctor reading this later should be able to tell
+  // a verified age from one somebody gave at the desk.
+  const age =
+    patient.age !== null && patient.age !== undefined
+      ? `${patient.age_approx ? '~' : ''}${patient.age} Y`
+      : null
+
+  const ageSex = [age, patient.gender || null].filter(Boolean).join(' / ') || '—'
 
   const left: [string, string][] = [
     ['Name', patient.name || '—'],
     ['Age / Sex', ageSex],
     ['Patient ID', patient.patient_id || '—'],
     ['Phone', patient.phone || '—'],
-    ['Address', patient.address || '—'],
   ]
+
+  if (patient.blood_group) left.push(['Blood group', patient.blood_group])
+  left.push(['Address', patient.address || '—'])
 
   const right: [string, string][] = [
     ['Admitted', fmtDate(data.admission_date)],
