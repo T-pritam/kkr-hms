@@ -96,7 +96,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
 
     const { data, error } = await supabase
       .from('lab_orders')
-      .update(update)
+      .update({ ...update, updated_by: auth.user.id })
       .eq('id', id)
       .select()
       .single()
@@ -144,8 +144,8 @@ export async function DELETE(request: NextRequest, { params }: Params) {
       )
 
     if ((count || 0) > 0) {
-      await supabase.from('lab_orders').update({ status: 'cancelled' }).eq('id', id)
-      await supabase.from('lab_order_items').update({ status: 'cancelled' }).eq('order_id', id)
+      await supabase.from('lab_orders').update({ status: 'cancelled', updated_by: auth.user.id }).eq('id', id)
+      await supabase.from('lab_order_items').update({ status: 'cancelled', updated_by: auth.user.id }).eq('order_id', id)
       return NextResponse.json({
         success: true,
         message: 'Order cancelled. Results already exist, so the record has been kept.',

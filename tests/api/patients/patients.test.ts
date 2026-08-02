@@ -64,10 +64,10 @@ describe('/api/patients — authentication', () => {
   })
 
   /**
-   * Every role can reach every patient endpoint — including hard delete. There is no
-   * role check anywhere in this file. See BUGS.md #9.
+   * Reads and edits are open to every role — only DELETE is guarded (see below).
+   * The rest of BUGS.md #9 still stands.
    */
-  it.each(['DOCTOR', 'NURSE', 'RECEPTIONIST'] as const)('allows %s (no role checks exist here)', async (role) => {
+  it.each(['DOCTOR', 'NURSE', 'RECEPTIONIST'] as const)('allows %s to read patients', async (role) => {
     await signInAs(role)
     const { status } = await call(listPatients, 'GET', '/api/patients')
     expect(status).toBe(200)
@@ -450,13 +450,30 @@ describe('DELETE /api/patients/[id]', () => {
   })
 
   /**
-   * Known defect — see BUGS.md #9. Any authenticated role can hard-delete a patient, and
-   * nothing checks for dependent billing, charges or consultations first. In the real
-   * database the foreign keys would reject this; the fake has no such constraint, so this
-   * test documents that the route itself offers no protection.
+   * Deleting a patient takes their billing, charges, consultations, lab orders and
+   * discharge summaries with it. Until the case sheet rebuild any authenticated role
+   * could do it (BUGS.md #9); it is now admin-only.
+   */
+  it.each(['DOCTOR', 'NURSE', 'RECEPTIONIST', 'LAB_TECHNICIAN'] as const)(
+    'refuses %s', async (role) => {
+      await signInAs(role)
+      aPatient({ id: 'p1' })
+
+      const { status } = await call(deletePatient, 'DELETE', '/api/patients/p1', { params: { id: 'p1' } })
+
+      expect(status).toBe(403)
+      expect(db.count('patients')).toBe(1)
+    },
+  )
+
+  /**
+   * Still a known defect — the remaining half of BUGS.md #9. Nothing checks for dependent
+   * billing, charges or consultations first. In the real database the foreign keys would
+   * reject this; the fake has no such constraint, so this documents that the route itself
+   * offers no protection.
    */
   it.fails('should refuse to delete a patient that still has billing records', async () => {
-    await signInAs('NURSE')
+    await signInAs('ADMIN')
     aPatient({ id: 'p1' })
     aBilling({ id: 'b1', patient_id: 'p1' })
 

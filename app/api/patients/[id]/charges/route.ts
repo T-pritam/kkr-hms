@@ -23,7 +23,8 @@ export async function GET(
       .from('patient_charges')
       .select(`
         *,
-        users!created_by(id, username)
+        users!created_by(id, username),
+        updated_by_user:users!updated_by(id, username)
       `)
       .eq('patient_id', patientId);
 

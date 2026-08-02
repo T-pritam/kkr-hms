@@ -66,6 +66,16 @@ const RELATIONSHIPS: Record<string, { localKey?: string; foreignKey?: string; ma
   'lab_orders.doctors': { localKey: 'referring_doctor_id' },
   'test_parameters.test_parameter_ranges': { foreignKey: 'parameter_id', many: true },
   'test_parameter_ranges.test_parameters': { localKey: 'parameter_id' },
+
+  // Case sheet / discharge summary
+  'patient_case_sheets.case_sheet_doctors': { foreignKey: 'case_sheet_id', many: true },
+  'patient_case_sheets.case_sheet_medications': { foreignKey: 'case_sheet_id', many: true },
+  'patient_case_sheets.case_sheet_attachments': { foreignKey: 'case_sheet_id', many: true },
+  'case_sheet_doctors.patient_case_sheets': { localKey: 'case_sheet_id' },
+  'case_sheet_medications.patient_case_sheets': { localKey: 'case_sheet_id' },
+  'case_sheet_attachments.patient_case_sheets': { localKey: 'case_sheet_id' },
+  'case_sheet_doctors.doctors': { localKey: 'doctor_id' },
+  'case_sheet_medications.medicines': { localKey: 'medicine_id' },
 }
 
 /**
@@ -728,6 +738,18 @@ const RPCS: Record<string, (db: FakeDb, args: Record<string, unknown>) => unknow
     }
     db.seed('lab_order_counters', { year, last_no: 1 })
     return `LAB/${year}/00001`
+  },
+
+  // Mirrors next_discharge_summary_no(): DS/<year>/<5 digits>.
+  next_discharge_summary_no: (db) => {
+    const year = new Date().getFullYear()
+    const existing = db.find('case_sheet_counters', (r) => r.year === year)
+    if (existing) {
+      existing.last_no = (existing.last_no as number) + 1
+      return `DS/${year}/${String(existing.last_no).padStart(5, '0')}`
+    }
+    db.seed('case_sheet_counters', { year, last_no: 1 })
+    return `DS/${year}/00001`
   },
 }
 

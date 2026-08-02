@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Plus } from 'lucide-react';
 import { useUser } from '@/hooks/use-user';
+import { UpdatedStamp } from '@/components/ui/updated-stamp';
 
 interface ChargesTabProps {
   patientId: string;
@@ -306,6 +307,11 @@ export default function ChargesTab({ patientId, billing, onCreateBilling }: Char
                       </td>
                       <td className="px-4 py-3 text-sm text-muted">
                         {charge.users?.username || 'Unknown'}
+                        <UpdatedStamp
+                          by={charge.updated_by_user?.username}
+                          at={charge.updated_at}
+                          className="mt-0.5"
+                        />
                       </td>
                       <td className="px-4 py-3 text-sm text-foreground text-center">
                         {charge.qty || 1}
@@ -384,6 +390,7 @@ export default function ChargesTab({ patientId, billing, onCreateBilling }: Char
                       by {charge.users?.username || 'Unknown'}
                     </span>
                   </div>
+                  <UpdatedStamp by={charge.updated_by_user?.username} at={charge.updated_at} />
                   {(canEdit || canDelete) && (
                     <div className="flex gap-3 pt-2 border-t border-input-border">
                       {canEdit && (

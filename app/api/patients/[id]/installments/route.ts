@@ -27,7 +27,8 @@ export async function GET(
       .from('patient_billing_installments')
       .select(`
         *,
-        users!created_by(id, username)
+        users!created_by(id, username),
+        updated_by_user:users!updated_by(id, username)
       `)
       .eq('patient_billing_id', billingId)
       .order('installment_number', { ascending: true });

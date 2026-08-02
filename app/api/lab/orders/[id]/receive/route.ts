@@ -48,7 +48,7 @@ export async function POST(request: NextRequest, { params }: Params) {
 
     const { data, error } = await supabase
       .from('lab_orders')
-      .update({ status: 'received', received_at: receivedAt })
+      .update({ status: 'received', received_at: receivedAt, updated_by: auth.user.id })
       .eq('id', id)
       .select()
       .single()

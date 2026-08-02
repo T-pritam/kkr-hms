@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Calendar, Clock, Search, X, Edit2, Trash2 } from 'lucide-react';
 import { useUser } from '@/hooks/use-user';
+import { UpdatedStamp } from '@/components/ui/updated-stamp';
 
 interface DoctorVisitsTabProps {
     patientId: string;
@@ -461,6 +462,7 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate, billing, o
                                                 </td>
                                                 <td className="px-4 py-3 text-sm text-foreground">
                                                     {consultation.created_by_user?.username || 'Unknown'}
+                                                    <UpdatedStamp by={consultation.updated_by_user?.username} at={consultation.updated_at} className="mt-0.5" />
                                                 </td>
                                                 <td className="px-4 py-3 text-center">
                                                     {canEditOrDelete(consultation) && (
@@ -533,6 +535,7 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate, billing, o
                                         </span>
                                         <span className="bg-surface-inset px-2 py-1 rounded text-muted">
                                             by {consultation.created_by_user?.username || 'Unknown'}
+                                            <UpdatedStamp by={consultation.updated_by_user?.username} at={consultation.updated_at} />
                                         </span>
                                     </div>
                                     {consultation.notes && (

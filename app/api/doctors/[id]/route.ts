@@ -83,6 +83,7 @@ export async function PUT(
         email,
         designation,
         specialist,
+        updated_by: payload.userId,
       })
       .eq('id', id)
 

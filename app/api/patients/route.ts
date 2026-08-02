@@ -132,6 +132,8 @@ export async function POST(request: NextRequest) {
       allergies: allergies || null,
       current_medications: current_medications || null,
       status: 'Active',
+      created_by: payload.userId,
+      updated_by: payload.userId,
     }).select()
 
     if (patientError) {

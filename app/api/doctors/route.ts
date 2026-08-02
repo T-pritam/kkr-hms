@@ -61,6 +61,15 @@ export async function GET(request: NextRequest) {
   }
 }
 
+/**
+ * Roles permitted to add a doctor.
+ *
+ * Previously any authenticated user could, including a lab technician. The
+ * doctors list feeds referring-doctor and consulting-doctor pickers across the
+ * app, so it is clinical reference data, not a scratchpad.
+ */
+const CAN_CREATE_DOCTOR = ['ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST']
+
 export async function POST(request: NextRequest) {
   try {
     // Verify authentication
@@ -72,6 +81,13 @@ export async function POST(request: NextRequest) {
     const payload = await verifyToken(token)
     if (!payload) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    if (!CAN_CREATE_DOCTOR.includes(payload.role as string)) {
+      return NextResponse.json(
+        { error: `Your role (${payload.role}) is not permitted to add a doctor` },
+        { status: 403 }
+      )
     }
 
     const body = await request.json()
@@ -87,21 +103,28 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createClient()
 
-    // Insert new doctor
-    const { error } = await supabase.from('doctors').insert({
-      name,
-      mobile,
-      email,
-      designation,
-      specialist,
-    })
+    // Insert new doctor. The row is returned so the case sheet editor can
+    // select a doctor it just created without refetching the whole list.
+    const { data, error } = await supabase
+      .from('doctors')
+      .insert({
+        name,
+        mobile,
+        email,
+        designation,
+        specialist,
+        created_by: payload.userId,
+        updated_by: payload.userId,
+      })
+      .select()
+      .single()
 
     if (error) {
       throw error
     }
 
     return NextResponse.json(
-      { message: 'Doctor created successfully' },
+      { message: 'Doctor created successfully', doctor: data },
       { status: 201 }
     )
   } catch (error: any) {

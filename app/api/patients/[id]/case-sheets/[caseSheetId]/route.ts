@@ -1,250 +1,238 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
-import { verifyAuth } from '@/lib/auth/verify';
-import { S3Client, DeleteObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+/**
+ * One case sheet.
+ *
+ *   GET    — the full record
+ *   PATCH  — edit; diffs before/after and writes a change-log row
+ *   DELETE — admin only, cascades to doctors / medication / attachments
+ *
+ * Two behaviours from the old handler are deliberately gone:
+ *
+ *   - It merged with `||`, so a field could never be cleared once written
+ *     (BUGS.md #63). Sending an empty string now really does empty the field.
+ *   - It handled multipart uploads inline, replacing the single attachment and
+ *     destroying the previous object. Attachments now have their own routes and
+ *     several files are kept.
+ */
 
-async function deleteFileFromR2(filePath: string): Promise<void> {
-  const s3Client = new S3Client({
-    region: 'auto',
-    credentials: {
-      accessKeyId: process.env.R2_ACCESS_KEY_ID || '',
-      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
-    },
-    endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-  });
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import { requireCaseSheet } from '@/lib/case-sheet/authz'
+import { loadCaseSheet } from '@/lib/case-sheet/detail'
+import {
+  TRACKED_FIELDS,
+  normaliseCaseSheetBody,
+  normaliseDoctors,
+  normaliseMedications,
+  validateCaseSheet,
+} from '@/lib/case-sheet/validate'
+import { deleteObject, keyFromUrl } from '@/lib/storage/r2'
+import { diffFields, diffList, recordAudit, summariseList } from '@/lib/audit/log'
+import type { CaseSheetDoctor, CaseSheetMedication } from '@/lib/case-sheet/types'
+
+const describeDoctor = (d: { doctor_name?: string | null }) => d.doctor_name || ''
+const describeMedication = (m: {
+  medicine_name?: string | null
+  dosage?: string | null
+  quantity?: string | null
+  usage?: string | null
+}) => [m.medicine_name, m.dosage, m.quantity, m.usage].filter(Boolean).join(' · ')
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string; caseSheetId: string }> },
+) {
+  const auth = await requireCaseSheet(request, 'casesheet:read')
+  if (auth.response) return auth.response
 
   try {
-    const command = new DeleteObjectCommand({
-      Bucket: process.env.NEXT_PUBLIC_R2_BUCKET_NAME || '',
-      Key: filePath,
-    });
+    const { id: patientId, caseSheetId } = await params
+    const supabase = await createClient()
 
-    await s3Client.send(command);
-    console.log(`Successfully deleted file from R2: ${filePath}`);
-  } catch (error) {
-    console.error(`Error deleting file from R2: ${filePath}`, error);
-    // Don't throw - continue with update even if deletion fails
+    const sheet = await loadCaseSheet(supabase, patientId, caseSheetId)
+    if (!sheet) {
+      return NextResponse.json({ success: false, error: 'Case sheet not found' }, { status: 404 })
+    }
+
+    return NextResponse.json({ success: true, data: sheet })
+  } catch (error: any) {
+    console.error('Error loading case sheet:', error)
+    return NextResponse.json(
+      { success: false, error: error.message || 'Failed to load case sheet' },
+      { status: 500 },
+    )
   }
 }
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string; caseSheetId: string }> }
+  { params }: { params: Promise<{ id: string; caseSheetId: string }> },
 ) {
+  const auth = await requireCaseSheet(request, 'casesheet:write')
+  if (auth.response) return auth.response
+  const { user } = auth
+
   try {
-    const authResult = await verifyAuth(request);
-    if (!authResult.isValid || !authResult.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const { id: patientId, caseSheetId } = await params
+    const supabase = await createClient()
+    const body = await request.json().catch(() => ({}))
+
+    const before = await loadCaseSheet(supabase, patientId, caseSheetId)
+    if (!before) {
+      return NextResponse.json({ success: false, error: 'Case sheet not found' }, { status: 404 })
     }
 
-    const supabase = await createClient();
-    const { id: patientId, caseSheetId } = await params;
-    
-    // Get existing case sheet to check for old file
-    const { data: existingCaseSheet, error: fetchError } = await supabase
+    const values = normaliseCaseSheetBody(body)
+
+    // Validate against the merged record: a payload that only changes the
+    // discharge date must still be checked against the stored admission date.
+    const check = validateCaseSheet({ ...before, ...values })
+    if (!check.ok) {
+      return NextResponse.json(
+        { success: false, error: Object.values(check.errors)[0], errors: check.errors },
+        { status: 400 },
+      )
+    }
+
+    const doctors = normaliseDoctors(body.doctors)
+    if (doctors.error) {
+      return NextResponse.json({ success: false, error: doctors.error }, { status: 400 })
+    }
+    const medications = normaliseMedications(body.medications)
+    if (medications.error) {
+      return NextResponse.json({ success: false, error: medications.error }, { status: 400 })
+    }
+
+    const { error } = await supabase
       .from('patient_case_sheets')
-      .select('*')
+      .update({ ...values, updated_by: user.id })
       .eq('id', caseSheetId)
       .eq('patient_id', patientId)
-      .single();
 
-    if (fetchError || !existingCaseSheet) {
-      return NextResponse.json(
-        { error: 'Case sheet not found' },
-        { status: 404 }
-      );
-    }
+    if (error) throw error
 
-    const contentType = request.headers.get('content-type');
-    let updateData: any = {};
+    // Child rows are replaced wholesale rather than diffed row by row. The
+    // editor always submits the complete list, and the change log records what
+    // moved, so there is nothing to gain from a per-row merge.
+    if (body.doctors !== undefined) {
+      const { error: delError } = await supabase
+        .from('case_sheet_doctors')
+        .delete()
+        .eq('case_sheet_id', caseSheetId)
+      if (delError) throw delError
 
-    // Check if this is a FormData request (file upload)
-    if (contentType?.includes('multipart/form-data')) {
-      const formData = await request.formData();
-      const file = formData.get('file') as File;
-      const discharge_date = formData.get('discharge_date');
-      const discharge_notes = formData.get('discharge_notes');
-
-      if (file) {
-        // Validate file
-        if (file.type !== 'application/pdf') {
-          return NextResponse.json(
-            { error: 'Only PDF files are allowed' },
-            { status: 400 }
-          );
-        }
-
-        if (file.size > 10 * 1024 * 1024) {
-          return NextResponse.json(
-            { error: 'File size must be less than 10MB' },
-            { status: 400 }
-          );
-        }
-
-        // Generate file path
-        const timestamp = Date.now();
-        const filename = `${timestamp}_${file.name}`;
-        const filePath = `case-sheets/${patientId}/${filename}`;
-
-        // Upload new file to R2
-        const s3Client = new S3Client({
-          region: 'auto',
-          credentials: {
-            accessKeyId: process.env.R2_ACCESS_KEY_ID || '',
-            secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
-          },
-          endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-        });
-
-        const arrayBuffer = await file.arrayBuffer();
-        const buffer = new Uint8Array(arrayBuffer);
-        
-        const uploadCommand = new PutObjectCommand({
-          Bucket: process.env.NEXT_PUBLIC_R2_BUCKET_NAME || '',
-          Key: filePath,
-          Body: buffer,
-          ContentType: file.type,
-        });
-
-        try {
-          await s3Client.send(uploadCommand);
-
-          const publicUrl = `https://pub-${process.env.R2_ACCOUNT_ID}.r2.dev/${filePath}`;
-
-          updateData = {
-            case_sheet_url: publicUrl,
-            case_sheet_filename: filename,
-            uploaded_at: new Date().toISOString(),
-            discharge_date: discharge_date || existingCaseSheet.discharge_date,
-            discharge_notes: discharge_notes || existingCaseSheet.discharge_notes,
-          };
-
-          // Delete old file from R2 if it exists
-          if (existingCaseSheet.case_sheet_url) {
-            const oldUrlParts = existingCaseSheet.case_sheet_url.split('/case-sheets/');
-            if (oldUrlParts.length > 1) {
-              const oldFilePath = `case-sheets/${oldUrlParts[1]}`;
-              await deleteFileFromR2(oldFilePath);
-            }
-          }
-        } catch (uploadError) {
-          console.error('Error uploading file to R2:', uploadError);
-          return NextResponse.json(
-            { error: 'Failed to upload file to R2' },
-            { status: 500 }
-          );
-        }
-      } else {
-        // No file uploaded, just update metadata
-        updateData = {
-          discharge_date: discharge_date || existingCaseSheet.discharge_date,
-          discharge_notes: discharge_notes || existingCaseSheet.discharge_notes,
-        };
-      }
-    } else {
-      // JSON request - just update metadata
-      const body = await request.json();
-
-      updateData = {
-        discharge_date: body.discharge_date || existingCaseSheet.discharge_date,
-        discharge_notes: body.discharge_notes || existingCaseSheet.discharge_notes,
-      };
-
-      if (body.case_sheet_url) {
-        Object.assign(updateData, {
-          case_sheet_url: body.case_sheet_url,
-          case_sheet_filename: body.case_sheet_filename,
-          uploaded_at: new Date().toISOString(),
-        });
-
-        // Delete old file from R2 if it exists
-        if (existingCaseSheet.case_sheet_url) {
-          const oldUrlParts = existingCaseSheet.case_sheet_url.split('/case-sheets/');
-          if (oldUrlParts.length > 1) {
-            const oldFilePath = `case-sheets/${oldUrlParts[1]}`;
-            await deleteFileFromR2(oldFilePath);
-          }
-        }
+      if (doctors.rows.length > 0) {
+        const { error: insError } = await supabase.from('case_sheet_doctors').insert(
+          doctors.rows.map((d, i) => ({ ...d, case_sheet_id: caseSheetId, display_order: i })),
+        )
+        if (insError) throw insError
       }
     }
 
-    const { data, error } = await supabase
-      .from('patient_case_sheets')
-      .update(updateData)
-      .eq('id', caseSheetId)
-      .select()
-      .single();
+    if (body.medications !== undefined) {
+      const { error: delError } = await supabase
+        .from('case_sheet_medications')
+        .delete()
+        .eq('case_sheet_id', caseSheetId)
+      if (delError) throw delError
 
-    if (error) throw error;
+      if (medications.rows.length > 0) {
+        const { error: insError } = await supabase.from('case_sheet_medications').insert(
+          medications.rows.map((m, i) => ({ ...m, case_sheet_id: caseSheetId, display_order: i })),
+        )
+        if (insError) throw insError
+      }
+    }
 
-    return NextResponse.json(data);
-  } catch (error) {
-    console.error('Error updating case sheet:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Failed to update case sheet';
+    // ── Change log ───────────────────────────────────────────────────────────
+    let changes = diffFields(before as any, values, TRACKED_FIELDS)
+
+    if (body.doctors !== undefined) {
+      changes = diffList(
+        changes,
+        'doctors',
+        summariseList<CaseSheetDoctor>(before.doctors, describeDoctor),
+        summariseList(doctors.rows, describeDoctor),
+      )
+    }
+    if (body.medications !== undefined) {
+      changes = diffList(
+        changes,
+        'medications',
+        summariseList<CaseSheetMedication>(before.medications, describeMedication),
+        summariseList(medications.rows, describeMedication),
+      )
+    }
+
+    if (changes) {
+      await recordAudit(supabase, {
+        entityType: 'case_sheet',
+        entityId: caseSheetId,
+        patientId,
+        action: 'updated',
+        changes,
+        actor: { id: user.id, role: user.role },
+      })
+    }
+
+    const after = await loadCaseSheet(supabase, patientId, caseSheetId)
+    return NextResponse.json({ success: true, data: after })
+  } catch (error: any) {
+    console.error('Error updating case sheet:', error)
     return NextResponse.json(
-      { error: errorMessage },
-      { status: 500 }
-    );
+      { success: false, error: error.message || 'Failed to update case sheet' },
+      { status: 500 },
+    )
   }
 }
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string; caseSheetId: string }> }
+  { params }: { params: Promise<{ id: string; caseSheetId: string }> },
 ) {
+  const auth = await requireCaseSheet(request, 'casesheet:delete')
+  if (auth.response) return auth.response
+  const { user } = auth
+
   try {
-    const authResult = await verifyAuth(request);
-    if (!authResult.isValid || !authResult.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const { id: patientId, caseSheetId } = await params
+    const supabase = await createClient()
+
+    const sheet = await loadCaseSheet(supabase, patientId, caseSheetId)
+    if (!sheet) {
+      return NextResponse.json({ success: false, error: 'Case sheet not found' }, { status: 404 })
     }
 
-    // Only admins can delete case sheets
-    if (authResult.user.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Only admins can delete case sheets' }, { status: 403 });
+    // Stored objects are not reached by ON DELETE CASCADE.
+    for (const attachment of sheet.attachments) {
+      const key = attachment.file_key || keyFromUrl(attachment.file_url)
+      if (key) await deleteObject(key)
     }
 
-    const supabase = await createClient();
-    const { id: patientId, caseSheetId } = await params;
-
-    // Get case sheet to retrieve file path
-    const { data: caseSheet, error: fetchError } = await supabase
-      .from('patient_case_sheets')
-      .select('*')
-      .eq('id', caseSheetId)
-      .eq('patient_id', patientId)
-      .single();
-
-    if (fetchError || !caseSheet) {
-      return NextResponse.json(
-        { error: 'Case sheet not found' },
-        { status: 404 }
-      );
-    }
-
-    // Delete file from R2 if it exists
-    if (caseSheet.case_sheet_url) {
-      const urlParts = caseSheet.case_sheet_url.split('/case-sheets/');
-      if (urlParts.length > 1) {
-        const filePath = `case-sheets/${urlParts[1]}`;
-        await deleteFileFromR2(filePath);
-      }
-    }
-
-    // Delete from database
     const { error } = await supabase
       .from('patient_case_sheets')
       .delete()
-      .eq('id', caseSheetId);
+      .eq('id', caseSheetId)
+      .eq('patient_id', patientId)
 
-    if (error) throw error;
+    if (error) throw error
 
-    return NextResponse.json({ message: 'Case sheet deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting case sheet:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Failed to delete case sheet';
+    // Logged last, and deliberately kept after the row is gone: the audit trail
+    // is the only remaining record that this document ever existed.
+    await recordAudit(supabase, {
+      entityType: 'case_sheet',
+      entityId: caseSheetId,
+      patientId,
+      action: 'deleted',
+      summary: `Deleted case sheet ${sheet.summary_no || ''}`.trim(),
+      actor: { id: user.id, role: user.role },
+    })
+
+    return NextResponse.json({ success: true, message: 'Case sheet deleted' })
+  } catch (error: any) {
+    console.error('Error deleting case sheet:', error)
     return NextResponse.json(
-      { error: errorMessage },
-      { status: 500 }
-    );
+      { success: false, error: error.message || 'Failed to delete case sheet' },
+      { status: 500 },
+    )
   }
 }

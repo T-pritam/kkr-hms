@@ -10,8 +10,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { generatePatientPDF, type PatientPDFData } from '@/lib/pdf/patient-pdf'
 import { generateIncomePDF, generateExpenseBreakdownPDF, generateMonthlyFinancePDF } from '@/lib/pdf/finance-pdf'
-import { generateLabReportPDF } from '@/lib/pdf/lab-report-pdf'
+import { generateLabReportPDF, renderLabReport } from '@/lib/pdf/lab-report-pdf'
 import type { LabReportData, LabReportParameter, LabReportValue } from '@/lib/pdf/lab-report-pdf'
+import {
+  generateDischargeSummaryPDF,
+  renderDischargeSummary,
+  type DischargeSummaryData,
+} from '@/lib/pdf/discharge-summary-pdf'
+import { docBytes, mergePdfs } from '@/lib/pdf/merge'
 
 /**
  * jsPDF attaches `save` to each instance rather than to the prototype, so it cannot be
@@ -351,5 +357,204 @@ describe('generateLabReportPDF', () => {
     generateLabReportPDF(data)
 
     expectValidPdf(saved()[0])
+  })
+})
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+const dischargeData = (overrides: Partial<DischargeSummaryData> = {}): DischargeSummaryData => ({
+  summary_no: 'DS/2026/00012',
+  status: 'final',
+  patient: {
+    name: 'Ramesh Kumar',
+    patient_id: '1/25',
+    age: 42,
+    gender: 'Male',
+    phone: '9876543210',
+    address: '12 Main Street, Nellore - 524001',
+  },
+  admission_date: '2026-03-10',
+  discharge_date: '2026-03-15',
+  ward: 'General Ward',
+  bed: '12',
+  chief_complaints: 'Fever with chills for 4 days, generalised weakness',
+  history_present_illness: 'Gradual onset, no vomiting, no urinary symptoms.',
+  past_history: 'Known diabetic since 2018, on metformin.',
+  diagnosis: 'Acute gastroenteritis with mild dehydration',
+  investigations: 'Hb 9.2 g/dL, TLC 12,400\nUSG abdomen: mild hepatomegaly',
+  clinical_summary: 'Treated with IV fluids and antibiotics. Symptoms settled by day three.',
+  condition_on_discharge: 'Stable',
+  vitals_bp: '120/80',
+  vitals_pulse: '78 /min',
+  vitals_temp: '98.6 F',
+  vitals_spo2: '98%',
+  advice_notes: 'Plenty of oral fluids. Avoid outside food for two weeks.',
+  follow_up_date: '2026-03-22',
+  follow_up_instructions: 'Review in OPD with a repeat CBC.',
+  doctors: [
+    { doctor_name: 'Dr. S. Rao', doctor_specialist: 'General Medicine' },
+    { doctor_name: 'Dr. A. Iyer', doctor_specialist: 'Gastroenterology' },
+  ],
+  medications: [
+    { medicine_name: 'Pantoprazole', dosage: '40 mg', quantity: '10 tabs', usage: '1-0-0 before food' },
+    { medicine_name: 'Paracetamol', dosage: '500 mg', quantity: '10 tabs', usage: 'SOS for fever' },
+  ],
+  created_by_name: 'anita',
+  finalised_by_name: 'dr.rao',
+  finalised_at: '2026-03-15T10:30:00.000Z',
+  ...overrides,
+})
+
+describe('generateDischargeSummaryPDF', () => {
+  it('produces a valid PDF for a complete summary', () => {
+    generateDischargeSummaryPDF(dischargeData())
+
+    expect(saved()).toHaveLength(1)
+    expectValidPdf(saved()[0])
+  })
+
+  it('names the file after the patient and the document number', () => {
+    generateDischargeSummaryPDF(dischargeData())
+
+    expect(savedFilenames()).toEqual(['Discharge_Summary_Ramesh_Kumar_DS_2026_00012.pdf'])
+  })
+
+  /** Page one is the branded cover; the content starts on page two. */
+  it('always has at least two pages', () => {
+    const doc = renderDischargeSummary(dischargeData())
+    expect(doc.getNumberOfPages()).toBeGreaterThanOrEqual(2)
+  })
+
+  it('survives a summary with every optional section empty', () => {
+    const doc = renderDischargeSummary(dischargeData({
+      chief_complaints: null, history_present_illness: null, past_history: null,
+      investigations: null, advice_notes: null, follow_up_date: null,
+      follow_up_instructions: null, condition_on_discharge: null,
+      vitals_bp: null, vitals_pulse: null, vitals_temp: null, vitals_spo2: null,
+      medications: [], doctors: [],
+    }))
+
+    expectValidPdf(doc)
+  })
+
+  it('survives missing patient details', () => {
+    const doc = renderDischargeSummary(dischargeData({
+      summary_no: null,
+      patient: { name: 'Walk-in', patient_id: null, age: null, gender: null, phone: null, address: null },
+      admission_date: null, discharge_date: null, ward: null, bed: null,
+      created_by_name: null, finalised_by_name: null, finalised_at: null,
+    }))
+
+    expectValidPdf(doc)
+  })
+
+  it('renders a draft without throwing — the watermark walks every page', () => {
+    const doc = renderDischargeSummary(dischargeData({ status: 'draft' }))
+    expectValidPdf(doc)
+  })
+
+  it('paginates a long medication list and keeps the columns labelled', () => {
+    const doc = renderDischargeSummary(dischargeData({
+      medications: Array.from({ length: 60 }, (_, i) => ({
+        medicine_name: `Medicine with a deliberately long name number ${i}`,
+        dosage: '500 mg',
+        quantity: '10 tabs',
+        usage: 'One tablet twice daily after food for the next five days',
+      })),
+    }))
+
+    expect(doc.getNumberOfPages()).toBeGreaterThan(2)
+    expectValidPdf(doc)
+  })
+
+  it('does not overflow on a very long narrative', () => {
+    const doc = renderDischargeSummary(dischargeData({
+      clinical_summary: 'Course in hospital. '.repeat(400),
+    }))
+
+    expect(doc.getNumberOfPages()).toBeGreaterThan(2)
+    expectValidPdf(doc)
+  })
+})
+
+describe('mergePdfs', () => {
+  /** Minimal lab report — the builders above are scoped to their describe block. */
+  const aLabReport = (): LabReportData => ({
+    order_no: 'LAB/2026/00184',
+    patient_name: 'Ramesh Kumar',
+    patient_display_id: '1/25',
+    patient_age: 42,
+    patient_gender: 'Male',
+    patient_phone: '9876543210',
+    referring_doctor_name: 'Dr. S. Rao',
+    registered_at: '2026-03-15T09:12:00.000Z',
+    collected_at: '2026-03-15T09:40:00.000Z',
+    received_at: '2026-03-15T10:05:00.000Z',
+    reported_at: '2026-03-15T14:30:00.000Z',
+    items: [{
+      id: 'i1',
+      test_name: 'Complete Blood Count',
+      test_code: 'CBC',
+      specimen: 'Whole Blood (EDTA)',
+      method: 'Automated Cell Counter',
+      status: 'reported',
+      interpretation: null,
+      interpretation_by_name: null,
+      entered_by_name: 'anita',
+      authorised_by_name: null,
+      authorised_at: null,
+      parameters: [{ id: 'p1', name: 'Haemoglobin', group_name: null, method: null, decimals: 1 }],
+      values: [{
+        parameter_id: 'p1', value: 13.2, text_value: null, unit: 'g/dL',
+        ref_display: '13 - 17', abnormal: null, is_critical: false,
+      }],
+    }],
+  })
+
+  it('concatenates a summary and a lab report into one document', async () => {
+    const summary = renderDischargeSummary(dischargeData())
+    const report = renderLabReport(aLabReport())
+    const pages = summary.getNumberOfPages() + report.getNumberOfPages()
+
+    const { bytes, skipped } = await mergePdfs([
+      { label: 'Discharge summary', bytes: docBytes(summary) },
+      { label: 'Lab report', bytes: docBytes(report) },
+    ])
+
+    expect(skipped).toEqual([])
+    expect(Buffer.from(bytes).toString('latin1').startsWith('%PDF-')).toBe(true)
+
+    // pdf-lib writes a fresh document, so count the pages it reports.
+    const { PDFDocument } = await import('pdf-lib')
+    const merged = await PDFDocument.load(bytes)
+    expect(merged.getPageCount()).toBe(pages)
+  })
+
+  /** A corrupt or password-protected scan must not sink the whole download. */
+  it('skips a part it cannot read and names it', async () => {
+    const summary = renderDischargeSummary(dischargeData())
+
+    const { bytes, skipped } = await mergePdfs([
+      { label: 'Discharge summary', bytes: docBytes(summary) },
+      { label: 'Corrupt scan', bytes: new Uint8Array([1, 2, 3, 4]) },
+    ])
+
+    expect(skipped).toEqual(['Corrupt scan'])
+    expect(bytes.byteLength).toBeGreaterThan(1000)
+  })
+
+  it('reports an empty part rather than silently dropping it', async () => {
+    const summary = renderDischargeSummary(dischargeData())
+
+    const { skipped } = await mergePdfs([
+      { label: 'Discharge summary', bytes: docBytes(summary) },
+      { label: 'Missing attachment', bytes: new Uint8Array() },
+    ])
+
+    expect(skipped).toEqual(['Missing attachment'])
+  })
+
+  it('throws when there is nothing at all to merge', async () => {
+    await expect(mergePdfs([])).rejects.toThrow(/nothing to download/i)
   })
 })

@@ -230,7 +230,7 @@ export async function POST(request: NextRequest, { params }: Params) {
 
     const { error: itemUpdateError } = await supabase
       .from('lab_order_items')
-      .update(itemUpdate)
+      .update({ ...itemUpdate, updated_by: auth.user.id })
       .eq('id', id)
     if (itemUpdateError) throw itemUpdateError
 

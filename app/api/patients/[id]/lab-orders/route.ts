@@ -28,7 +28,9 @@ export async function GET(request: NextRequest, { params }: Params) {
     const { data, error, count } = await supabase
       .from('lab_orders')
       .select(
-        `*, lab_order_items (
+        `*,
+         updated_by_user:users!updated_by(id, username),
+         lab_order_items (
            id, test_id, test_name, test_code, category, status, price,
            interpretation, authorised_at, display_order
          )`,

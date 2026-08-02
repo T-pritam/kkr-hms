@@ -35,7 +35,37 @@ export const SCHEMA: Record<string, string[]> = {
     'updated_by', 'deleted_at', 'settlement_type',
   ],
 
-  doctors: ['id', 'name', 'mobile', 'email', 'designation', 'specialist', 'created_at', 'updated_at'],
+  doctors: [
+    'id', 'name', 'mobile', 'email', 'designation', 'specialist', 'created_at', 'updated_at',
+    'created_by', 'updated_by',
+  ],
+
+  case_sheet_attachments: [
+    'id', 'case_sheet_id', 'file_url', 'file_key', 'filename', 'size_bytes', 'uploaded_by',
+    'uploaded_at', 'display_order',
+  ],
+
+  case_sheet_counters: ['year', 'last_no'],
+
+  case_sheet_doctors: [
+    'id', 'case_sheet_id', 'doctor_id', 'doctor_name', 'doctor_specialist', 'display_order',
+    'created_at',
+  ],
+
+  case_sheet_medications: [
+    'id', 'case_sheet_id', 'medicine_id', 'medicine_name', 'dosage', 'quantity', 'usage',
+    'display_order', 'created_at', 'updated_at',
+  ],
+
+  medicines: [
+    'id', 'name', 'form', 'strength', 'is_active', 'created_by', 'created_at', 'updated_at',
+    'updated_by',
+  ],
+
+  record_audit_log: [
+    'id', 'entity_type', 'entity_id', 'patient_id', 'action', 'changes', 'summary',
+    'actor_id', 'actor_name', 'actor_role', 'created_at',
+  ],
 
   employees: ['id', 'name', 'designation', 'base_salary', 'join_date', 'status', 'created_at', 'updated_at'],
 
@@ -51,7 +81,7 @@ export const SCHEMA: Record<string, string[]> = {
     'id', 'order_id', 'test_id', 'test_name', 'test_code', 'category', 'specimen', 'method',
     'price', 'status', 'interpretation', 'interpretation_by', 'interpretation_at',
     'entered_by', 'entered_at', 'authorised_by', 'authorised_at', 'display_order',
-    'created_at', 'updated_at',
+    'created_at', 'updated_at', 'updated_by',
   ],
 
   lab_orders: [
@@ -59,7 +89,7 @@ export const SCHEMA: Record<string, string[]> = {
     'patient_gender', 'patient_display_id', 'patient_status', 'referring_doctor_id',
     'referring_doctor_name', 'priority', 'status', 'registered_at', 'collected_at',
     'received_at', 'reported_at', 'collected_by', 'created_by', 'total_amount', 'discount',
-    'net_amount', 'notes', 'created_at', 'updated_at',
+    'net_amount', 'notes', 'created_at', 'updated_at', 'updated_by',
   ],
 
   lab_result_values: [
@@ -90,6 +120,10 @@ export const SCHEMA: Record<string, string[]> = {
   patient_case_sheets: [
     'id', 'patient_id', 'patient_billing_id', 'discharge_date', 'discharge_notes', 'case_sheet_url',
     'case_sheet_filename', 'uploaded_at', 'created_at', 'created_by', 'updated_at', 'updated_by',
+    'admission_date', 'ward', 'bed', 'chief_complaints', 'history_present_illness', 'past_history',
+    'diagnosis', 'investigations', 'clinical_summary', 'advice_notes', 'condition_on_discharge',
+    'vitals_bp', 'vitals_pulse', 'vitals_temp', 'vitals_spo2', 'follow_up_date',
+    'follow_up_instructions', 'summary_no', 'status', 'finalised_by', 'finalised_at',
   ],
 
   patient_charges: [
@@ -112,7 +146,7 @@ export const SCHEMA: Record<string, string[]> = {
   patients: [
     'id', 'patient_id', 'name', 'phone', 'gender', 'date_of_birth', 'date_of_join', 'address',
     'referred_by', 'emergency_contact_name', 'emergency_contact_phone', 'medical_history', 'allergies',
-    'current_medications', 'status', 'created_at', 'updated_at',
+    'current_medications', 'status', 'created_at', 'updated_at', 'created_by', 'updated_by',
   ],
 
   referrals: ['id', 'name', 'phone', 'status', 'created_at', 'updated_at', 'created_by', 'updated_by'],

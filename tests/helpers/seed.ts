@@ -7,7 +7,7 @@
  */
 
 import { db, type Row } from './fake-supabase'
-import { TODAY, THIS_MONTH } from '../setup'
+import { NOW, TODAY, THIS_MONTH } from '../setup'
 
 let sequence = 0
 const nextId = (prefix: string) => `${prefix}-${String(++sequence).padStart(4, '0')}`
@@ -149,17 +149,105 @@ export function aSettlement(overrides: Row = {}): Row {
   })[0]
 }
 
+/**
+ * A case sheet in its usual state: a finalised discharge summary with the four
+ * required sections filled in. Pass `{ status: 'draft' }` for the other case.
+ */
 export function aCaseSheet(overrides: Row = {}): Row {
   return db.seed('patient_case_sheets', {
     id: overrides.id ?? nextId('casesheet'),
     patient_id: overrides.patient_id ?? nextId('patient'),
     patient_billing_id: null,
+    summary_no: overrides.summary_no ?? `DS/2026/${String(++sequence).padStart(5, '0')}`,
+    status: 'final',
+    admission_date: TODAY,
     discharge_date: TODAY,
+    ward: 'General Ward',
+    bed: '12',
+    chief_complaints: 'Fever with chills for 4 days',
+    diagnosis: 'Acute gastroenteritis',
+    investigations: 'Hb 9.2 g/dL, TLC 12,400',
+    clinical_summary: 'Treated with IV fluids and antibiotics. Improved.',
+    advice_notes: 'Plenty of oral fluids.',
+    condition_on_discharge: 'Stable',
     discharge_notes: 'Discharged stable',
     case_sheet_url: 'https://pub-test-account.r2.dev/case-sheets/p1/1700000000_sheet.pdf',
     case_sheet_filename: 'sheet.pdf',
     uploaded_at: null,
     created_by: null,
+    finalised_by: null,
+    finalised_at: NOW.toISOString(),
+    ...overrides,
+  })[0]
+}
+
+export function aCaseSheetDoctor(overrides: Row = {}): Row {
+  return db.seed('case_sheet_doctors', {
+    id: overrides.id ?? nextId('csdoctor'),
+    case_sheet_id: overrides.case_sheet_id ?? nextId('casesheet'),
+    doctor_id: overrides.doctor_id ?? null,
+    doctor_name: 'Dr. S. Rao',
+    doctor_specialist: 'General Medicine',
+    display_order: 0,
+    ...overrides,
+  })[0]
+}
+
+export function aCaseSheetMedication(overrides: Row = {}): Row {
+  return db.seed('case_sheet_medications', {
+    id: overrides.id ?? nextId('csmed'),
+    case_sheet_id: overrides.case_sheet_id ?? nextId('casesheet'),
+    medicine_id: overrides.medicine_id ?? null,
+    medicine_name: 'Paracetamol',
+    dosage: '500 mg',
+    quantity: '10 tabs',
+    usage: '1-0-1 after food',
+    display_order: 0,
+    ...overrides,
+  })[0]
+}
+
+export function aCaseSheetAttachment(overrides: Row = {}): Row {
+  const key = 'case-sheets/p1/1700000000_scan.pdf'
+  return db.seed('case_sheet_attachments', {
+    id: overrides.id ?? nextId('csfile'),
+    case_sheet_id: overrides.case_sheet_id ?? nextId('casesheet'),
+    file_url: `https://pub-test-account.r2.dev/${key}`,
+    file_key: key,
+    filename: 'scan.pdf',
+    size_bytes: 24_000,
+    uploaded_by: null,
+    uploaded_at: NOW.toISOString(),
+    display_order: 0,
+    ...overrides,
+  })[0]
+}
+
+export function aMedicine(overrides: Row = {}): Row {
+  return db.seed('medicines', {
+    id: overrides.id ?? nextId('medicine'),
+    name: 'Paracetamol',
+    form: 'Tablet',
+    strength: '500 mg',
+    is_active: true,
+    created_by: null,
+    ...overrides,
+  })[0]
+}
+
+export function anAuditEntry(overrides: Row = {}): Row {
+  return db.seed('record_audit_log', {
+    id: overrides.id ?? nextId('audit'),
+    entity_type: 'case_sheet',
+    entity_id: overrides.entity_id ?? nextId('casesheet'),
+    patient_id: overrides.patient_id ?? null,
+    action: 'updated',
+    changes: null,
+    summary: null,
+    actor_id: null,
+    actor_name: 'Anita',
+    actor_role: 'NURSE',
+    created_at: NOW.toISOString(),
     ...overrides,
   })[0]
 }

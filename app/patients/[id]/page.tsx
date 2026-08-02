@@ -43,11 +43,13 @@ export default function PatientDetailsPage() {
 
   const fetchPatientData = async () => {
     try {
-      const response = await fetch(`/api/patients?id=${patientId}`);
+      // The list endpoint ignores an `id` query parameter and returns page one,
+      // so this used to set patientData to the pagination envelope and every
+      // field in the header below rendered blank.
+      const response = await fetch(`/api/patients/${patientId}`);
       if (response.ok) {
         const data = await response.json();
-        const patient = Array.isArray(data) ? data[0] : data;
-        setPatientData(patient);
+        setPatientData(data.patient ?? data);
       }
     } catch (error) {
       console.error('Error fetching patient data:', error);
@@ -248,6 +250,7 @@ export default function PatientDetailsPage() {
               <CaseSheetTab
                 patientId={patientId}
                 billing={billing}
+                patientName={patientData?.name}
                 onStatusChange={(s) => setPatientData((prev: any) => ({ ...prev, status: s }))}
               />
             )}

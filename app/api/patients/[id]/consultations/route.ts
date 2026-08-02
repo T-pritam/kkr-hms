@@ -21,7 +21,8 @@ export async function GET(
       .select(`
         *,
         doctor:doctors(id, name, specialist),
-        created_by_user:users!created_by(id, username, email)
+        created_by_user:users!created_by(id, username, email),
+        updated_by_user:users!updated_by(id, username)
       `)
       .eq('patient_id', patientId)
       .is('deleted_at', null)
@@ -119,7 +120,8 @@ export async function POST(
       .select(`
         *,
         doctor:doctors(id, name, specialist),
-        created_by_user:users!created_by(id, username, email)
+        created_by_user:users!created_by(id, username, email),
+        updated_by_user:users!updated_by(id, username)
       `)
       .single();
 

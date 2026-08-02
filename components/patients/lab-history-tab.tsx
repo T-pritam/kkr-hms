@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Badge, type BadgeVariant } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ReportPreviewModal } from '@/components/lab/report-preview-modal'
+import { UpdatedStamp } from '@/components/ui/updated-stamp'
 import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch'
 import { ORDER_STATUS_LABELS, type OrderStatus } from '@/lib/lab/status'
 import { FileText, FlaskConical, AlertCircle } from 'lucide-react'
@@ -26,6 +27,8 @@ interface Order {
   registered_at: string
   reported_at: string | null
   net_amount: number
+  updated_at: string | null
+  updated_by_user: { username: string } | null
   lab_order_items: Item[]
 }
 
@@ -116,6 +119,7 @@ export default function LabHistoryTab({ patientId }: { patientId: string }) {
                   Registered {dateTime(order.registered_at)}
                   {order.reported_at && ` · Reported ${dateTime(order.reported_at)}`}
                 </div>
+                <UpdatedStamp by={order.updated_by_user?.username} at={order.updated_at} />
               </div>
               <div className="flex items-center gap-3">
                 <span className="text-sm text-foreground">{money(order.net_amount)}</span>

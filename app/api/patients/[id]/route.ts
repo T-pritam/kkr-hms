@@ -25,7 +25,10 @@ export async function GET(
     // Get patient by ID
     const { data: patient, error } = await supabase
       .from('patients')
-      .select('*')
+      .select(`
+        *,
+        updated_by_user:users!updated_by(id, username)
+      `)
       .eq('id', id)
       .single()
 
@@ -122,6 +125,7 @@ export async function PUT(
         allergies: allergies || null,
         current_medications: current_medications || null,
         status: status || 'Active',
+        updated_by: payload.userId,
       })
       .eq('id', id)
 
@@ -174,6 +178,8 @@ export async function PATCH(
       return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
     }
 
+    updateData.updated_by = payload.userId
+
     const { error } = await supabase
       .from('patients')
       .update(updateData)
@@ -207,6 +213,16 @@ export async function DELETE(
     const payload = await verifyToken(token)
     if (!payload) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+    }
+
+    // Destroying a patient record takes their billing, charges, consultations,
+    // lab orders and discharge summaries with it. Previously any authenticated
+    // role could do it, including a lab technician (BUGS.md #9).
+    if (payload.role !== 'ADMIN') {
+      return NextResponse.json(
+        { error: 'Only admins can delete a patient' },
+        { status: 403 }
+      )
     }
 
     const supabase = await createClient()

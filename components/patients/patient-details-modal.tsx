@@ -198,6 +198,7 @@ export default function PatientDetailsModal({
             <CaseSheetTab
               patientId={patientId}
               billing={billing}
+              patientName={patientData?.name}
               onStatusChange={undefined}
             />
           )}

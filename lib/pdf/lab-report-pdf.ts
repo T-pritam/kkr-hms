@@ -369,7 +369,21 @@ function signOff(h: H, items: LabReportItem[]): void {
 
 // ── Entry point ──────────────────────────────────────────────────────────────
 
-export function generateLabReportPDF(data: LabReportData): void {
+/** Filename used for both the direct download and the merged discharge pack. */
+export function labReportFilename(data: LabReportData): string {
+  const safeName = (data.patient_name || 'patient').replace(/[^a-z0-9]/gi, '_')
+  const safeOrder = (data.order_no || 'order').replace(/[^a-z0-9]/gi, '_')
+  return `Lab_Report_${safeName}_${safeOrder}.pdf`
+}
+
+/**
+ * Renders the report and hands back the document without saving it.
+ *
+ * Split out so the discharge summary can append lab reports: merging needs the
+ * bytes, and calling `save()` would trigger a download of each report as a
+ * side effect of building the combined file.
+ */
+export function renderLabReport(data: LabReportData) {
   const h = mkDoc('portrait')
 
   reportHeader(h)
@@ -396,9 +410,11 @@ export function generateLabReportPDF(data: LabReportData): void {
   signOff(h, reportable)
   footers(h)
 
-  const safeName = (data.patient_name || 'patient').replace(/[^a-z0-9]/gi, '_')
-  const safeOrder = (data.order_no || 'order').replace(/[^a-z0-9]/gi, '_')
-  h.doc.save(`Lab_Report_${safeName}_${safeOrder}.pdf`)
+  return h.doc
+}
+
+export function generateLabReportPDF(data: LabReportData): void {
+  renderLabReport(data).save(labReportFilename(data))
 }
 
 /** Exported for the totals line some labs print on the patient copy. */

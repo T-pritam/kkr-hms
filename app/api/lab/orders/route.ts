@@ -7,6 +7,7 @@ import { isOrderStatus } from '@/lib/lab/status'
 
 const ORDER_LIST_SELECT = `
   *,
+  updated_by_user:users!updated_by(id, username),
   lab_order_items (
     id, test_id, test_name, test_code, category, price, status, display_order
   )

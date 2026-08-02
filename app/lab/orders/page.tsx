@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Badge, type BadgeVariant } from '@/components/ui/badge'
+import { UpdatedStamp } from '@/components/ui/updated-stamp'
 import { TablePagination } from '@/components/ui/table-pagination'
 import { CreateLabOrderModal } from '@/components/lab/create-lab-order-modal'
 import { ResultEntryModal } from '@/components/lab/result-entry-modal'
@@ -41,6 +42,8 @@ interface Order {
   collected_at: string | null
   received_at: string | null
   net_amount: number
+  updated_at: string | null
+  updated_by_user: { username: string } | null
   lab_order_items: OrderItem[]
 }
 
@@ -261,7 +264,10 @@ export default function LabOrdersPage() {
                             {order.lab_order_items?.map(i => i.test_code).join(', ')}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-sm text-muted">{dateTime(order.registered_at)}</td>
+                        <td className="px-4 py-3 text-sm text-muted">
+                          {dateTime(order.registered_at)}
+                          <UpdatedStamp by={order.updated_by_user?.username} at={order.updated_at} className="mt-0.5" />
+                        </td>
                         <td className="px-4 py-3">
                           <Badge variant={STATUS_VARIANT[order.status] ?? 'outline'}>
                             {ORDER_STATUS_LABELS[order.status] ?? order.status}
@@ -300,6 +306,7 @@ export default function LabOrdersPage() {
                       <div className="col-span-2">
                         <div className="text-muted">Registered</div>
                         <div className="text-foreground">{dateTime(order.registered_at)}</div>
+                        <UpdatedStamp by={order.updated_by_user?.username} at={order.updated_at} />
                       </div>
                     </div>
                     <div className="flex justify-end">{actionsFor(order)}</div>

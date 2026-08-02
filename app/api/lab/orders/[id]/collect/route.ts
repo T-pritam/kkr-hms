@@ -45,6 +45,7 @@ export async function POST(request: NextRequest, { params }: Params) {
         status: 'collected',
         collected_at: collectedAt,
         collected_by: auth.user.id,
+        updated_by: auth.user.id,
       })
       .eq('id', id)
       .select()

@@ -128,7 +128,8 @@ export async function loadOrderDetail(supabase: Client, orderId: string): Promis
   const userIds = [...new Set([
     order.created_by,
     order.collected_by,
-    ...items.flatMap((i: any) => [i.entered_by, i.authorised_by, i.interpretation_by]),
+    order.updated_by,
+    ...items.flatMap((i: any) => [i.entered_by, i.authorised_by, i.interpretation_by, i.updated_by]),
   ].filter(Boolean))]
 
   const userNames = new Map<string, string>()
@@ -173,6 +174,7 @@ export async function loadOrderDetail(supabase: Client, orderId: string): Promis
       interpretation_by_name: item.interpretation_by ? userNames.get(item.interpretation_by) ?? null : null,
       entered_by_name:        item.entered_by        ? userNames.get(item.entered_by)        ?? null : null,
       authorised_by_name:     item.authorised_by     ? userNames.get(item.authorised_by)     ?? null : null,
+      updated_by_name:        item.updated_by        ? userNames.get(item.updated_by)        ?? null : null,
       parameters: testParams,
       values: itemValues,
     }
@@ -183,6 +185,7 @@ export async function loadOrderDetail(supabase: Client, orderId: string): Promis
     referring_doctor_name: doctorName,
     created_by_name:   order.created_by   ? userNames.get(order.created_by)   ?? null : null,
     collected_by_name: order.collected_by ? userNames.get(order.collected_by) ?? null : null,
+    updated_by_name:   order.updated_by   ? userNames.get(order.updated_by)   ?? null : null,
     items: loadedItems,
   }
 }

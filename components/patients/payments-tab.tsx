@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Edit } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useUser } from '@/hooks/use-user';
+import { UpdatedStamp } from '@/components/ui/updated-stamp';
 
 interface PaymentsTabProps {
   patientId: string;
@@ -309,6 +310,7 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
                     </td>
                     <td className="px-4 py-3 text-sm text-muted">
                       {installment.users?.username || 'Unknown'}
+                      <UpdatedStamp by={installment.updated_by_user?.username} at={installment.updated_at} className="mt-0.5" />
                     </td>
                     <td className="px-4 py-3 text-sm text-foreground text-right font-medium">
                       ₹{parseFloat(installment.amount).toFixed(2)}
@@ -390,6 +392,7 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
                   )}
                   <span className="bg-surface-inset px-2 py-1 rounded text-muted">
                     by {installment.users?.username || 'Unknown'}
+                    <UpdatedStamp by={installment.updated_by_user?.username} at={installment.updated_at} />
                   </span>
                 </div>
                 {installment.remarks && (

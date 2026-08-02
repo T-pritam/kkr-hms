@@ -60,6 +60,7 @@ export async function POST(request: NextRequest, { params }: Params) {
         status: 'authorised',
         authorised_by: auth.user.id,
         authorised_at: new Date().toISOString(),
+        updated_by: auth.user.id,
       })
       .eq('id', id)
       .select()
@@ -105,7 +106,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
 
     const { data, error } = await supabase
       .from('lab_order_items')
-      .update({ status: 'results_entered', authorised_by: null, authorised_at: null })
+      .update({ status: 'results_entered', authorised_by: null, authorised_at: null, updated_by: auth.user.id })
       .eq('id', id)
       .select()
       .single()

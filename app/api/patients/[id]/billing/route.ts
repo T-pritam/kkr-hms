@@ -29,7 +29,10 @@ export async function GET(
     // Get patient billing records
     const { data: billingRecords, error: billingError } = await supabase
       .from('patient_billing')
-      .select('*')
+      .select(`
+        *,
+        updated_by_user:users!updated_by(id, username)
+      `)
       .eq('patient_id', patientId)
       .order('created_at', { ascending: false });
 

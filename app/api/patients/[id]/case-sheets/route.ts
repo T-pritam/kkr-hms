@@ -1,79 +1,139 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
-import { verifyAuth } from '@/lib/auth/verify';
+/**
+ * Case sheets for one patient.
+ *
+ *   GET  — every case sheet, newest first, with doctors, medication and scans
+ *   POST — creates a draft
+ *
+ * The old handlers authenticated and then never read the role, so a
+ * receptionist could write a discharge summary (see lib/case-sheet/authz.ts).
+ * The old POST also validated nothing at all.
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import { requireCaseSheet } from '@/lib/case-sheet/authz'
+import { loadCaseSheets } from '@/lib/case-sheet/detail'
+import {
+  normaliseCaseSheetBody,
+  normaliseDoctors,
+  normaliseMedications,
+  validateCaseSheet,
+} from '@/lib/case-sheet/validate'
+import { recordAudit } from '@/lib/audit/log'
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
+  const auth = await requireCaseSheet(request, 'casesheet:read')
+  if (auth.response) return auth.response
+
   try {
-    const authResult = await verifyAuth(request);
-    if (!authResult.isValid || !authResult.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const { id: patientId } = await params
+    const supabase = await createClient()
 
-    const supabase = await createClient();
-    const { id } = await params;
-    const patientId = id;
-
-    const { data, error } = await supabase
-      .from('patient_case_sheets')
-      .select('*')
-      .eq('patient_id', patientId)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-
-    return NextResponse.json(data);
-  } catch (error) {
-    console.error('Error fetching case sheets:', error);
+    const sheets = await loadCaseSheets(supabase, patientId)
+    return NextResponse.json({ success: true, data: sheets })
+  } catch (error: any) {
+    console.error('Error loading case sheets:', error)
     return NextResponse.json(
-      { error: 'Failed to fetch case sheets' },
-      { status: 500 }
-    );
+      { success: false, error: error.message || 'Failed to load case sheets' },
+      { status: 500 },
+    )
   }
 }
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
+  const auth = await requireCaseSheet(request, 'casesheet:write')
+  if (auth.response) return auth.response
+  const { user } = auth
+
   try {
-    const authResult = await verifyAuth(request);
-    if (!authResult.isValid || !authResult.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const { id: patientId } = await params
+    const supabase = await createClient()
+    const body = await request.json().catch(() => ({}))
+
+    // The patient must exist — a case sheet with no patient is unprintable.
+    const { data: patient } = await supabase
+      .from('patients')
+      .select('id')
+      .eq('id', patientId)
+      .maybeSingle()
+
+    if (!patient) {
+      return NextResponse.json({ success: false, error: 'Patient not found' }, { status: 404 })
     }
 
-    const supabase = await createClient();
-    const { id } = await params;
-    const patientId = id;
-    const body = await request.json();
+    const values = normaliseCaseSheetBody(body)
+    const check = validateCaseSheet(values)
+    if (!check.ok) {
+      return NextResponse.json(
+        { success: false, error: Object.values(check.errors)[0], errors: check.errors },
+        { status: 400 },
+      )
+    }
 
-    const caseSheetData = {
-      patient_id: patientId,
-      patient_billing_id: body.patient_billing_id,
-      discharge_date: body.discharge_date,
-      discharge_notes: body.discharge_notes,
-      case_sheet_url: body.case_sheet_url,
-      case_sheet_filename: body.case_sheet_filename,
-      uploaded_at: body.case_sheet_url ? new Date().toISOString() : null,
-      created_by: authResult.user.id,
-    };
+    const doctors = normaliseDoctors(body.doctors)
+    if (doctors.error) {
+      return NextResponse.json({ success: false, error: doctors.error }, { status: 400 })
+    }
+    const medications = normaliseMedications(body.medications)
+    if (medications.error) {
+      return NextResponse.json({ success: false, error: medications.error }, { status: 400 })
+    }
 
-    const { data, error } = await supabase
+    const { data: summaryNo, error: numberError } = await supabase.rpc('next_discharge_summary_no')
+    if (numberError) throw numberError
+
+    const { data: sheet, error } = await supabase
       .from('patient_case_sheets')
-      .insert(caseSheetData)
+      .insert({
+        ...values,
+        patient_id: patientId,
+        summary_no: summaryNo,
+        // Always a draft. Under the old code, creating a case sheet immediately
+        // marked the patient Discharged — even one saved to jot a note down.
+        status: 'draft',
+        created_by: user.id,
+        updated_by: user.id,
+      })
       .select()
-      .single();
+      .single()
 
-    if (error) throw error;
+    if (error) throw error
 
-    return NextResponse.json(data);
-  } catch (error) {
-    console.error('Error creating case sheet:', error);
+    if (doctors.rows.length > 0) {
+      const { error: doctorError } = await supabase.from('case_sheet_doctors').insert(
+        doctors.rows.map((d, i) => ({ ...d, case_sheet_id: sheet.id, display_order: i })),
+      )
+      if (doctorError) throw doctorError
+    }
+
+    if (medications.rows.length > 0) {
+      const { error: medError } = await supabase.from('case_sheet_medications').insert(
+        medications.rows.map((m, i) => ({ ...m, case_sheet_id: sheet.id, display_order: i })),
+      )
+      if (medError) throw medError
+    }
+
+    await recordAudit(supabase, {
+      entityType: 'case_sheet',
+      entityId: sheet.id,
+      patientId,
+      action: 'created',
+      summary: `Created case sheet ${sheet.summary_no}`,
+      actor: { id: user.id, role: user.role },
+    })
+
+    return NextResponse.json({ success: true, data: sheet }, { status: 201 })
+  } catch (error: any) {
+    console.error('Error creating case sheet:', error)
     return NextResponse.json(
-      { error: 'Failed to create case sheet' },
-      { status: 500 }
-    );
+      { success: false, error: error.message || 'Failed to create case sheet' },
+      { status: 500 },
+    )
   }
 }

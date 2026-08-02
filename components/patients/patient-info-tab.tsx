@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { UpdatedStamp } from '@/components/ui/updated-stamp';
 
 interface PatientInfoTabProps {
   patient: any;
@@ -181,6 +182,8 @@ export default function PatientInfoTab({ patient, onStatusChange }: PatientInfoT
           </span>
         </div>
       </div>
+
+      <UpdatedStamp by={patient.updated_by_user?.username} at={patient.updated_at} />
     </div>
   );
 }
