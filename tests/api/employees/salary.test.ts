@@ -439,3 +439,44 @@ describe('POST /api/employees/salary/settle-all', () => {
     expect(body).toMatchObject({ success: true, message: 'No pending salaries to settle', settled_count: 0 })
   })
 })
+
+describe('payroll attribution', () => {
+  /**
+   * `settled_on` recorded when the payroll was signed off and nothing recorded
+   * who. Same for the monthly credit run, which wrote eleven columns and no
+   * actor — 20260802000004 added attribution across the app and skipped all
+   * three payroll tables.
+   */
+  it('records who settled one salary', async () => {
+    await signInAs('ADMIN', { userId: 'u-admin' })
+    anEmployee({ id: 'e1' })
+    aSalaryRecord({ id: '1', employee_id: 'e1', month_year: THIS_MONTH, status: 'pending' })
+
+    const { status } = await settle({ employee_id: 'e1', month_year: THIS_MONTH })
+
+    expect(status).toBe(200)
+    expect(db.find('salary_payments', r => String(r.id) === '1')).toMatchObject({
+      status: 'settled',
+      settled_by: 'u-admin',
+      updated_by: 'u-admin',
+    })
+  })
+
+  it('records who ran the monthly credit', async () => {
+    await signInAs('ADMIN', { userId: 'u-admin' })
+    anEmployee({ id: 'e1', base_salary: 27000 })
+
+    const { status } = await call(creditMonthly, 'POST', '/api/employees/salary/monthly', {
+      body: {
+        month_year: THIS_MONTH,
+        employees_data: [{ employee_id: 'e1', base_salary: 27000, days_present: 27, ot_days: 0 }],
+      },
+    })
+
+    expect(status).toBe(201)
+    expect(db.rows('salary_payments')[0]).toMatchObject({
+      created_by: 'u-admin',
+      updated_by: 'u-admin',
+    })
+  })
+})

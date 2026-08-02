@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { verifyToken, getAccessToken, getRefreshToken, setAuthCookies, generateAccessToken, generateRefreshToken } from '@/lib/auth/jwt'
+import { requireEmployee } from '@/lib/employees/authz'
 
 /**
  * POST /api/employees/salary/settle
@@ -8,43 +8,9 @@ import { verifyToken, getAccessToken, getRefreshToken, setAuthCookies, generateA
  */
 export async function POST(request: NextRequest) {
   try {
-    // Token refresh logic
-    let accessToken = await getAccessToken()
-    if (!accessToken) {
-      const refreshToken = await getRefreshToken()
-      if (!refreshToken) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
-      const refreshPayload = await verifyToken(refreshToken)
-      if (!refreshPayload) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
-      accessToken = await generateAccessToken({
-        userId: refreshPayload.userId,
-        email: refreshPayload.email,
-        role: refreshPayload.role
-      })
-
-      const newRefreshToken = await generateRefreshToken({
-        userId: refreshPayload.userId,
-        email: refreshPayload.email,
-        role: refreshPayload.role
-      })
-
-      await setAuthCookies(accessToken, newRefreshToken)
-    }
-
-    const payload = await verifyToken(accessToken)
-    if (!payload) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // Admin only
-    if (payload.role !== 'ADMIN' && payload.role !== 'DOCTOR') {
-      return NextResponse.json({ error: 'Forbidden. Admin access required.' }, { status: 403 })
-    }
+    const auth = await requireEmployee(request, 'salary:settle')
+    if (auth.response) return auth.response
+    const { user } = auth
 
     const body = await request.json()
     const { employee_id, month_year } = body
@@ -93,7 +59,10 @@ export async function POST(request: NextRequest) {
       .from('salary_payments')
       .update({
         status: 'settled',
-        settled_on: new Date().toISOString().split('T')[0]
+        settled_on: new Date().toISOString().split('T')[0],
+        // settled_on recorded when; nothing recorded who.
+        settled_by: user.id,
+        updated_by: user.id,
       })
       .eq('employee_id', employee_id)
       .eq('month_year', month_year)

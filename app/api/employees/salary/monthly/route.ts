@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { verifyToken, getAccessToken, getRefreshToken, setAuthCookies, generateAccessToken, generateRefreshToken } from '@/lib/auth/jwt'
+import { requireEmployee } from '@/lib/employees/authz'
 
 /**
  * POST /api/employees/salary/monthly
@@ -10,43 +10,9 @@ import { verifyToken, getAccessToken, getRefreshToken, setAuthCookies, generateA
  */
 export async function POST(request: NextRequest) {
   try {
-    // Token refresh logic
-    let accessToken = await getAccessToken()
-    if (!accessToken) {
-      const refreshToken = await getRefreshToken()
-      if (!refreshToken) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
-      const refreshPayload = await verifyToken(refreshToken)
-      if (!refreshPayload) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
-      accessToken = await generateAccessToken({
-        userId: refreshPayload.userId,
-        email: refreshPayload.email,
-        role: refreshPayload.role
-      })
-
-      const newRefreshToken = await generateRefreshToken({
-        userId: refreshPayload.userId,
-        email: refreshPayload.email,
-        role: refreshPayload.role
-      })
-
-      await setAuthCookies(accessToken, newRefreshToken)
-    }
-
-    const payload = await verifyToken(accessToken)
-    if (!payload) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // Admin only
-    if (payload.role !== 'ADMIN' && payload.role !== 'DOCTOR') {
-      return NextResponse.json({ error: 'Forbidden. Admin access required.' }, { status: 403 })
-    }
+    const auth = await requireEmployee(request, 'salary:write')
+    if (auth.response) return auth.response
+    const { user } = auth
 
 
     const body = await request.json()
@@ -149,7 +115,9 @@ export async function POST(request: NextRequest) {
         total_advance: totalAdvance,
         calculated_salary: parseFloat(calculatedSalary.toFixed(2)),
         final_salary: parseFloat(finalSalary.toFixed(2)),
-        status: 'pending'
+        status: 'pending',
+        created_by: user.id,
+        updated_by: user.id,
       }
     })
 

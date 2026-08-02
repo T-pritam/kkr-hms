@@ -307,6 +307,18 @@ export function anEmployee(overrides: Row = {}): Row {
     base_salary: 27000,
     join_date: '2025-01-01',
     status: 'Active',
+    employee_code: null,
+    phone: null,
+    address: null,
+    emergency_contact_name: null,
+    emergency_contact_relation: null,
+    emergency_contact_phone: null,
+    date_of_birth: null,
+    gender: null,
+    id_proof_type: null,
+    id_proof_number: null,
+    bank_account_no: null,
+    bank_ifsc: null,
     ...overrides,
   })[0]
 }
@@ -337,6 +349,7 @@ export function anAdvance(overrides: Row = {}): Row {
     date_given: TODAY,
     month_year: THIS_MONTH,
     remarks: null,
+    given_by: null,
     ...overrides,
   })[0]
 }

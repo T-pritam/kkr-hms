@@ -1,11 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { verifyToken, getAccessToken, getRefreshToken, setAuthCookies, generateAccessToken, generateRefreshToken } from '@/lib/auth/jwt'
+import { requireEmployee } from '@/lib/employees/authz'
+import { normaliseEmployeeBody, validateEmployee, firstError } from '@/lib/employees/validate'
 
 /**
- * GET /api/employees/:id
- * Get employee by ID
+ * A single employee.
+ *
+ * The ~35-line inlined token-refresh block that opened every verb is replaced
+ * by `requireEmployee`, which admits exactly the roles the old guard admitted.
+ * Validation moves to the shared validator so PUT can no longer accept
+ * something POST would have rejected, and the new optional fields are writable
+ * without three more hand-written `if (x !== undefined)` branches.
+ *
+ * DELETE is unchanged in behaviour: it soft-deletes by setting status to
+ * Inactive, so salary and advance history survives.
  */
+
+const DETAIL_SELECT = `
+  *,
+  created_by_user:users!created_by(id, username),
+  updated_by_user:users!updated_by(id, username)
+`
+
+function duplicateCodeResponse(code: unknown) {
+  return NextResponse.json(
+    {
+      success: false,
+      error: `Employee code ${code} is already in use`,
+      fieldErrors: { employee_code: 'This code is already in use' },
+    },
+    { status: 409 }
+  )
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -13,49 +40,14 @@ export async function GET(
   try {
     const { id } = await params
 
-    // Token refresh logic
-    let accessToken = await getAccessToken()
-    if (!accessToken) {
-      const refreshToken = await getRefreshToken()
-      if (!refreshToken) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
-      const refreshPayload = await verifyToken(refreshToken)
-      if (!refreshPayload) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
-      accessToken = await generateAccessToken({
-        userId: refreshPayload.userId,
-        email: refreshPayload.email,
-        role: refreshPayload.role
-      })
-
-      const newRefreshToken = await generateRefreshToken({
-        userId: refreshPayload.userId,
-        email: refreshPayload.email,
-        role: refreshPayload.role
-      })
-
-      await setAuthCookies(accessToken, newRefreshToken)
-    }
-
-    const payload = await verifyToken(accessToken)
-    if (!payload) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // Admin only
-    if (payload.role !== 'ADMIN' && payload.role !== 'DOCTOR') {
-      return NextResponse.json({ error: 'Forbidden. Admin access required.' }, { status: 403 })
-    }
+    const auth = await requireEmployee(request, 'employee:read')
+    if (auth.response) return auth.response
 
     const supabase = await createClient()
 
     const { data: employee, error } = await supabase
       .from('employees')
-      .select('*')
+      .select(DETAIL_SELECT)
       .eq('id', id)
       .single()
 
@@ -66,10 +58,7 @@ export async function GET(
       )
     }
 
-    return NextResponse.json({
-      success: true,
-      data: employee
-    })
+    return NextResponse.json({ success: true, data: employee })
   } catch (error: any) {
     console.error('Error fetching employee:', error)
     return NextResponse.json(
@@ -79,10 +68,6 @@ export async function GET(
   }
 }
 
-/**
- * PUT /api/employees/:id
- * Update employee (Admin only)
- */
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -90,109 +75,55 @@ export async function PUT(
   try {
     const { id } = await params
 
-    // Token refresh logic
-    let accessToken = await getAccessToken()
-    if (!accessToken) {
-      const refreshToken = await getRefreshToken()
-      if (!refreshToken) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
-      const refreshPayload = await verifyToken(refreshToken)
-      if (!refreshPayload) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
-      accessToken = await generateAccessToken({
-        userId: refreshPayload.userId,
-        email: refreshPayload.email,
-        role: refreshPayload.role
-      })
-
-      const newRefreshToken = await generateRefreshToken({
-        userId: refreshPayload.userId,
-        email: refreshPayload.email,
-        role: refreshPayload.role
-      })
-
-      await setAuthCookies(accessToken, newRefreshToken)
-    }
-
-    const payload = await verifyToken(accessToken)
-    if (!payload) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // Admin only
-    if (payload.role !== 'ADMIN' && payload.role !== 'DOCTOR') {
-      return NextResponse.json({ error: 'Forbidden. Admin access required.' }, { status: 403 })
-    }
+    const auth = await requireEmployee(request, 'employee:write')
+    if (auth.response) return auth.response
+    const { user } = auth
 
     const body = await request.json()
-    const { name, designation, base_salary, join_date, status } = body
+    const values = normaliseEmployeeBody(body)
 
-    // Validation (all fields optional for update)
-    const updateData: any = {}
-
-    if (name !== undefined) {
-      if (name.length < 2 || name.length > 100) {
-        return NextResponse.json(
-          { error: 'Name must be between 2 and 100 characters' },
-          { status: 400 }
-        )
-      }
-      updateData.name = name
+    if (Object.keys(values).length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'No fields to update' },
+        { status: 400 }
+      )
     }
 
-    if (designation !== undefined) {
-      if (designation.length > 50) {
-        return NextResponse.json(
-          { error: 'Designation must be max 50 characters' },
-          { status: 400 }
-        )
-      }
-      updateData.designation = designation
-    }
-
-    if (base_salary !== undefined) {
-      if (base_salary <= 0) {
-        return NextResponse.json(
-          { error: 'Base salary must be greater than 0' },
-          { status: 400 }
-        )
-      }
-      updateData.base_salary = base_salary
-    }
-
-    if (join_date !== undefined) {
-      updateData.join_date = join_date
-    }
-
-    if (status !== undefined) {
-      if (!['Active', 'Inactive'].includes(status)) {
-        return NextResponse.json(
-          { error: 'Status must be Active or Inactive' },
-          { status: 400 }
-        )
-      }
-      updateData.status = status
+    // `patch` mode: only what was actually submitted is checked, which is what
+    // the old handler did with its per-field `!== undefined` branches.
+    const check = validateEmployee(values, 'patch')
+    if (!check.ok) {
+      return NextResponse.json(
+        { success: false, error: firstError(check.errors), fieldErrors: check.errors },
+        { status: 400 }
+      )
     }
 
     const supabase = await createClient()
 
     const { data: employee, error } = await supabase
       .from('employees')
-      .update(updateData)
+      .update({ ...values, updated_by: user.id })
       .eq('id', id)
       .select()
-      .single()
+      .maybeSingle()
 
-    if (error) throw error
+    if (error) {
+      if (error.code === '23505') return duplicateCodeResponse(values.employee_code)
+      throw error
+    }
+
+    if (!employee) {
+      return NextResponse.json(
+        { success: false, error: 'Employee not found' },
+        { status: 404 }
+      )
+    }
 
     return NextResponse.json({
       success: true,
       message: 'Employee updated successfully',
-      data: employee
+      data: employee,
     })
   } catch (error: any) {
     console.error('Error updating employee:', error)
@@ -203,11 +134,6 @@ export async function PUT(
   }
 }
 
-/**
- * DELETE /api/employees/:id
- * Delete employee and all related data (Admin only)
- * Cascades: salary_payments and advances
- */
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -215,61 +141,35 @@ export async function DELETE(
   try {
     const { id } = await params
 
-    // Token refresh logic
-    let accessToken = await getAccessToken()
-    if (!accessToken) {
-      const refreshToken = await getRefreshToken()
-      if (!refreshToken) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
-      const refreshPayload = await verifyToken(refreshToken)
-      if (!refreshPayload) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
-      accessToken = await generateAccessToken({
-        userId: refreshPayload.userId,
-        email: refreshPayload.email,
-        role: refreshPayload.role
-      })
-
-      const newRefreshToken = await generateRefreshToken({
-        userId: refreshPayload.userId,
-        email: refreshPayload.email,
-        role: refreshPayload.role
-      })
-
-      await setAuthCookies(accessToken, newRefreshToken)
-    }
-
-    const payload = await verifyToken(accessToken)
-    if (!payload) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // Admin only
-    if (payload.role !== 'ADMIN' && payload.role !== 'DOCTOR') {
-      return NextResponse.json({ error: 'Forbidden. Admin access required.' }, { status: 403 })
-    }
+    const auth = await requireEmployee(request, 'employee:delete')
+    if (auth.response) return auth.response
+    const { user } = auth
 
     const supabase = await createClient()
 
-    // Soft delete: Mark employee as Inactive instead of physically deleting
-    // This preserves historical data relationships in salary_payments and advances tables
-    const { data: updatedEmployee, error } = await supabase
+    // Soft delete: mark Inactive rather than removing the row, so the salary
+    // and advance history hanging off it stays readable. The register's
+    // Active/Inactive/All filter is what makes this reversible.
+    const { data: employee, error } = await supabase
       .from('employees')
-      .update({ status: 'Inactive' })
+      .update({ status: 'Inactive', updated_by: user.id })
       .eq('id', id)
       .select()
-      .single()
+      .maybeSingle()
 
     if (error) throw error
+
+    if (!employee) {
+      return NextResponse.json(
+        { success: false, error: 'Employee not found' },
+        { status: 404 }
+      )
+    }
 
     return NextResponse.json({
       success: true,
       message: 'Employee marked as Inactive successfully',
-      data: updatedEmployee
+      data: employee,
     })
   } catch (error: any) {
     console.error('Error deleting employee:', error)

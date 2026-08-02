@@ -3,6 +3,10 @@
 import { useState, useEffect } from 'react'
 import { X, Plus, Edit2, DollarSign, AlertCircle, CheckCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { inr } from '@/lib/format/currency'
+import { UpdatedStamp } from '@/components/ui/updated-stamp'
+import { downloadPayslip } from '@/lib/pdf/payslip-pdf'
+import { Download } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 
 interface Advance {
@@ -10,6 +14,10 @@ interface Advance {
   amount: number
   date_given: string
   remarks: string | null
+  /** Who physically handed over the cash — free text, often not a system user. */
+  given_by?: string | null
+  created_at?: string | null
+  created_by_user?: { username?: string } | null
 }
 
 interface SalaryDetailsModalProps {
@@ -23,6 +31,7 @@ interface SalaryDetailsModalProps {
 export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth, onSuccess }: SalaryDetailsModalProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [downloadingSlip, setDownloadingSlip] = useState(false)
   const [employeeData, setEmployeeData] = useState<any>(null)
   const [salaryRecord, setSalaryRecord] = useState<any>(null)
   const [advances, setAdvances] = useState<Advance[]>([])
@@ -86,7 +95,7 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
 
     if (numAmount > validation.max_allowed_advance) {
       setAmountError(
-        `Advance cannot exceed ₹${validation.max_allowed_advance.toFixed(2)}`
+        `Advance cannot exceed ${inr(validation.max_allowed_advance)}`
       )
       return
     }
@@ -315,10 +324,22 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
   return (
     <div className="fixed inset-0 bg-overlay flex items-end sm:items-center justify-center z-50 sm:p-0">
       <div className="bg-surface rounded-t-2xl sm:rounded-lg p-4 sm:p-6 w-full sm:max-w-2xl sm:mx-4 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg sm:text-xl font-bold text-foreground">
-            {employeeData.name} - {selectedMonth}
-          </h2>
+        <div className="flex items-start justify-between mb-4 gap-3">
+          <div className="min-w-0">
+            <h2 className="text-lg sm:text-xl font-bold text-foreground truncate">
+              {employeeData.name} - {selectedMonth}
+            </h2>
+            {/* Code, designation, joining date and employment status: on the
+                table all along, shown by this modal for the first time. */}
+            <p className="text-xs text-muted mt-0.5">
+              {[
+                employeeData.employee_code,
+                employeeData.designation,
+                employeeData.join_date ? `joined ${employeeData.join_date}` : null,
+                employeeData.status && employeeData.status !== 'Active' ? employeeData.status : null,
+              ].filter(Boolean).join(' \u00b7 ') || '\u2014'}
+            </p>
+          </div>
           <button onClick={onClose} className="text-muted hover:text-foreground p-1 min-h-[44px] min-w-[44px] flex items-center justify-center">
             <X size={24} />
           </button>
@@ -398,7 +419,7 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
             <div className="bg-surface-hover p-4 rounded space-y-2">
               <div className="flex justify-between">
                 <span className="text-muted">Base Salary:</span>
-                <span className="text-foreground font-medium">₹{parseFloat(baseSalary).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                <span className="text-foreground font-medium">{inr(baseSalary)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted">Days Present:</span>
@@ -413,11 +434,11 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
               <div className="border-t border-input-border pt-3 mt-3 space-y-2">
                 <div className="flex justify-between bg-surface-inset/50 p-2 rounded">
                   <span className="text-foreground font-medium">Calculated Salary:</span>
-                  <span className="text-foreground font-semibold">₹{calculatedSalary.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                  <span className="text-foreground font-semibold">{inr(calculatedSalary)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted">Advances Deducted:</span>
-                  <span className="text-primary font-medium">-₹{totalAdvancesAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                  <span className="text-primary font-medium">{`- ${inr(totalAdvancesAmount)}`}</span>
                 </div>
 
               </div>
@@ -432,7 +453,7 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
                       {salaryRecord.status}
                     </span>
                     <span className="text-success-text font-bold text-lg">
-                      ₹{(finalSalary || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                      {inr(finalSalary)}
                     </span>
                   </div>
                 </div>
@@ -505,14 +526,14 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
                     <div>
                       <div className="text-muted">Base Salary</div>
                       <div className="text-foreground font-semibold">
-                        ₹{validation.base_salary.toFixed(2)}
+                        {inr(validation.base_salary)}
                       </div>
                     </div>
                     {validation.calculated_salary !== null && (
                       <div>
                         <div className="text-muted">Calculated Salary</div>
                         <div className="text-foreground font-semibold">
-                          ₹{validation.calculated_salary.toFixed(2)}
+                          {inr(validation.calculated_salary)}
                         </div>
                       </div>
                     )}
@@ -523,7 +544,7 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
                     <div className="text-xs">
                       <div className="text-muted">Total Advances</div>
                       <div className="text-primary font-semibold">
-                        -₹{validation.current_total_advances.toFixed(2)}
+                        -{inr(validation.current_total_advances)}
                       </div>
                     </div>
                   )}
@@ -538,7 +559,7 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
                             Can Add Advance
                           </div>
                           <div className="text-success-text text-xs">
-                            Maximum: ₹{validation.max_allowed_advance.toFixed(2)}
+                            Maximum: {inr(validation.max_allowed_advance, { clamp: true })}
                           </div>
                         </div>
                       </div>
@@ -631,6 +652,7 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
                 <thead>
                   <tr className="border-b border-input-border">
                     <th className="text-left py-2 px-4 text-muted">Date Given</th>
+                    <th className="text-left py-2 px-4 text-muted">Given By</th>
                     <th className="text-left py-2 px-4 text-muted">Amount</th>
                     <th className="text-left py-2 px-4 text-muted">Remarks</th>
                   </tr>
@@ -639,8 +661,16 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
                   {advances.map((advance) => (
                     <tr key={advance.id} className="border-b border-border hover:bg-surface-hover">
                       <td className="py-3 px-4 text-foreground">{advance.date_given}</td>
+                      <td className="py-3 px-4 text-foreground">
+                        {advance.given_by || '-'}
+                        <UpdatedStamp
+                          by={advance.created_by_user?.username}
+                          at={advance.created_at}
+                          action="Recorded"
+                        />
+                      </td>
                       <td className="py-3 px-4 text-primary font-medium">
-                        ₹{parseFloat(advance.amount.toString()).toLocaleString('en-IN')}
+                        {inr(advance.amount)}
                       </td>
                       <td className="py-3 px-4 text-muted">{advance.remarks || '-'}</td>
                     </tr>
@@ -654,15 +684,36 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
 
           {advances.length > 0 && (
             <div className="text-right border-t border-input-border pt-4">
-              <p className="text-muted">Total Advances: <span className="text-primary font-bold">₹{totalAdvancesAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span></p>
+              <p className="text-muted">Total Advances: <span className="text-primary font-bold">{inr(totalAdvancesAmount)}</span></p>
             </div>
           )}
         </div>
 
         {/* Action Buttons */}
-        <div className="flex gap-3 pt-6 border-t border-input-border">
+        <div className="flex flex-col sm:flex-row gap-3 pt-6 border-t border-input-border">
           <Button variant="outline" onClick={onClose} className="flex-1">
             Close
+          </Button>
+          {/* Until now an employee had nothing to take away when they were paid:
+              the only advance figure in any document was the summed total. */}
+          <Button
+            variant="outline"
+            className="flex-1"
+            disabled={downloadingSlip}
+            onClick={async () => {
+              if (!employeeId) return
+              setDownloadingSlip(true)
+              try {
+                await downloadPayslip(employeeId, selectedMonth)
+              } catch (err: any) {
+                setError(err.message)
+              } finally {
+                setDownloadingSlip(false)
+              }
+            }}
+          >
+            <Download size={16} className="mr-2" />
+            {downloadingSlip ? 'Preparing...' : 'Payslip'}
           </Button>
           {salaryRecord && salaryRecord.status !== 'settled' && (
             <Button
@@ -670,7 +721,7 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
               disabled={loading}
               className="flex-1 bg-success hover:bg-success-hover"
             >
-              Settle (₹{finalSalary.toLocaleString('en-IN', { maximumFractionDigits: 2 })})
+              Settle ({inr(finalSalary)})
             </Button>
           )}
         </div>

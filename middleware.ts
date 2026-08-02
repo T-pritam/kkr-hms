@@ -73,11 +73,34 @@ export async function middleware(request: NextRequest) {
 
   // Role-based access control
   if (isAuthenticated && userRole) {
-    const adminOnlyPaths = ['/employees', '/finances', '/daily-ledger/employee-ledger', '/admin']
-    const isAdminOnlyPath = adminOnlyPaths.some(path => pathname.startsWith(path))
-    
-    if (isAdminOnlyPath && userRole !== 'ADMIN') {
-      return NextResponse.redirect(new URL('/dashboard', request.url))
+    /**
+     * Carve-outs inside an admin-only prefix.
+     *
+     * `/employees` is admin-only, but the advance log is deliberately open to
+     * reception — they hand the cash over and are asked for the log more than
+     * anyone. Checked *before* the prefix list so ordering cannot accidentally
+     * expose the staff register or payroll alongside it.
+     *
+     * This only governs the page. The API enforces the same split itself, in
+     * lib/employees/authz.ts, because middleware does not guard `/api/**` here.
+     */
+    const sharedPaths: { path: string; roles: string[] }[] = [
+      { path: '/employees/advances', roles: ['ADMIN', 'DOCTOR', 'RECEPTIONIST'] },
+    ]
+
+    const shared = sharedPaths.find(entry => pathname.startsWith(entry.path))
+
+    if (shared) {
+      if (!shared.roles.includes(userRole)) {
+        return NextResponse.redirect(new URL('/dashboard', request.url))
+      }
+    } else {
+      const adminOnlyPaths = ['/employees', '/finances', '/daily-ledger/employee-ledger', '/admin']
+      const isAdminOnlyPath = adminOnlyPaths.some(path => pathname.startsWith(path))
+
+      if (isAdminOnlyPath && userRole !== 'ADMIN') {
+        return NextResponse.redirect(new URL('/dashboard', request.url))
+      }
     }
   }
 

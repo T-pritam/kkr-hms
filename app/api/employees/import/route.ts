@@ -1,24 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyToken } from '@/lib/auth/jwt'
 import { createClient } from '@/lib/supabase/server'
+import { requireEmployee } from '@/lib/employees/authz'
 
 export async function POST(request: NextRequest) {
   try {
-    // Verify authentication
-    const token = request.cookies.get('accessToken')?.value
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const payload = await verifyToken(token)
-    if (!payload) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
-    }
-
-    // Admin only
-    if (payload.role !== 'ADMIN' && payload.role !== 'DOCTOR') {
-      return NextResponse.json({ error: 'Forbidden. Admin access required.' }, { status: 403 })
-    }
+    const auth = await requireEmployee(request, 'employee:write')
+    if (auth.response) return auth.response
 
     const formData = await request.formData()
     const file = formData.get('file') as File

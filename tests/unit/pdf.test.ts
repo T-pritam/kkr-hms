@@ -8,6 +8,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { renderAdvanceLog, advanceLogFilename } from '@/lib/pdf/advance-log-pdf'
+import { renderPayslip, payslipFilename } from '@/lib/pdf/payslip-pdf'
 import { generatePatientPDF, type PatientPDFData } from '@/lib/pdf/patient-pdf'
 import { generateIncomePDF, generateExpenseBreakdownPDF, generateMonthlyFinancePDF } from '@/lib/pdf/finance-pdf'
 import { generateLabReportPDF, renderLabReport } from '@/lib/pdf/lab-report-pdf'
@@ -558,3 +560,187 @@ describe('mergePdfs', () => {
     await expect(mergePdfs([])).rejects.toThrow(/nothing to download/i)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('renderAdvanceLog', () => {
+  const employee = (over: Record<string, unknown> = {}) => ({
+    employee_code: 'EMP/26/001',
+    name: 'Ramesh Kumar',
+    designation: 'Nurse',
+    base_salary: 27000,
+    ...over,
+  })
+
+  const row = (over: Record<string, unknown> = {}) => ({
+    id: 1,
+    amount: 5000,
+    date_given: '2026-08-04',
+    remarks: 'Festival',
+    given_by: 'Anita Sharma',
+    employee: employee(),
+    created_by_user: { username: 'reception1' },
+    ...over,
+  })
+
+  const logData = (over: Record<string, unknown> = {}) => ({
+    month_year: '2026-08',
+    rows: [row()],
+    by_employee: [
+      {
+        employee_id: 'e1',
+        employee_code: 'EMP/26/001',
+        name: 'Ramesh Kumar',
+        designation: 'Nurse',
+        base_salary: 27000,
+        total: 5000,
+        count: 1,
+      },
+    ],
+    summary: {
+      total_amount: 5000,
+      advance_count: 1,
+      employee_count: 1,
+      largest_advance: 5000,
+      previous_month: '2026-07',
+      previous_total: 4000,
+    },
+    ...over,
+  })
+
+  it('renders', () => {
+    const doc = renderAdvanceLog(logData() as any)
+    expect(doc.getNumberOfPages()).toBeGreaterThanOrEqual(1)
+  })
+
+  /** A month with nothing in it is a legitimate answer, not an error. */
+  it('renders an empty month without throwing', () => {
+    const doc = renderAdvanceLog(
+      logData({
+        rows: [],
+        by_employee: [],
+        summary: {
+          total_amount: 0, advance_count: 0, employee_count: 0,
+          largest_advance: 0, previous_month: '2026-07', previous_total: 0,
+        },
+      }) as any,
+    )
+    expect(doc.getNumberOfPages()).toBe(1)
+  })
+
+  it('breaks across pages for a long month, repeating the headings', () => {
+    const rows = Array.from({ length: 80 }, (_, i) =>
+      row({ id: i + 1, amount: 1000 + i, employee: employee({ name: `Employee ${i}` }) }),
+    )
+    const doc = renderAdvanceLog(logData({ rows }) as any)
+    expect(doc.getNumberOfPages()).toBeGreaterThan(1)
+  })
+
+  it('survives rows with no employee, no remark and no given_by', () => {
+    const doc = renderAdvanceLog(
+      logData({ rows: [row({ employee: null, remarks: null, given_by: null, created_by_user: null })] }) as any,
+    )
+    expect(doc.getNumberOfPages()).toBeGreaterThanOrEqual(1)
+  })
+
+  it('does not divide by zero when nothing was advanced last month', () => {
+    const doc = renderAdvanceLog(
+      logData({
+        summary: {
+          total_amount: 5000, advance_count: 1, employee_count: 1,
+          largest_advance: 5000, previous_month: '2026-07', previous_total: 0,
+        },
+      }) as any,
+    )
+    expect(doc.getNumberOfPages()).toBeGreaterThanOrEqual(1)
+  })
+
+  it('names the file after the month', () => {
+    expect(advanceLogFilename('2026-08')).toBe('Advance_Log_2026-08.pdf')
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+describe('renderPayslip', () => {
+  const slipData = (over: Record<string, unknown> = {}) => ({
+    month_year: '2026-08',
+    employee: {
+      employee_code: 'EMP/26/001',
+      name: 'Ramesh Kumar',
+      designation: 'Nurse',
+      join_date: '2025-01-01',
+      phone: '9876543210',
+      bank_account_no: '123456789012',
+      bank_ifsc: 'HDFC0001234',
+      status: 'Active',
+    },
+    salary_record: {
+      base_salary: 27000,
+      total_working_days: 27,
+      days_present: 27,
+      ot_days: 0,
+      calculated_salary: 27000,
+      total_advance: 5000,
+      final_salary: 22000,
+      status: 'settled',
+      settled_on: '2026-08-31',
+      settled_by_user: { username: 'admin' },
+    },
+    advances: [
+      {
+        id: 1, amount: 5000, date_given: '2026-08-04',
+        remarks: 'Festival', given_by: 'Anita Sharma',
+        created_by_user: { username: 'reception1' },
+      },
+    ],
+    ...over,
+  })
+
+  it('renders', () => {
+    const doc = renderPayslip(slipData() as any)
+    expect(doc.getNumberOfPages()).toBeGreaterThanOrEqual(1)
+  })
+
+  /** Advances exist before payroll is run; the slip still has to print. */
+  it('renders a month with no salary record', () => {
+    const doc = renderPayslip(slipData({ salary_record: null }) as any)
+    expect(doc.getNumberOfPages()).toBeGreaterThanOrEqual(1)
+  })
+
+  it('renders an employee with no advances', () => {
+    const doc = renderPayslip(slipData({ advances: [] }) as any)
+    expect(doc.getNumberOfPages()).toBeGreaterThanOrEqual(1)
+  })
+
+  it('renders an unsettled month', () => {
+    const doc = renderPayslip(
+      slipData({
+        salary_record: { ...(slipData().salary_record as any), status: 'pending', settled_on: null, settled_by_user: null },
+      }) as any,
+    )
+    expect(doc.getNumberOfPages()).toBeGreaterThanOrEqual(1)
+  })
+
+  it('breaks across pages when there are many advances', () => {
+    const advances = Array.from({ length: 60 }, (_, i) => ({
+      id: i + 1, amount: 500, date_given: '2026-08-04',
+      remarks: 'Weekly', given_by: 'Anita', created_by_user: { username: 'reception1' },
+    }))
+    const doc = renderPayslip(slipData({ advances }) as any)
+    expect(doc.getNumberOfPages()).toBeGreaterThan(1)
+  })
+
+  it('survives a bare record with almost nothing filled in', () => {
+    const doc = renderPayslip({
+      month_year: '2026-08',
+      employee: { name: 'Ramesh' },
+      salary_record: null,
+      advances: [],
+    } as any)
+    expect(doc.getNumberOfPages()).toBeGreaterThanOrEqual(1)
+  })
+
+  it('names the file after the employee and the month', () => {
+    expect(payslipFilename(slipData() as any)).toBe('Payslip_Ramesh_Kumar_2026-08.pdf')
+  })
+})
+

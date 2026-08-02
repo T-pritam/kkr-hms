@@ -14,7 +14,11 @@
  */
 
 export const SCHEMA: Record<string, string[]> = {
-  advances: ['id', 'employee_id', 'amount', 'date_given', 'month_year', 'remarks', 'created_at'],
+  advances: [
+    'id', 'employee_id', 'amount', 'date_given', 'month_year', 'remarks', 'created_at',
+    // 20260804000003 — who handed it over, and who recorded it
+    'given_by', 'created_by', 'updated_by', 'updated_at',
+  ],
 
   daily_ledger_closures: [
     'id', 'closure_date', 'total_credits_cash', 'total_credits_upi', 'total_credits_other',
@@ -69,7 +73,17 @@ export const SCHEMA: Record<string, string[]> = {
     'actor_id', 'actor_name', 'actor_role', 'created_at',
   ],
 
-  employees: ['id', 'name', 'designation', 'base_salary', 'join_date', 'status', 'created_at', 'updated_at'],
+  employees: [
+    'id', 'name', 'designation', 'base_salary', 'join_date', 'status', 'created_at', 'updated_at',
+    // 20260804000001 — registration fields
+    'employee_code', 'phone', 'address', 'emergency_contact_name', 'emergency_contact_relation',
+    'emergency_contact_phone', 'date_of_birth', 'gender', 'id_proof_type', 'id_proof_number',
+    'bank_account_no', 'bank_ifsc',
+    // 20260804000003 — attribution
+    'created_by', 'updated_by',
+  ],
+
+  employee_counters: ['year', 'last_no'],
 
   expenses: ['id', 'expense_type', 'amount', 'expense_date', 'month_year', 'remarks', 'created_at'],
 
@@ -162,6 +176,8 @@ export const SCHEMA: Record<string, string[]> = {
     'id', 'employee_id', 'month_year', 'base_salary', 'total_working_days', 'days_present',
     'total_advance', 'calculated_salary', 'final_salary', 'status', 'settled_on', 'created_at',
     'updated_at', 'ot_days',
+    // 20260804000003 — settled_on recorded when; these record who
+    'created_by', 'updated_by', 'settled_by',
   ],
 
   test_parameter_ranges: [

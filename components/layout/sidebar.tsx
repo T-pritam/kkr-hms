@@ -68,10 +68,13 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
     {
       name: 'Employees',
       icon: UsersRound,
-      roles: ['ADMIN', 'DOCTOR'],
+      // Reception sees this group for the advance log alone; the two entries
+      // below stay ADMIN-only, so the menu expands to exactly one item for them.
+      roles: ['ADMIN', 'DOCTOR', 'RECEPTIONIST'],
       submenu: [
         { name: 'Employee Details', href: '/employees/details', roles: ['ADMIN'] },
         { name: 'Employee Salary', href: '/employees/salary', roles: ['ADMIN'] },
+        { name: 'Advance Log', href: '/employees/advances', roles: ['ADMIN', 'DOCTOR', 'RECEPTIONIST'] },
       ],
     },
     {

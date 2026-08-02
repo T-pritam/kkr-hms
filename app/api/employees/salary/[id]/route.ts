@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { verifyToken, getAccessToken, getRefreshToken, setAuthCookies, generateAccessToken, generateRefreshToken } from '@/lib/auth/jwt'
+import { requireEmployee } from '@/lib/employees/authz'
 
 /**
  * GET /api/employees/salary/[id]
@@ -13,43 +13,8 @@ export async function GET(
   try {
     const { id } = await params
 
-    // Token refresh logic
-    let accessToken = await getAccessToken()
-    if (!accessToken) {
-      const refreshToken = await getRefreshToken()
-      if (!refreshToken) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
-      const refreshPayload = await verifyToken(refreshToken)
-      if (!refreshPayload) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
-      accessToken = await generateAccessToken({
-        userId: refreshPayload.userId,
-        email: refreshPayload.email,
-        role: refreshPayload.role
-      })
-
-      const newRefreshToken = await generateRefreshToken({
-        userId: refreshPayload.userId,
-        email: refreshPayload.email,
-        role: refreshPayload.role
-      })
-
-      await setAuthCookies(accessToken, newRefreshToken)
-    }
-
-    const payload = await verifyToken(accessToken)
-    if (!payload) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // Admin only
-    if (payload.role !== 'ADMIN' && payload.role !== 'DOCTOR') {
-      return NextResponse.json({ error: 'Forbidden. Admin access required.' }, { status: 403 })
-    }
+    const auth = await requireEmployee(request, 'salary:read')
+    if (auth.response) return auth.response
 
     const supabase = await createClient()
 
@@ -106,43 +71,9 @@ export async function PATCH(
   try {
     const { id } = await params
 
-    // Token refresh logic
-    let accessToken = await getAccessToken()
-    if (!accessToken) {
-      const refreshToken = await getRefreshToken()
-      if (!refreshToken) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
-      const refreshPayload = await verifyToken(refreshToken)
-      if (!refreshPayload) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
-      accessToken = await generateAccessToken({
-        userId: refreshPayload.userId,
-        email: refreshPayload.email,
-        role: refreshPayload.role
-      })
-
-      const newRefreshToken = await generateRefreshToken({
-        userId: refreshPayload.userId,
-        email: refreshPayload.email,
-        role: refreshPayload.role
-      })
-
-      await setAuthCookies(accessToken, newRefreshToken)
-    }
-
-    const payload = await verifyToken(accessToken)
-    if (!payload) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // Admin only
-    if (payload.role !== 'ADMIN' && payload.role !== 'DOCTOR') {
-      return NextResponse.json({ error: 'Forbidden. Admin access required.' }, { status: 403 })
-    }
+    const auth = await requireEmployee(request, 'salary:write')
+    if (auth.response) return auth.response
+    const { user } = auth
 
     const supabase = await createClient()
 
@@ -251,6 +182,7 @@ export async function PATCH(
     updateData.calculated_salary = parseFloat(calculatedSalary.toFixed(2))
     updateData.final_salary = parseFloat(finalSalary.toFixed(2))
     updateData.total_advance = totalAdvance
+    updateData.updated_by = user.id
 
     // Update record
     const { data: updatedRecord, error } = await supabase
@@ -289,43 +221,8 @@ export async function DELETE(
   try {
     const { id } = await params
 
-    // Token refresh logic
-    let accessToken = await getAccessToken()
-    if (!accessToken) {
-      const refreshToken = await getRefreshToken()
-      if (!refreshToken) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
-      const refreshPayload = await verifyToken(refreshToken)
-      if (!refreshPayload) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
-      accessToken = await generateAccessToken({
-        userId: refreshPayload.userId,
-        email: refreshPayload.email,
-        role: refreshPayload.role
-      })
-
-      const newRefreshToken = await generateRefreshToken({
-        userId: refreshPayload.userId,
-        email: refreshPayload.email,
-        role: refreshPayload.role
-      })
-
-      await setAuthCookies(accessToken, newRefreshToken)
-    }
-
-    const payload = await verifyToken(accessToken)
-    if (!payload) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // Admin only
-    if (payload.role !== 'ADMIN' && payload.role !== 'DOCTOR') {
-      return NextResponse.json({ error: 'Forbidden. Admin access required.' }, { status: 403 })
-    }
+    const auth = await requireEmployee(request, 'salary:write')
+    if (auth.response) return auth.response
 
     const supabase = await createClient()
 

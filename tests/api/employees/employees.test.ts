@@ -331,7 +331,7 @@ describe('/api/employees/advances', () => {
 
     const { status, body } = await advances()
     expect(status).toBe(400)
-    expect(body.error).toBe('month_year parameter is required')
+    expect(body.error).toMatch(/month_year parameter is required/)
   })
 
   it('lists the month’s advances with a summary', async () => {
@@ -370,7 +370,7 @@ describe('/api/employees/advances', () => {
     })
 
     expect(status).toBe(400)
-    expect(body.error).toBe('Invalid month_year format. Must be YYYY-MM')
+    expect(body.fieldErrors.month_year).toMatch(/YYYY-MM/)
   })
 
   it('returns 404 for an unknown employee', async () => {
@@ -431,7 +431,9 @@ describe('POST /api/employees/[id]/salary/advances — the capped route', () => 
 
     const { status, body } = await createEmployeeAdvance('e1', { amount: 1000 })
     expect(status).toBe(400)
-    expect(body.error).toBe('Amount, date, and month_year are required')
+    // Per-field now, so the form can mark the offending box.
+    expect(body.fieldErrors).toHaveProperty('date_given')
+    expect(body.fieldErrors).toHaveProperty('month_year')
   })
 
   it('returns 404 for an unknown employee', async () => {
@@ -588,5 +590,170 @@ describe('GET /api/employees/[id]/salary/advances/validation', () => {
 
     expect(body.can_add_advance).toBe(false)
     expect(body.validation_message).toBe('Salary is already settled. No further advances can be added.')
+  })
+})
+
+describe('the employee register — code, paging and status', () => {
+  const yy = String(new Date().getFullYear() % 100).padStart(2, '0')
+
+  it('issues an employee code when the caller does not supply one', async () => {
+    await signInAs('ADMIN')
+    db.seed('employee_counters', { year: new Date().getFullYear(), last_no: 6 })
+
+    const { status, body } = await create({ name: 'Ramesh', designation: 'Nurse', base_salary: 27000 })
+
+    expect(status).toBe(201)
+    expect(body.data.employee_code).toBe(`EMP/${yy}/007`)
+  })
+
+  it('gives two simultaneous additions different codes', async () => {
+    await signInAs('ADMIN')
+
+    const first = await create({ name: 'Ramesh', designation: 'Nurse', base_salary: 27000 })
+    const second = await create({ name: 'Suresh', designation: 'Nurse', base_salary: 27000 })
+
+    expect(first.body.data.employee_code).toBe(`EMP/${yy}/001`)
+    expect(second.body.data.employee_code).toBe(`EMP/${yy}/002`)
+  })
+
+  it('keeps a code the caller typed, without burning one from the series', async () => {
+    await signInAs('ADMIN')
+
+    const { body } = await create({
+      name: 'Ramesh', designation: 'Nurse', base_salary: 27000, employee_code: 'LEGACY-7',
+    })
+
+    expect(body.data.employee_code).toBe('LEGACY-7')
+    expect(db.count('employee_counters')).toBe(0)
+  })
+
+  it('reports a duplicate code as a 409 against the field', async () => {
+    await signInAs('ADMIN')
+    anEmployee({ employee_code: 'EMP/26/001' })
+
+    const { status, body } = await create({
+      name: 'Ramesh', designation: 'Nurse', base_salary: 27000, employee_code: 'EMP/26/001',
+    })
+
+    expect(status).toBe(409)
+    expect(body.fieldErrors.employee_code).toBeDefined()
+  })
+
+  it('records who added and who last edited', async () => {
+    await signInAs('ADMIN', { userId: 'u-admin' })
+
+    const { body } = await create({ name: 'Ramesh', designation: 'Nurse', base_salary: 27000 })
+    expect(db.rows('employees')[0]).toMatchObject({ created_by: 'u-admin', updated_by: 'u-admin' })
+
+    await signInAs('DOCTOR', { userId: 'u-doc' })
+    await update(body.data.id, { name: 'Ramesh Kumar' })
+
+    expect(db.find('employees', r => r.id === body.data.id)).toMatchObject({
+      created_by: 'u-admin',
+      updated_by: 'u-doc',
+    })
+  })
+
+  it('stores the new optional fields', async () => {
+    await signInAs('ADMIN')
+
+    await create({
+      name: 'Ramesh',
+      designation: 'Nurse',
+      base_salary: 27000,
+      phone: '9876543210',
+      emergency_contact_name: 'Sita',
+      emergency_contact_relation: 'Spouse',
+      gender: 'Male',
+      id_proof_type: 'Aadhaar',
+      bank_account_no: '123456789012',
+      bank_ifsc: 'HDFC0001234',
+    })
+
+    expect(db.rows('employees')[0]).toMatchObject({
+      phone: '9876543210',
+      emergency_contact_relation: 'Spouse',
+      gender: 'Male',
+      id_proof_type: 'Aadhaar',
+      bank_ifsc: 'HDFC0001234',
+    })
+  })
+
+  it.each([
+    ['an unknown gender', { gender: 'MALE' }, 'gender'],
+    ['an unknown relation', { emergency_contact_relation: 'Neighbour' }, 'emergency_contact_relation'],
+    ['a malformed IFSC', { bank_ifsc: 'NOPE' }, 'bank_ifsc'],
+    ['a phone too short to dial', { phone: '12' }, 'phone'],
+  ])('rejects %s', async (_label, patch, field) => {
+    await signInAs('ADMIN')
+
+    const { status, body } = await create({
+      name: 'Ramesh', designation: 'Nurse', base_salary: 27000, ...patch,
+    })
+
+    expect(status).toBe(400)
+    expect(body.fieldErrors).toHaveProperty(field)
+  })
+
+  it('defaults to Active, and ?status=all is what makes the soft delete reversible', async () => {
+    await signInAs('ADMIN')
+    anEmployee({ id: 'e1', name: 'Working', status: 'Active' })
+    anEmployee({ id: 'e2', name: 'Retired', status: 'Inactive' })
+
+    expect((await list()).body.data.map((e: any) => e.id)).toEqual(['e1'])
+    expect((await list({ status: 'Inactive' })).body.data.map((e: any) => e.id)).toEqual(['e2'])
+    expect((await list({ status: 'all' })).body.data).toHaveLength(2)
+  })
+
+  it('restores a deactivated employee', async () => {
+    await signInAs('ADMIN')
+    anEmployee({ id: 'e1', status: 'Inactive' })
+
+    const { status } = await update('e1', { status: 'Active' })
+
+    expect(status).toBe(200)
+    expect(db.find('employees', r => r.id === 'e1')!.status).toBe('Active')
+  })
+
+  it('searches by name, code, designation and phone', async () => {
+    await signInAs('ADMIN')
+    anEmployee({ id: 'e1', name: 'Ramesh', employee_code: 'EMP/26/001', phone: '9990001111' })
+    anEmployee({ id: 'e2', name: 'Suresh', employee_code: 'EMP/26/002', designation: 'Wardboy' })
+
+    expect((await list({ search: 'ramesh' })).body.data.map((e: any) => e.id)).toEqual(['e1'])
+    expect((await list({ search: '002' })).body.data.map((e: any) => e.id)).toEqual(['e2'])
+    expect((await list({ search: 'wardboy' })).body.data.map((e: any) => e.id)).toEqual(['e2'])
+    expect((await list({ search: '9990' })).body.data.map((e: any) => e.id)).toEqual(['e1'])
+  })
+
+  it('pages and caps pageSize', async () => {
+    await signInAs('ADMIN')
+    for (let i = 1; i <= 5; i++) anEmployee({ id: `e${i}`, name: `Employee ${i}` })
+
+    const { body } = await list({ page: 2, pageSize: 2 })
+
+    expect(body).toMatchObject({ total: 5, page: 2, pageSize: 2, totalPages: 3 })
+    expect(body.data).toHaveLength(2)
+    expect((await list({ page: 1, pageSize: 100000 })).body.pageSize).toBe(100)
+  })
+
+  /** month_year enriches with payroll and the salary screens read it whole. */
+  it('does not page the month_year listing', async () => {
+    await signInAs('ADMIN')
+    for (let i = 1; i <= 5; i++) anEmployee({ id: `e${i}` })
+
+    const { body } = await list({ month_year: THIS_MONTH, page: 1, pageSize: 2 })
+    expect(body.data).toHaveLength(5)
+  })
+
+  it('sorts by a chosen column', async () => {
+    await signInAs('ADMIN')
+    anEmployee({ id: 'e1', name: 'Zara' })
+    anEmployee({ id: 'e2', name: 'Amit' })
+
+    expect((await list({ sort: 'name', dir: 'asc' })).body.data.map((e: any) => e.name))
+      .toEqual(['Amit', 'Zara'])
+    expect((await list({ sort: 'name', dir: 'desc' })).body.data.map((e: any) => e.name))
+      .toEqual(['Zara', 'Amit'])
   })
 })

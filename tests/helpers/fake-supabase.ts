@@ -79,6 +79,10 @@ const RELATIONSHIPS: Record<string, { localKey?: string; foreignKey?: string; ma
 
   // Patient registry
   'patients.referrals': { localKey: 'referred_by' },
+
+  // Payroll
+  'advances.employees': { localKey: 'employee_id' },
+  'salary_payments.employees': { localKey: 'employee_id' },
 }
 
 /**
@@ -92,6 +96,7 @@ const RELATIONSHIPS: Record<string, { localKey?: string; foreignKey?: string; ma
  */
 const UNIQUE_INDEXES: Record<string, string[][]> = {
   patients: [['patient_id']],
+  employees: [['employee_code']],
 }
 
 /** Postgres's error for a duplicate key, which routes match on by code. */
@@ -840,6 +845,21 @@ const RPCS: Record<string, (db: FakeDb, args: Record<string, unknown>) => unknow
     const year = new Date().getFullYear()
     const yy = String(year % 100).padStart(2, '0')
     return `${peekCounter(db, 'patient_counters', year)}/${yy}`
+  },
+
+  // EMP/<2-digit year>/<3 digits>. Same consume-vs-peek split as the patient ID.
+  next_employee_code: (db) => {
+    const year = new Date().getFullYear()
+    const yy = String(year % 100).padStart(2, '0')
+    const next = bumpCounter(db, 'employee_counters', year)
+    return `EMP/${yy}/${String(next).padStart(3, '0')}`
+  },
+
+  peek_next_employee_code: (db) => {
+    const year = new Date().getFullYear()
+    const yy = String(year % 100).padStart(2, '0')
+    const next = peekCounter(db, 'employee_counters', year)
+    return `EMP/${yy}/${String(next).padStart(3, '0')}`
   },
 }
 

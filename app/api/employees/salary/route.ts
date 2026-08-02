@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { verifyToken, getAccessToken, getRefreshToken, setAuthCookies, generateAccessToken, generateRefreshToken } from '@/lib/auth/jwt'
+import { requireEmployee } from '@/lib/employees/authz'
 
 /**
  * GET /api/employees/salary?month_year=YYYY-MM
@@ -8,43 +8,8 @@ import { verifyToken, getAccessToken, getRefreshToken, setAuthCookies, generateA
  */
 export async function GET(request: NextRequest) {
   try {
-    // Token refresh logic
-    let accessToken = await getAccessToken()
-    if (!accessToken) {
-      const refreshToken = await getRefreshToken()
-      if (!refreshToken) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
-      const refreshPayload = await verifyToken(refreshToken)
-      if (!refreshPayload) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
-      accessToken = await generateAccessToken({
-        userId: refreshPayload.userId,
-        email: refreshPayload.email,
-        role: refreshPayload.role
-      })
-
-      const newRefreshToken = await generateRefreshToken({
-        userId: refreshPayload.userId,
-        email: refreshPayload.email,
-        role: refreshPayload.role
-      })
-
-      await setAuthCookies(accessToken, newRefreshToken)
-    }
-
-    const payload = await verifyToken(accessToken)
-    if (!payload) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // Admin only
-    if (payload.role !== 'ADMIN' && payload.role !== 'DOCTOR') {
-      return NextResponse.json({ error: 'Forbidden. Admin access required.' }, { status: 403 })
-    }
+    const auth = await requireEmployee(request, 'salary:read')
+    if (auth.response) return auth.response
 
     const searchParams = request.nextUrl.searchParams
     const monthYear = searchParams.get('month_year')
@@ -99,7 +64,9 @@ export async function GET(request: NextRequest) {
     // Fetch advances for the month
     const { data: advances, error: advError } = await supabase
       .from('advances')
-      .select('*')
+      // `created_by_user` so the salary details modal can name who recorded
+      // each advance alongside who handed it over.
+      .select('*, created_by_user:users!created_by(id, username)')
       .eq('month_year', monthYear)
       .order('date_given', { ascending: false })
 
