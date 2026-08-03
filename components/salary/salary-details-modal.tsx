@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Plus, Edit2, DollarSign, AlertCircle, CheckCircle } from 'lucide-react'
+import { X, Plus, Edit2, DollarSign } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { inr } from '@/lib/format/currency'
 import { UpdatedStamp } from '@/components/ui/updated-stamp'
@@ -26,9 +26,11 @@ interface SalaryDetailsModalProps {
   employeeId: string | null
   selectedMonth: string
   onSuccess: () => void
+  onAddAdvance: () => void
+  advanceRefreshKey: number
 }
 
-export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth, onSuccess }: SalaryDetailsModalProps) {
+export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth, onSuccess, onAddAdvance, advanceRefreshKey }: SalaryDetailsModalProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [downloadingSlip, setDownloadingSlip] = useState(false)
@@ -42,66 +44,11 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
   const [daysPresent, setDaysPresent] = useState('')
   const [otDays, setOtDays] = useState('')
 
-  // Add advance state
-  const [showAddAdvance, setShowAddAdvance] = useState(false)
-  const [advanceAmount, setAdvanceAmount] = useState('')
-  const [advanceDate, setAdvanceDate] = useState(new Date().toISOString().split('T')[0])
-  const [advanceRemarks, setAdvanceRemarks] = useState('')
-  const [validationLoading, setValidationLoading] = useState(false)
-  const [validation, setValidation] = useState<any>(null)
-  const [amountError, setAmountError] = useState('')
-
   useEffect(() => {
     if (isOpen && employeeId && selectedMonth) {
       fetchSalaryData()
-      fetchValidationRules()
     }
-  }, [isOpen, employeeId, selectedMonth])
-
-  const fetchValidationRules = async () => {
-    try {
-      setValidationLoading(true)
-      const response = await fetch(
-        `/api/employees/${employeeId}/salary/advances/validation?month_year=${selectedMonth}`,
-        { credentials: 'include' }
-      )
-
-      if (response.ok) {
-        const data = await response.json()
-        setValidation(data.data)
-      } else {
-        console.error('Failed to fetch validation rules')
-      }
-    } catch (error) {
-      console.error('Error fetching validation rules:', error)
-    } finally {
-      setValidationLoading(false)
-    }
-  }
-
-  // Validate amount in real-time
-  useEffect(() => {
-    if (!advanceAmount || !validation) {
-      setAmountError('')
-      return
-    }
-
-    const numAmount = parseFloat(advanceAmount)
-
-    if (numAmount <= 0) {
-      setAmountError('Advance amount must be greater than 0')
-      return
-    }
-
-    if (numAmount > validation.max_allowed_advance) {
-      setAmountError(
-        `Advance cannot exceed ${inr(validation.max_allowed_advance)}`
-      )
-      return
-    }
-
-    setAmountError('')
-  }, [advanceAmount, validation])
+  }, [isOpen, employeeId, selectedMonth, advanceRefreshKey])
 
   const fetchSalaryData = async () => {
     try {
@@ -213,58 +160,6 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
     } catch (err) {
       console.error('Error saving salary:', err)
       alert('Error saving salary')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleAddAdvance = async () => {
-    try {
-      if (!advanceAmount || parseFloat(advanceAmount) <= 0) {
-        alert('Please enter a valid advance amount')
-        return
-      }
-
-      if (amountError) {
-        alert(amountError)
-        return
-      }
-
-      if (validation && !validation.can_add_advance) {
-        alert(validation.validation_message || 'Cannot add advance at this time')
-        return
-      }
-
-      setLoading(true)
-      const response = await fetch(`/api/employees/${employeeId}/salary/advances`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          amount: parseFloat(advanceAmount),
-          date_given: advanceDate,
-          month_year: selectedMonth,
-          remarks: advanceRemarks || null
-        })
-      })
-
-      const data = await response.json()
-
-      if (response.ok) {
-        await fetchSalaryData()
-        await fetchValidationRules()
-        setShowAddAdvance(false)
-        setAdvanceAmount('')
-        setAdvanceRemarks('')
-        setAdvanceDate(new Date().toISOString().split('T')[0])
-        setAmountError('')
-        onSuccess()
-      } else {
-        alert(data.error || 'Failed to add advance')
-      }
-    } catch (err) {
-      console.error('Error adding advance:', err)
-      alert('Error adding advance')
     } finally {
       setLoading(false)
     }
@@ -481,170 +376,13 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
               Advances Given
             </h3>
             <Button
-              onClick={() => setShowAddAdvance(!showAddAdvance)}
+              onClick={onAddAdvance}
               size="sm"
               className="bg-primary hover:bg-primary-hover"
             >
               Add Advance
             </Button>
           </div>
-
-          {showAddAdvance && (
-            <div className="space-y-3 bg-surface-hover p-4 rounded">
-              {/* Validation Info */}
-              {validationLoading ? (
-                <div className="bg-surface-inset rounded p-3 text-foreground text-sm">
-                  Loading validation details...
-                </div>
-              ) : validation ? (
-                <div className="space-y-2 bg-surface-inset rounded p-3">
-                  <div className="text-foreground text-xs uppercase tracking-wide font-semibold">
-                    Validation Status
-                  </div>
-
-                  {/* Scenario Badge */}
-                  <div className="flex items-start gap-2 flex-wrap">
-                    <span className="text-xs bg-info-subtle text-info px-2 py-1 rounded whitespace-nowrap">
-                      {validation.scenario.split(':')[0]}
-                    </span>
-                    <span className="text-xs text-muted">
-                      {validation.scenario.split(':')[1]?.trim()}
-                    </span>
-                    {validation.status && (
-                      <span className={`text-xs px-2 py-1 rounded whitespace-nowrap font-semibold ${
-                        validation.status === 'settled' 
-                          ? 'bg-destructive-subtle text-destructive' 
-                          : 'bg-success-subtle text-success-text'
-                      }`}>
-                        {validation.status.charAt(0).toUpperCase() + validation.status.slice(1)}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Base/Calculated Salary */}
-                  <div className="grid grid-cols-2 gap-2 text-xs mt-2">
-                    <div>
-                      <div className="text-muted">Base Salary</div>
-                      <div className="text-foreground font-semibold">
-                        {inr(validation.base_salary)}
-                      </div>
-                    </div>
-                    {validation.calculated_salary !== null && (
-                      <div>
-                        <div className="text-muted">Calculated Salary</div>
-                        <div className="text-foreground font-semibold">
-                          {inr(validation.calculated_salary)}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Current Advances */}
-                  {validation.current_total_advances > 0 && (
-                    <div className="text-xs">
-                      <div className="text-muted">Total Advances</div>
-                      <div className="text-primary font-semibold">
-                        -{inr(validation.current_total_advances)}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Status and Limit */}
-                  <div className="pt-2 border-t border-border">
-                    {validation.can_add_advance ? (
-                      <div className="flex items-start gap-2">
-                        <CheckCircle size={14} className="text-success-text mt-0.5 flex-shrink-0" />
-                        <div className="flex-1">
-                          <div className="text-success-text font-semibold text-xs">
-                            Can Add Advance
-                          </div>
-                          <div className="text-success-text text-xs">
-                            Maximum: {inr(validation.max_allowed_advance, { clamp: true })}
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-start gap-2">
-                        <AlertCircle size={14} className="text-destructive mt-0.5 flex-shrink-0" />
-                        <div className="flex-1">
-                          <div className="text-destructive font-semibold text-xs">
-                            Cannot Add Advance
-                          </div>
-                          <div className="text-destructive text-xs">
-                            {validation.validation_message}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : null}
-
-              <div>
-                <label className="block text-sm text-muted mb-1">Amount</label>
-                <Input
-                  type="number"
-                  value={advanceAmount}
-                  onChange={(e) => setAdvanceAmount(e.target.value)}
-                  placeholder="Enter advance amount"
-                  className={`bg-surface-inset border-border text-foreground ${amountError ? 'border-destructive' : ''}`}
-                />
-                {amountError && (
-                  <div className="mt-1 flex items-start gap-1">
-                    <AlertCircle size={14} className="text-destructive mt-0.5 flex-shrink-0" />
-                    <span className="text-destructive text-xs">{amountError}</span>
-                  </div>
-                )}
-              </div>
-              <div>
-                <label className="block text-sm text-muted mb-1">Date Given</label>
-                <Input
-                  type="date"
-                  value={advanceDate}
-                  onChange={(e) => setAdvanceDate(e.target.value)}
-                  className="bg-surface-inset border-border text-foreground"
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-muted mb-1">Remarks</label>
-                <Input
-                  type="text"
-                  value={advanceRemarks}
-                  onChange={(e) => setAdvanceRemarks(e.target.value)}
-                  placeholder="Optional remarks"
-                  className="bg-surface-inset border-border text-foreground"
-                />
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  onClick={handleAddAdvance}
-                  disabled={
-                    loading ||
-                    validationLoading ||
-                    !validation?.can_add_advance ||
-                    !advanceAmount ||
-                    !!amountError
-                  }
-                  className="flex-1 bg-success hover:bg-success-hover disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Add
-                </Button>
-                <Button
-                  onClick={() => {
-                    setShowAddAdvance(false)
-                    setAdvanceAmount('')
-                    setAdvanceRemarks('')
-                    setAdvanceDate(new Date().toISOString().split('T')[0])
-                    setAmountError('')
-                  }}
-                  variant="outline"
-                  className="flex-1"
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          )}
 
           {advances.length > 0 ? (
             <div className="overflow-x-auto">

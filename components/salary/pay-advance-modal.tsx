@@ -43,13 +43,15 @@ interface PayAdvanceModalProps {
 }
 
 interface ValidationData {
-  max_allowed_advance: number
+  // Null for a Receptionist: the API withholds every rupee figure for that
+  // role, so these fields are absent rather than merely hidden in the UI.
+  max_allowed_advance: number | null
   can_add_advance: boolean
   validation_message: string | null
   scenario: string
-  current_total_advances: number
+  current_total_advances: number | null
   calculated_salary: number | null
-  base_salary: number
+  base_salary: number | null
   status: string | null
 }
 
@@ -149,7 +151,10 @@ export function PayAdvanceModal({
       return
     }
 
-    if (numAmount > validation.max_allowed_advance) {
+    // Reception gets no cap to compare against — the server still enforces
+    // it on submit, this is just the early client-side hint that's
+    // unavailable for that role.
+    if (validation.max_allowed_advance != null && numAmount > validation.max_allowed_advance) {
       setAmountError(`Advance cannot exceed ${inr(validation.max_allowed_advance)}`)
       return
     }
@@ -265,26 +270,37 @@ export function PayAdvanceModal({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <Figure label="Base salary" value={inr(validation.base_salary)} />
-              {validation.calculated_salary !== null && (
-                <Figure label="Calculated salary" value={inr(validation.calculated_salary)} />
-              )}
-              {validation.current_total_advances > 0 && (
-                <Figure
-                  label="Already drawn"
-                  value={`- ${inr(validation.current_total_advances)}`}
-                />
-              )}
-              <Figure label="Maximum allowed" value={inr(validation.max_allowed_advance, { clamp: true })} />
-            </div>
+            {(validation.base_salary != null ||
+              validation.calculated_salary != null ||
+              (validation.current_total_advances ?? 0) > 0 ||
+              validation.max_allowed_advance != null) && (
+              <div className="grid grid-cols-2 gap-3">
+                {validation.base_salary != null && (
+                  <Figure label="Base salary" value={inr(validation.base_salary)} />
+                )}
+                {validation.calculated_salary != null && (
+                  <Figure label="Calculated salary" value={inr(validation.calculated_salary)} />
+                )}
+                {validation.current_total_advances != null && validation.current_total_advances > 0 && (
+                  <Figure
+                    label="Already drawn"
+                    value={`- ${inr(validation.current_total_advances)}`}
+                  />
+                )}
+                {validation.max_allowed_advance != null && (
+                  <Figure label="Maximum allowed" value={inr(validation.max_allowed_advance, { clamp: true })} />
+                )}
+              </div>
+            )}
 
             <div className="pt-3 border-t border-border">
               {validation.can_add_advance ? (
                 <div className="flex items-start gap-2 text-success-text">
                   <CheckCircle size={16} className="mt-0.5 shrink-0" />
                   <span className="text-sm">
-                    Up to {inr(validation.max_allowed_advance, { clamp: true })} can be advanced.
+                    {validation.max_allowed_advance != null
+                      ? `Up to ${inr(validation.max_allowed_advance, { clamp: true })} can be advanced.`
+                      : 'An advance can be added for this employee.'}
                   </span>
                 </div>
               ) : (

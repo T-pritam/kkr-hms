@@ -76,16 +76,21 @@ export async function middleware(request: NextRequest) {
     /**
      * Carve-outs inside an admin-only prefix.
      *
-     * `/employees` is admin-only, but the advance log is deliberately open to
-     * reception — they hand the cash over and are asked for the log more than
-     * anyone. Checked *before* the prefix list so ordering cannot accidentally
-     * expose the staff register or payroll alongside it.
+     * `/employees` is admin-only, but the advance log and the salary list are
+     * deliberately open to reception — they hand the cash over, are asked for
+     * the log more than anyone, and now add advances themselves. The salary
+     * *figures* on that list are still redacted for them at the API layer, not
+     * here. Checked *before* the prefix list so ordering cannot accidentally
+     * expose the staff register alongside it.
      *
      * This only governs the page. The API enforces the same split itself, in
      * lib/employees/authz.ts, because middleware does not guard `/api/**` here.
      */
     const sharedPaths: { path: string; roles: string[] }[] = [
       { path: '/employees/advances', roles: ['ADMIN', 'DOCTOR', 'RECEPTIONIST'] },
+      // Reception can view the salary list and add advances; the API redacts
+      // every rupee figure for that role (lib/employees/authz.ts, salary:list).
+      { path: '/employees/salary', roles: ['ADMIN', 'DOCTOR', 'RECEPTIONIST'] },
     ]
 
     const shared = sharedPaths.find(entry => pathname.startsWith(entry.path))

@@ -80,9 +80,10 @@ describe('advance log — who can see it', () => {
 describe('advance log — who can pay one', () => {
   /**
    * The hole this closes. Both of these returned 200/201 for every signed-in
-   * role, including a receptionist and a lab technician.
+   * role, including a lab technician. Reception was later let back in
+   * deliberately (advance:write) because they hand the cash over themselves.
    */
-  it.each(['RECEPTIONIST', 'LAB_TECHNICIAN', 'NURSE'] as const)(
+  it.each(['LAB_TECHNICIAN', 'NURSE'] as const)(
     'forbids %s from paying an advance',
     async (role) => {
       await signInAs(role)
@@ -96,7 +97,7 @@ describe('advance log — who can pay one', () => {
     },
   )
 
-  it.each(['ADMIN', 'DOCTOR'] as const)('lets %s pay an advance', async (role) => {
+  it.each(['ADMIN', 'DOCTOR', 'RECEPTIONIST'] as const)('lets %s pay an advance', async (role) => {
     await signInAs(role)
     anEmployee({ id: 'e1', base_salary: 27000 })
 
@@ -186,7 +187,7 @@ describe('GET /api/employees/advances — the log', () => {
   })
 
   it('subtotals by employee, heaviest first', async () => {
-    await signInAs('RECEPTIONIST')
+    await signInAs('ADMIN')
     anEmployee({ id: 'e1', name: 'Ramesh', base_salary: 27000 })
     anEmployee({ id: 'e2', name: 'Suresh', base_salary: 30000 })
     anAdvance({ employee_id: 'e1', amount: 2000, month_year: THIS_MONTH })
@@ -197,6 +198,23 @@ describe('GET /api/employees/advances — the log', () => {
 
     expect(body.by_employee.map((e: any) => e.name)).toEqual(['Suresh', 'Ramesh'])
     expect(body.by_employee[1]).toMatchObject({ total: 5000, count: 2, base_salary: 27000 })
+  })
+
+  /**
+   * Reception reads this log for the advance amounts, never for what they are
+   * a fraction of — the subtotals still add up, the salaries are gone.
+   */
+  it('keeps the subtotals but strips base_salary for RECEPTIONIST', async () => {
+    await signInAs('RECEPTIONIST')
+    anEmployee({ id: 'e1', name: 'Ramesh', base_salary: 27000 })
+    anAdvance({ employee_id: 'e1', amount: 2000, month_year: THIS_MONTH })
+    anAdvance({ employee_id: 'e1', amount: 3000, month_year: THIS_MONTH })
+
+    const { body } = await log()
+
+    expect(body.by_employee[0]).toMatchObject({ name: 'Ramesh', total: 5000, count: 2 })
+    expect(body.by_employee[0].base_salary).toBeFalsy()
+    expect(body.data.every((r: any) => !r.employee?.base_salary)).toBe(true)
   })
 
   it('reports the figures the KPI strip shows', async () => {

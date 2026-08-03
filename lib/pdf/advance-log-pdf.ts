@@ -134,7 +134,8 @@ function employeeSection(h: H, data: AdvanceLogData): void {
       { text: clip(emp.name, 30),           x: COL.code },
       { text: clip(emp.designation, 22),    x: COL.role },
       { text: String(emp.count),            x: COL.givenBy, align: 'center' },
-      { text: fmt(emp.base_salary),         x: COL.remarks, align: 'right' },
+      // Zero means redacted (Reception's export), not an actual ₹0 salary.
+      { text: emp.base_salary > 0 ? fmt(emp.base_salary) : '—', x: COL.remarks, align: 'right' },
       { text: `${fmt(emp.total)}${share}`,  x: COL.amount,  align: 'right' },
     ]
     trow(h, cells, i)

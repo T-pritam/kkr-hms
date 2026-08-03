@@ -183,9 +183,9 @@ export function ReportPreviewModal({ isOpen, orderId, onClose, onChanged }: Repo
 
             <div className="flex justify-between items-end mt-8 text-[11px] text-slate-500">
               <div>
-                {[...new Set(withResults.map(i => i.entered_by_name).filter(Boolean))].length > 0 && (
+                {/* {[...new Set(withResults.map(i => i.entered_by_name).filter(Boolean))].length > 0 && (
                   <div>Entered by: {[...new Set(withResults.map(i => i.entered_by_name).filter(Boolean))].join(', ')}</div>
-                )}
+                )} */}
                 {[...new Set(withResults.map(i => i.authorised_by_name).filter(Boolean))].length > 0 && (
                   <div>Authorised by: {[...new Set(withResults.map(i => i.authorised_by_name).filter(Boolean))].join(', ')}</div>
                 )}

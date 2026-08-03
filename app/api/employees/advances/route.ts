@@ -77,6 +77,7 @@ export async function GET(request: NextRequest) {
     // Reception is included in `advance:read` and nothing else in this module.
     const auth = await requireEmployee(request, 'advance:read')
     if (auth.response) return auth.response
+    const isReceptionist = auth.user.role === 'RECEPTIONIST'
 
     const params = request.nextUrl.searchParams
     const monthYear = params.get('month_year')
@@ -130,6 +131,16 @@ export async function GET(request: NextRequest) {
         (r.remarks || '').toLowerCase().includes(search) ||
         (r.given_by || '').toLowerCase().includes(search)
       )
+    }
+
+    // Reception reads this log for the advance amounts, not what they're a
+    // fraction of — strip base_salary before it reaches subtotals() or the
+    // response, same redaction as the salary list and the validation route.
+    if (isReceptionist) {
+      rows = rows.map(r => ({
+        ...r,
+        employee: r.employee ? { ...r.employee, base_salary: undefined } : r.employee,
+      }))
     }
 
     const amounts = rows.map(r => Number.parseFloat(String(r.amount)) || 0)

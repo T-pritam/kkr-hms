@@ -82,6 +82,7 @@ export async function GET(
     }
 
     const validation = validateSalaryAdvance(salaryData)
+    const isReceptionist = auth.user.role === 'RECEPTIONIST'
 
     return NextResponse.json({
       success: true,
@@ -89,16 +90,20 @@ export async function GET(
         employee_id: employeeId,
         employee_name: employee.name,
         month_year: monthYear,
-        base_salary: baseSalary,
+        // Reception can add an advance without ever seeing what it's a
+        // fraction of — every rupee figure below is null for that role.
+        // `can_add_advance`/`validation_message` still gate and explain the
+        // form; the cap itself is still enforced server-side on submit.
+        base_salary: isReceptionist ? null : baseSalary,
         has_salary_record: !!salaryRecord,
-        calculated_salary: salaryRecord ? num(salaryRecord.calculated_salary) : null,
-        current_total_advances: salaryData.currentAdvances.reduce(
+        calculated_salary: isReceptionist ? null : (salaryRecord ? num(salaryRecord.calculated_salary) : null),
+        current_total_advances: isReceptionist ? null : salaryData.currentAdvances.reduce(
           (sum, adv: any) => sum + num(adv.amount),
           0
         ),
         // Already clamped at zero by validateSalaryAdvance; belt and braces so a
         // negative ceiling can never reach the form.
-        max_allowed_advance: Math.max(0, num(validation.maxAllowedAdvance)),
+        max_allowed_advance: isReceptionist ? null : Math.max(0, num(validation.maxAllowedAdvance)),
         can_add_advance: validation.isAllowed,
         validation_message: validation.reason ?? null,
         status: salaryRecord?.status || null,

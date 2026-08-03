@@ -15,9 +15,33 @@ import { normalisePatientBody, validatePatient, firstError } from '@/lib/patient
 const DETAIL_SELECT = `
   *,
   updated_by_user:users!updated_by(id, username),
-  created_by_user:users!created_by(id, username),
-  referral:referrals!referred_by(id, name)
+  created_by_user:users!created_by(id, username)
 `
+
+/**
+ * `referred_by` has no foreign key to `referrals` — it never did, and this
+ * table predates the migrations directory. Embedding it via PostgREST
+ * (`referral:referrals!referred_by(...)`) fails with PGRST200 for every
+ * patient, which the GET handler below turned into a blanket 404, which
+ * blanked the Info tab for every role. Looking it up as a second query
+ * avoids requiring a schema change, and the UUID guard makes it tolerant of
+ * the empty-string values one billing write path can still produce.
+ */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+async function attachReferral(supabase: any, patient: any) {
+  if (!UUID_RE.test(patient?.referred_by ?? '')) {
+    return { ...patient, referral: null }
+  }
+
+  const { data: referral } = await supabase
+    .from('referrals')
+    .select('id, name')
+    .eq('id', patient.referred_by)
+    .maybeSingle()
+
+  return { ...patient, referral: referral ?? null }
+}
 
 /** 409 when the typed ID collides, so the form can mark the field. */
 function duplicateIdResponse(patientId: unknown) {
@@ -52,7 +76,7 @@ export async function GET(
       return NextResponse.json({ error: 'Patient not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ patient })
+    return NextResponse.json({ patient: await attachReferral(supabase, patient) })
   } catch (error: any) {
     console.error('Error fetching patient:', error)
     return NextResponse.json(

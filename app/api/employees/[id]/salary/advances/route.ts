@@ -103,8 +103,18 @@ export async function POST(
     const amountValidation = isAdvanceAmountValid(salaryData, proposedAmount)
 
     if (!amountValidation.valid) {
+      // `isAdvanceAmountValid` embeds the exact rupee ceiling in its cap-
+      // exceeded message (e.g. "cannot exceed ₹5,000.00") — reception never
+      // sees a salary figure, so that one case gets a generic message here.
+      // Every other reason it returns (settled, zero calculated salary, etc.)
+      // is already figure-free and passes through unchanged.
+      const revealsFigure = user.role === 'RECEPTIONIST' && amountValidation.reason?.includes('cannot exceed')
       return NextResponse.json(
-        { error: amountValidation.reason || 'Invalid advance amount' },
+        {
+          error: revealsFigure
+            ? 'Advance amount exceeds the allowed limit for this employee'
+            : amountValidation.reason || 'Invalid advance amount',
+        },
         { status: 400 }
       )
     }

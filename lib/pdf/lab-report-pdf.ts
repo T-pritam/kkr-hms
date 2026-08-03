@@ -348,7 +348,7 @@ function signOff(h: H, items: LabReportItem[]): void {
   const top = h.y
   h.normal(7.5)
   h.doc.setTextColor(...C.muted)
-  if (enteredBy) { h.doc.text(`Entered by: ${enteredBy}`, M, top); h.y += 4.5 }
+  // if (enteredBy) { h.doc.text(`Entered by: ${enteredBy}`, M, top); h.y += 4.5 }
   if (authorisedBy) { h.doc.text(`Authorised by: ${authorisedBy}`, M, h.y); h.y += 4.5 }
   h.doc.setTextColor(...C.dark)
 

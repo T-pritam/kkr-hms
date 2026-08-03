@@ -359,8 +359,8 @@ export default function AdvanceLogPage() {
                           )}
                         </div>
                         <div className="text-xs text-muted mt-0.5">
-                          {emp.designation || '—'} · {emp.count} advance{emp.count === 1 ? '' : 's'} ·
-                          {' '}base {inr(emp.base_salary)}
+                          {emp.designation || '—'} · {emp.count} advance{emp.count === 1 ? '' : 's'}
+                          {emp.base_salary > 0 && <> · base {inr(emp.base_salary)}</>}
                         </div>
                       </div>
                       <div className="flex items-center gap-3 shrink-0">

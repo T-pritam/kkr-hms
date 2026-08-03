@@ -36,14 +36,24 @@ export type EmployeeCapability =
   | 'salary:read'
   | 'salary:write'
   | 'salary:settle'
+  | 'salary:list'
   | 'advance:read'
   | 'advance:write'
 
 /** What the existing guard actually admits, kept as-is. */
 const PAYROLL: UserRole[] = ['ADMIN', 'DOCTOR']
 
-/** Payroll, plus reception for the advance log only. */
+/** Payroll, plus reception for the advance log and paying advances out. */
 const ADVANCE_READERS: UserRole[] = ['ADMIN', 'DOCTOR', 'RECEPTIONIST']
+const ADVANCE_WRITERS: UserRole[] = ['ADMIN', 'DOCTOR', 'RECEPTIONIST']
+
+/**
+ * The employee list, salary-figures redacted. Reception can see who exists
+ * and how much they've drawn this month (to decide whether to hand over more
+ * cash) without seeing `salary:read` — base/calculated/final salary stay
+ * PAYROLL-only. The redaction itself happens in the route handler, not here.
+ */
+const SALARY_LISTERS: UserRole[] = ['ADMIN', 'DOCTOR', 'RECEPTIONIST']
 
 export const EMPLOYEE_CAPABILITIES: Record<EmployeeCapability, UserRole[]> = {
   // Staff records.
@@ -56,12 +66,15 @@ export const EMPLOYEE_CAPABILITIES: Record<EmployeeCapability, UserRole[]> = {
   'salary:write':    PAYROLL,
   'salary:settle':   PAYROLL,
 
+  // The employee-salary list, with figures stripped for reception.
+  'salary:list':     SALARY_LISTERS,
+
   // Reading the advance log — reception hands the cash over and is asked for
   // the log more than anyone.
   'advance:read':    ADVANCE_READERS,
 
-  // Paying one out. Previously unguarded entirely.
-  'advance:write':   PAYROLL,
+  // Paying one out — reception does this directly now too.
+  'advance:write':   ADVANCE_WRITERS,
 }
 
 export interface EmployeeUser {

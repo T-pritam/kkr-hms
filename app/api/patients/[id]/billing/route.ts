@@ -185,11 +185,13 @@ export async function PATCH(
 
     if (error) throw error;
 
-    // Update patient's referred_by if referral_id is provided
+    // Update patient's referred_by if referral_id is provided. `''` (the
+    // referral picker cleared, or the field untouched while editing other
+    // charges) must become null, not be written as-is.
     if (body.referral_id !== undefined) {
       await supabase
         .from('patients')
-        .update({ referred_by: body.referral_id }) // number OR null
+        .update({ referred_by: body.referral_id || null })
         .eq('id', patientId);
     }
 
