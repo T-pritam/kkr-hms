@@ -24,6 +24,7 @@ import { ExpenseEntryModal } from '@/components/ledger/expense-entry-modal'
 import { EditTransactionModal } from '@/components/ledger/edit-transaction-modal'
 import { AddPatientInstallmentModal } from '@/components/ledger/add-patient-installment-modal'
 import { useUser } from '@/hooks/use-user'
+import { ledgerExpenseCategoryLabel } from '@/lib/format/expense'
 
 interface Transaction {
   id: string
@@ -35,6 +36,9 @@ interface Transaction {
   reference_number?: string
   description: string
   notes?: string
+  /** Expense rows only — null on credits and OPD collections. */
+  expense_category?: string | null
+  expense_category_detail?: string | null
   status: string
   created_at: string
   created_by: string
@@ -364,6 +368,12 @@ export default function DailyLedgerSummaryPage() {
                         </td>
                         <td className="py-3 px-4 text-foreground text-sm capitalize">
                           {txn.source} { txn.source == 'patient' ? `(${txn.patient?.name || 'Unknown'})` : '' }
+                          {txn.source === 'expense' && txn.expense_category && (
+                            // Not capitalized — it would title-case the free text.
+                            <span className="block text-xs text-muted normal-case">
+                              {ledgerExpenseCategoryLabel(txn.expense_category, txn.expense_category_detail)}
+                            </span>
+                          )}
                         </td>
                         <td className="py-3 px-4 text-foreground font-medium">
                           {formatCurrency(txn.amount)}
@@ -456,6 +466,9 @@ export default function DailyLedgerSummaryPage() {
                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
                         <span>{new Date(txn.created_at).toLocaleTimeString('en-GB', { hour12: false, hour: '2-digit', minute: '2-digit' })}</span>
                         <span className="capitalize">{txn.source}{txn.source === 'patient' ? ` (${txn.patient?.name || 'Unknown'})` : ''}</span>
+                        {txn.source === 'expense' && txn.expense_category && (
+                          <span>{ledgerExpenseCategoryLabel(txn.expense_category, txn.expense_category_detail)}</span>
+                        )}
                         <span className="capitalize">{txn.payment_mode.replace('_', ' ')}</span>
                         {txn.reference_number && <span>Ref: {txn.reference_number}</span>}
                         <span>By: {txn.created_by_user?.username || 'Unknown'}</span>

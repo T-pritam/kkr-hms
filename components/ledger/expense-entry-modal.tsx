@@ -5,6 +5,12 @@ import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  EXPENSE_DETAIL_MAX,
+  LEDGER_EXPENSE_CATEGORIES,
+  LEDGER_EXPENSE_CATEGORY_LABELS,
+  OTHER_LEDGER_CATEGORY,
+} from '@/lib/finances/constants'
 
 interface ExpenseEntryModalProps {
   isOpen: boolean
@@ -17,6 +23,7 @@ export function ExpenseEntryModal({ isOpen, onClose, onSuccess, selectedDate }: 
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
     expense_category: 'supplies',
+    expense_category_detail: '',
     amount: '',
     payment_mode: 'cash',
     reference_number: '',
@@ -28,6 +35,7 @@ export function ExpenseEntryModal({ isOpen, onClose, onSuccess, selectedDate }: 
     if (!isOpen) {
       setFormData({
         expense_category: 'supplies',
+        expense_category_detail: '',
         amount: '',
         payment_mode: 'cash',
         reference_number: '',
@@ -55,6 +63,11 @@ export function ExpenseEntryModal({ isOpen, onClose, onSuccess, selectedDate }: 
       return
     }
 
+    if (formData.expense_category === OTHER_LEDGER_CATEGORY && !formData.expense_category_detail.trim()) {
+      alert('Please describe the expense when the category is Other')
+      return
+    }
+
     try {
       setLoading(true)
       const response = await fetch('/api/ledger/transactions', {
@@ -69,7 +82,12 @@ export function ExpenseEntryModal({ isOpen, onClose, onSuccess, selectedDate }: 
           payment_mode: formData.payment_mode,
           reference_number: formData.reference_number || null,
           description: formData.description,
-          notes: formData.notes || null
+          notes: formData.notes || null,
+          // These two were the bug: the form has always asked for a category and
+          // then left it out of the body, so every ledger expense ever recorded
+          // lost the one field that classified it.
+          expense_category: formData.expense_category,
+          expense_category_detail: formData.expense_category_detail.trim() || null
         })
       })
 
@@ -111,12 +129,41 @@ export function ExpenseEntryModal({ isOpen, onClose, onSuccess, selectedDate }: 
               className="w-full px-3 py-2 bg-input border border-input-border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               required
             >
-              <option value="supplies">Medical Supplies</option>
-              <option value="utilities">Utilities & Rent</option>
-              <option value="maintenance">Maintenance</option>
-              <option value="staff">Staff Bonus</option>
-              <option value="other">Other</option>
+              {LEDGER_EXPENSE_CATEGORIES.map((category) => (
+                <option key={category} value={category}>
+                  {LEDGER_EXPENSE_CATEGORY_LABELS[category]}
+                </option>
+              ))}
             </select>
+          </div>
+
+          {/* Always rendered, enabled only for the catch-all — same shape as the
+              UPI reference field below. */}
+          <div>
+            <Label htmlFor="expense_category_detail">
+              {formData.expense_category === OTHER_LEDGER_CATEGORY
+                ? 'What was it for? *'
+                : 'Description (Other only)'}
+            </Label>
+            <Input
+              id="expense_category_detail"
+              type="text"
+              value={formData.expense_category_detail}
+              onChange={(e) => setFormData({ ...formData, expense_category_detail: e.target.value })}
+              disabled={formData.expense_category !== OTHER_LEDGER_CATEGORY}
+              required={formData.expense_category === OTHER_LEDGER_CATEGORY}
+              maxLength={EXPENSE_DETAIL_MAX}
+              placeholder={
+                formData.expense_category === OTHER_LEDGER_CATEGORY
+                  ? 'e.g. Courier charges'
+                  : 'Only needed when the category is Other'
+              }
+            />
+            {formData.expense_category === OTHER_LEDGER_CATEGORY && (
+              <p className="mt-1 text-xs text-muted text-right">
+                {formData.expense_category_detail.length}/{EXPENSE_DETAIL_MAX}
+              </p>
+            )}
           </div>
 
           <div>

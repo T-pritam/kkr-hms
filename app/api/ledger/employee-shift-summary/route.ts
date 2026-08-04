@@ -42,8 +42,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Admin only
-    if (payload.role !== 'ADMIN' && payload.role !== 'DOCTOR') {
+    // Admin only — the comment and the error message have always said so; the
+    // condition let DOCTOR through as well. This screen exposes one operator's
+    // entire day of cash and is the entry point to marking it settled.
+    if (payload.role !== 'ADMIN') {
       return NextResponse.json({ error: 'Forbidden. Admin access required.' }, { status: 403 })
     }
 

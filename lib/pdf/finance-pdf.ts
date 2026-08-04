@@ -3,6 +3,7 @@ import {
   mkDoc, hdr, boxRow, sec, thead, trow, ttotal, footers,
   fmt, fmtDate,
 } from './base'
+import { expenseTypeLabel } from '@/lib/format/expense'
 
 // Landscape geometry: cw = 269, so the content right edge sits at 283.
 const RE = M + 269
@@ -115,7 +116,7 @@ export async function generateExpensesPDF(monthYear: string) {
     trow(h, [
       { text: String(i + 1),                                  x: M + 2 },
       { text: formatDate(exp.expense_date),                   x: M + 11 },
-      { text: (exp.expense_type || '—').substring(0, 35),     x: M + 45 },
+      { text: expenseTypeLabel(exp.expense_type, exp.expense_type_detail, { max: 35 }) || '—', x: M + 45 },
       { text: (exp.remarks || '—').substring(0, 55),          x: M + 115 },
       { text: fmt(amt),                                       x: RE, align: 'right' },
     ], i)
@@ -532,7 +533,7 @@ export async function generateMonthlyFinancePDF(monthYear: string, summary: any)
     trow(h, [
       { text: String(i + 1),                               x: M + 2 },
       { text: formatDate(exp.expense_date),                x: M + 11 },
-      { text: (exp.expense_type || '—').substring(0, 35), x: M + 45 },
+      { text: expenseTypeLabel(exp.expense_type, exp.expense_type_detail, { max: 35 }) || '—', x: M + 45 },
       { text: (exp.remarks || '—').substring(0, 55),      x: M + 115 },
       { text: fmt(amt),                                    x: RE, align: 'right' },
     ], i)

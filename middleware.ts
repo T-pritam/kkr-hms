@@ -100,7 +100,21 @@ export async function middleware(request: NextRequest) {
         return NextResponse.redirect(new URL('/dashboard', request.url))
       }
     } else {
-      const adminOnlyPaths = ['/employees', '/finances', '/daily-ledger/employee-ledger', '/admin']
+      /**
+       * `/ledger/employee-shift` is the odd one out: the rest of `/ledger` is
+       * open to every role, but the shift settlement screen shows one operator's
+       * whole day of cash and marks it paid. The sidebar has always hidden it
+       * behind ADMIN — the guard just listed the wrong path. It named
+       * `/daily-ledger/employee-ledger`, a stub page nothing links to, while the
+       * live screen sat open to anyone who typed the URL.
+       */
+      const adminOnlyPaths = [
+        '/employees',
+        '/finances',
+        '/daily-ledger/employee-ledger',
+        '/admin',
+        '/ledger/employee-shift',
+      ]
       const isAdminOnlyPath = adminOnlyPaths.some(path => pathname.startsWith(path))
 
       if (isAdminOnlyPath && userRole !== 'ADMIN') {

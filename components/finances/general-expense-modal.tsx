@@ -6,17 +6,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-
-const EXPENSE_TYPES = [
-  'Electric Bill',
-  'Oxygen Supply',
-  'Lift Maintenance',
-  'Water & Sanitation',
-  'Cleaning Supplies',
-  'Medical Equipment Maintenance',
-  'Internet/Telecom',
-  'Miscellaneous',
-]
+import {
+  EXPENSE_DETAIL_MAX,
+  EXPENSE_TYPES,
+  MISCELLANEOUS_TYPE,
+} from '@/lib/finances/constants'
 
 interface Expense {
   id: number
@@ -25,6 +19,7 @@ interface Expense {
   expense_date: string
   month_year: string
   remarks?: string
+  expense_type_detail?: string | null
   created_at: string
 }
 
@@ -48,6 +43,7 @@ export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense
     expense_date: new Date().toISOString().split('T')[0],
     month_year: monthYear,
     remarks: '',
+    expense_type_detail: '',
   })
 
   useEffect(() => {
@@ -60,6 +56,7 @@ export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense
           expense_date: initialExpense.expense_date,
           month_year: initialExpense.month_year,
           remarks: initialExpense.remarks || '',
+          expense_type_detail: initialExpense.expense_type_detail || '',
         })
         setEditingId(initialExpense.id)
       }
@@ -105,6 +102,14 @@ export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense
       return
     }
 
+    // 'Miscellaneous' on its own says nothing, and it is the box people reach for
+    // when none of the other seven fit — so it is the one line in the month that
+    // has to explain itself. Mirrored server-side in lib/finances/validate.ts.
+    if (formData.expense_type === MISCELLANEOUS_TYPE && !formData.expense_type_detail.trim()) {
+      alert('Please describe the miscellaneous expense')
+      return
+    }
+
     try {
       setLoading(true)
       const method = editingId ? 'PUT' : 'POST'
@@ -114,6 +119,7 @@ export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense
         amount: formData.amount,
         expense_date: formData.expense_date,
         remarks: formData.remarks || null,
+        expense_type_detail: formData.expense_type_detail.trim() || null,
       }
 
       const response = await fetch('/api/finances/expenses', {
@@ -147,6 +153,7 @@ export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense
       expense_date: expense.expense_date,
       month_year: expense.month_year,
       remarks: expense.remarks || '',
+      expense_type_detail: expense.expense_type_detail || '',
     })
     setEditingId(expense.id)
     setShowAddForm(true)
@@ -184,6 +191,7 @@ export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense
       expense_date: new Date().toISOString().split('T')[0],
       month_year: monthYear,
       remarks: '',
+      expense_type_detail: '',
     })
     setEditingId(null)
     setShowAddForm(false)
@@ -283,6 +291,42 @@ export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense
                   </div>
                 )}
               </div>
+            </div>
+
+            {/*
+              Always rendered, relabelled and enabled only for the catch-all type —
+              the same shape as the UPI reference field in the ledger modals, so a
+              conditionally-required input behaves the same way everywhere.
+            */}
+            <div>
+              <label className="flex items-center text-sm font-medium text-primary mb-2">
+                {formData.expense_type === MISCELLANEOUS_TYPE ? (
+                  <>
+                    <span className="mr-1">*</span>What was it for?
+                  </>
+                ) : (
+                  <span className="text-muted-foreground">Description (Miscellaneous only)</span>
+                )}
+              </label>
+              <input
+                type="text"
+                value={formData.expense_type_detail}
+                onChange={(e) => setFormData({ ...formData, expense_type_detail: e.target.value })}
+                disabled={formData.expense_type !== MISCELLANEOUS_TYPE}
+                required={formData.expense_type === MISCELLANEOUS_TYPE}
+                maxLength={EXPENSE_DETAIL_MAX}
+                placeholder={
+                  formData.expense_type === MISCELLANEOUS_TYPE
+                    ? 'e.g. Broken window pane'
+                    : 'Only needed for a Miscellaneous expense'
+                }
+                className="w-full px-4 py-2.5 bg-input border border-primary rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:border-ring disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              {formData.expense_type === MISCELLANEOUS_TYPE && (
+                <p className="mt-1 text-xs text-muted-foreground text-right">
+                  {formData.expense_type_detail.length}/{EXPENSE_DETAIL_MAX}
+                </p>
+              )}
             </div>
 
             {/* Amount */}

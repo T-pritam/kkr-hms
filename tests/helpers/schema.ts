@@ -30,6 +30,8 @@ export const SCHEMA: Record<string, string[]> = {
     'id', 'transaction_date', 'transaction_type', 'source', 'amount', 'payment_mode',
     'reference_number', 'patient_id', 'description', 'notes', 'status', 'created_at',
     'created_by', 'verified_at', 'verified_by',
+    // 20260806000003 — the category the expense form always collected and never sent.
+    'expense_category', 'expense_category_detail',
   ],
 
   doctor_visit_settlements: [
@@ -85,7 +87,11 @@ export const SCHEMA: Record<string, string[]> = {
 
   employee_counters: ['year', 'last_no'],
 
-  expenses: ['id', 'expense_type', 'amount', 'expense_date', 'month_year', 'remarks', 'created_at'],
+  // `expense_type_detail` — 20260806000002, what a 'Miscellaneous' expense actually was.
+  expenses: [
+    'id', 'expense_type', 'amount', 'expense_date', 'month_year', 'remarks', 'created_at',
+    'expense_type_detail',
+  ],
 
   lab_interpretation_templates: [
     'id', 'test_id', 'title', 'body', 'is_active', 'created_by', 'created_at', 'updated_at',

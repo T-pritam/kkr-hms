@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { X, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { ledgerExpenseCategoryLabel } from '@/lib/format/expense'
 
 interface EmployeeSummary {
   employeeId: string
@@ -95,7 +96,7 @@ export function EmployeeShiftDetailsModal({
           </button>
         </div>
 
-        <div className="p-4 sm:p-6 space-y-6 overflow-y-auto">", "
+        <div className="p-4 sm:p-6 space-y-6 overflow-y-auto">
           {/* Summary Stats */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-surface-hover rounded-lg p-4 border border-input-border">
@@ -131,6 +132,7 @@ export function EmployeeShiftDetailsModal({
                     <th className="py-3 px-4 text-left text-muted text-sm">Time</th>
                     <th className="py-3 px-4 text-left text-muted text-sm">Type</th>
                     <th className="py-3 px-4 text-left text-muted text-sm">Source</th>
+                    <th className="py-3 px-4 text-left text-muted text-sm">Category</th>
                     <th className="py-3 px-4 text-left text-muted text-sm">Amount</th>
                     <th className="py-3 px-4 text-left text-muted text-sm">Mode</th>
                     <th className="py-3 px-4 text-left text-muted text-sm">Status</th>
@@ -153,6 +155,12 @@ export function EmployeeShiftDetailsModal({
                       </td>
                       <td className="py-3 px-4 text-foreground text-sm capitalize">
                         {txn.source} { txn.source === 'patient' ? ` Installment (${txn.patient?.name || 'Unknown'})` : '' }
+                      </td>
+                      {/* Not capitalized — it would title-case the free-text detail. */}
+                      <td className="py-3 px-4 text-foreground text-sm">
+                        {txn.source === 'expense'
+                          ? ledgerExpenseCategoryLabel(txn.expense_category, txn.expense_category_detail) || '—'
+                          : '—'}
                       </td>
                       <td className="py-3 px-4 text-foreground font-medium">
                         {formatCurrency(txn.amount)}

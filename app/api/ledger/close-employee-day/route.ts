@@ -41,8 +41,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Admin only
-    if (payload.role !== 'ADMIN' && payload.role !== 'DOCTOR') {
+    // Admin only — matching employee-shift-summary. Settling a shift freezes
+    // every transaction that operator booked that day; it is not a doctor's call.
+    if (payload.role !== 'ADMIN') {
       return NextResponse.json({ error: 'Forbidden. Admin access required.' }, { status: 403 })
     }
 

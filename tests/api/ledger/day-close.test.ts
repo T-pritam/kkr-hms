@@ -299,7 +299,9 @@ describe('POST /api/ledger/close-day', () => {
 })
 
 describe('POST /api/ledger/close-employee-day', () => {
-  it.each(['NURSE', 'RECEPTIONIST'] as const)('refuses %s', async (role) => {
+  // DOCTOR was admitted here despite the guard's own message saying otherwise.
+  // Settling a shift freezes every transaction that operator booked that day.
+  it.each(['DOCTOR', 'NURSE', 'RECEPTIONIST'] as const)('refuses %s', async (role) => {
     await signInAs(role)
 
     const { status, body } = await closeEmployee({ employee_id: 'u1', settlement_date: TODAY })
@@ -402,7 +404,7 @@ describe('POST /api/ledger/close-employee-day', () => {
 })
 
 describe('GET /api/ledger/employee-shift-summary', () => {
-  it.each(['NURSE', 'RECEPTIONIST'] as const)('refuses %s', async (role) => {
+  it.each(['DOCTOR', 'NURSE', 'RECEPTIONIST'] as const)('refuses %s', async (role) => {
     await signInAs(role)
 
     const { status, body } = await shifts({ date: TODAY })

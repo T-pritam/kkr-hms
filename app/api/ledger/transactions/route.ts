@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { verifyToken, getAccessToken, getRefreshToken, setAuthCookies, generateAccessToken, generateRefreshToken } from '@/lib/auth/jwt'
+import { normaliseLedgerCategoryDetail, validateLedgerExpenseCategory } from '@/lib/finances/validate'
 
 /**
  * GET /api/ledger/transactions
@@ -159,7 +160,9 @@ export async function POST(request: NextRequest) {
       reference_number,
       patient_id,
       description,
-      notes
+      notes,
+      expense_category,
+      expense_category_detail
     } = body
 
     // Validation
@@ -187,6 +190,27 @@ export async function POST(request: NextRequest) {
 
     if (payment_mode === 'upi' && (!reference_number || reference_number.trim() === '')) {
       return NextResponse.json({ error: 'Reference number required for UPI payments' }, { status: 400 })
+    }
+
+    // Only an expense row carries a category. Forcing the pair to null on every
+    // other source is what stops a credit or an OPD collection from drifting
+    // into holding one, which would make the column mean two different things.
+    let expenseCategory: string | null = null
+    let expenseCategoryDetail: string | null = null
+
+    if (source === 'expense') {
+      const categoryError = validateLedgerExpenseCategory(expense_category)
+      if (categoryError) {
+        return NextResponse.json({ error: categoryError }, { status: 400 })
+      }
+
+      const detail = normaliseLedgerCategoryDetail(expense_category, expense_category_detail)
+      if ('error' in detail) {
+        return NextResponse.json({ error: detail.error }, { status: 400 })
+      }
+
+      expenseCategory = expense_category
+      expenseCategoryDetail = detail.value
     }
 
     const supabase = await createClient()
@@ -218,6 +242,8 @@ export async function POST(request: NextRequest) {
         patient_id: patient_id || null,
         description,
         notes: notes || null,
+        expense_category: expenseCategory,
+        expense_category_detail: expenseCategoryDetail,
         created_by: payload.userId,
         status: 'pending'
       }])

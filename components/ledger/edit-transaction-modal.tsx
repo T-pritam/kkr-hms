@@ -5,6 +5,12 @@ import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  EXPENSE_DETAIL_MAX,
+  LEDGER_EXPENSE_CATEGORIES,
+  LEDGER_EXPENSE_CATEGORY_LABELS,
+  OTHER_LEDGER_CATEGORY,
+} from '@/lib/finances/constants'
 
 interface Transaction {
   id: string
@@ -13,6 +19,10 @@ interface Transaction {
   reference_number?: string
   description: string
   notes?: string
+  /** This modal is reused for OPD and patient rows; only expenses carry a category. */
+  source?: string
+  expense_category?: string | null
+  expense_category_detail?: string | null
 }
 
 interface EditTransactionModalProps {
@@ -29,8 +39,12 @@ export function EditTransactionModal({ isOpen, onClose, onSuccess, transaction }
     payment_mode: '',
     reference_number: '',
     description: '',
-    notes: ''
+    notes: '',
+    expense_category: '',
+    expense_category_detail: ''
   })
+
+  const isExpense = transaction?.source === 'expense'
 
   useEffect(() => {
     if (isOpen && transaction) {
@@ -39,7 +53,9 @@ export function EditTransactionModal({ isOpen, onClose, onSuccess, transaction }
         payment_mode: transaction.payment_mode,
         reference_number: transaction.reference_number || '',
         description: transaction.description,
-        notes: transaction.notes || ''
+        notes: transaction.notes || '',
+        expense_category: transaction.expense_category || '',
+        expense_category_detail: transaction.expense_category_detail || ''
       })
     }
   }, [isOpen, transaction])
@@ -64,6 +80,11 @@ export function EditTransactionModal({ isOpen, onClose, onSuccess, transaction }
       return
     }
 
+    if (isExpense && formData.expense_category === OTHER_LEDGER_CATEGORY && !formData.expense_category_detail.trim()) {
+      alert('Please describe the expense when the category is Other')
+      return
+    }
+
     try {
       setLoading(true)
       const response = await fetch(`/api/ledger/transactions/${transaction.id}`, {
@@ -75,7 +96,11 @@ export function EditTransactionModal({ isOpen, onClose, onSuccess, transaction }
           payment_mode: formData.payment_mode,
           reference_number: formData.reference_number || null,
           description: formData.description,
-          notes: formData.notes || null
+          notes: formData.notes || null,
+          ...(isExpense && {
+            expense_category: formData.expense_category,
+            expense_category_detail: formData.expense_category_detail.trim() || null
+          })
         })
       })
 
@@ -108,6 +133,52 @@ export function EditTransactionModal({ isOpen, onClose, onSuccess, transaction }
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 overflow-y-auto">
+          {/* Expense rows only — this modal is also used for OPD and patient rows. */}
+          {isExpense && (
+            <>
+              <div>
+                <Label htmlFor="edit_expense_category">Expense Category *</Label>
+                <select
+                  id="edit_expense_category"
+                  value={formData.expense_category}
+                  onChange={(e) => setFormData({ ...formData, expense_category: e.target.value })}
+                  className="w-full px-3 py-2 bg-input border border-input-border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  required
+                >
+                  {/* Rows recorded before the category was stored have none. */}
+                  {!formData.expense_category && <option value="">Select a category…</option>}
+                  {LEDGER_EXPENSE_CATEGORIES.map((category) => (
+                    <option key={category} value={category}>
+                      {LEDGER_EXPENSE_CATEGORY_LABELS[category]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <Label htmlFor="edit_expense_category_detail">
+                  {formData.expense_category === OTHER_LEDGER_CATEGORY
+                    ? 'What was it for? *'
+                    : 'Description (Other only)'}
+                </Label>
+                <Input
+                  id="edit_expense_category_detail"
+                  type="text"
+                  value={formData.expense_category_detail}
+                  onChange={(e) => setFormData({ ...formData, expense_category_detail: e.target.value })}
+                  disabled={formData.expense_category !== OTHER_LEDGER_CATEGORY}
+                  required={formData.expense_category === OTHER_LEDGER_CATEGORY}
+                  maxLength={EXPENSE_DETAIL_MAX}
+                  placeholder={
+                    formData.expense_category === OTHER_LEDGER_CATEGORY
+                      ? 'e.g. Courier charges'
+                      : 'Only needed when the category is Other'
+                  }
+                />
+              </div>
+            </>
+          )}
+
           <div>
             <Label htmlFor="amount">Amount *</Label>
             <Input

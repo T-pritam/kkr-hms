@@ -39,6 +39,7 @@ import {
   generateExpenseBreakdownPDF,
 } from '@/lib/pdf/finance-pdf'
 import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch'
+import { expenseTypeLabel } from '@/lib/format/expense'
 
 interface FinancialSummary {
   month_year: string
@@ -984,7 +985,10 @@ export default function FinancesPage() {
                       <tbody>
                         {expenses.map((expense) => (
                           <tr key={expense.id} className="border-b border-border">
-                            <td className="py-3 px-4 text-foreground capitalize">{expense.expense_type}</td>
+                            {/* No `capitalize` — it would title-case the detail into "Misc - (Broken Window Pane)". */}
+                            <td className="py-3 px-4 text-foreground">
+                              {expenseTypeLabel(expense.expense_type, expense.expense_type_detail)}
+                            </td>
                             <td className="py-3 px-4 text-muted">
                               {new Date(expense.expense_date).toLocaleDateString('en-IN', {
                                 month: 'short',

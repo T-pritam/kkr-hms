@@ -8,6 +8,7 @@ import {
   generateRefreshToken,
   setAuthCookies,
 } from '@/lib/auth/jwt'
+import { normaliseExpenseDetail, validateExpenseType } from '@/lib/finances/validate'
 
 // Helper function for token refresh
 async function refreshTokenIfNeeded() {
@@ -114,7 +115,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { expense_type, amount, expense_date, remarks } = body
+    const { expense_type, amount, expense_date, remarks, expense_type_detail } = body
 
     if (!expense_type || !amount || !expense_date) {
       return NextResponse.json(
@@ -130,6 +131,19 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // After the amount check, deliberately: the two run in this order today and
+    // the error a caller sees for a bad amount should not change because a
+    // second rule was added above it.
+    const typeError = validateExpenseType(expense_type)
+    if (typeError) {
+      return NextResponse.json({ error: typeError }, { status: 400 })
+    }
+
+    const detail = normaliseExpenseDetail(expense_type, expense_type_detail)
+    if ('error' in detail) {
+      return NextResponse.json({ error: detail.error }, { status: 400 })
+    }
+
     const month_year = expense_date.slice(0, 7)
 
     const supabase = await createClient()
@@ -143,6 +157,7 @@ export async function POST(request: NextRequest) {
           expense_date,
           month_year,
           remarks: remarks || null,
+          expense_type_detail: detail.value,
         },
       ])
       .select()
@@ -184,7 +199,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { id, expense_type, amount, expense_date, remarks } = body
+    const { id, expense_type, amount, expense_date, remarks, expense_type_detail } = body
 
     if (!id) {
       return NextResponse.json({ error: 'Missing expense id' }, { status: 400 })
@@ -204,9 +219,35 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    const month_year = expense_date.slice(0, 7)
-
     const supabase = await createClient()
+
+    const { data: existing } = await supabase
+      .from('expenses')
+      .select('expense_type')
+      .eq('id', id)
+      .single()
+
+    // The allow-list applies to what the user is putting in, not to what is
+    // already there. `expense_type` was unconstrained free text for the life of
+    // this table, so a live row may hold a value outside the eight; rejecting it
+    // here would mean nobody could fix that row's amount without also
+    // reclassifying it. Changing the type does have to land on a valid one.
+    if (!existing || expense_type !== existing.expense_type) {
+      const typeError = validateExpenseType(expense_type)
+      if (typeError) {
+        return NextResponse.json({ error: typeError }, { status: 400 })
+      }
+    }
+
+    // The detail is checked either way — including on a legacy Miscellaneous row
+    // that has never had one, which is the point: those get filled in the first
+    // time anyone touches them.
+    const detail = normaliseExpenseDetail(expense_type, expense_type_detail)
+    if ('error' in detail) {
+      return NextResponse.json({ error: detail.error }, { status: 400 })
+    }
+
+    const month_year = expense_date.slice(0, 7)
 
     const { data, error } = await supabase
       .from('expenses')
@@ -216,6 +257,7 @@ export async function PUT(request: NextRequest) {
         expense_date,
         month_year,
         remarks: remarks || null,
+        expense_type_detail: detail.value,
       })
       .eq('id', id)
       .select()

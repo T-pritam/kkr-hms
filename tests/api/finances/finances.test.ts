@@ -34,6 +34,11 @@ import {
   aReferral,
 } from '../../helpers/seed'
 import { THIS_MONTH, TODAY } from '../../setup'
+import {
+  EXPENSE_DETAIL_MAX,
+  EXPENSE_TYPES,
+  MISCELLANEOUS_TYPE,
+} from '@/lib/finances/constants'
 
 const expenses = (query = {}) => call(listExpenses, 'GET', '/api/finances/expenses', { query })
 const createExpense = (body: unknown) => call(addExpense, 'POST', '/api/finances/expenses', { body })
@@ -110,7 +115,11 @@ describe('/api/finances/expenses', () => {
   it('rejects a non-positive amount', async () => {
     await signInAs('ADMIN')
 
-    const { status, body } = await createExpense({ expense_type: 'x', amount: -5, expense_date: TODAY })
+    const { status, body } = await createExpense({
+      expense_type: 'Electric Bill',
+      amount: -5,
+      expense_date: TODAY,
+    })
     expect(status).toBe(400)
     expect(body.error).toBe('Amount must be greater than 0')
   })
@@ -131,7 +140,7 @@ describe('/api/finances/expenses', () => {
   it('parses a string amount', async () => {
     await signInAs('ADMIN')
 
-    await createExpense({ expense_type: 'x', amount: '1500.75', expense_date: TODAY })
+    await createExpense({ expense_type: 'Electric Bill', amount: '1500.75', expense_date: TODAY })
     expect(db.rows('expenses')[0].amount).toBe(1500.75)
   })
 
@@ -169,6 +178,162 @@ describe('/api/finances/expenses', () => {
 
     expect((await deleteExpense({ id: '1' })).status).toBe(200)
     expect(db.count('expenses')).toBe(0)
+  })
+
+  describe('the expense type allow-list', () => {
+    it.each(EXPENSE_TYPES)('accepts %s', async (expense_type) => {
+      await signInAs('ADMIN')
+
+      const detail = expense_type === MISCELLANEOUS_TYPE ? 'Broken window pane' : undefined
+      const { status } = await createExpense({
+        expense_type,
+        amount: 100,
+        expense_date: TODAY,
+        expense_type_detail: detail,
+      })
+
+      expect(status).toBe(200)
+    })
+
+    it('rejects a type outside the list', async () => {
+      await signInAs('ADMIN')
+
+      const { status, body } = await createExpense({
+        expense_type: 'Bribes',
+        amount: 100,
+        expense_date: TODAY,
+      })
+
+      expect(status).toBe(400)
+      expect(body.error).toContain('Expense type must be one of')
+      expect(db.count('expenses')).toBe(0)
+    })
+
+    /**
+     * The column was unconstrained free text for the life of this table, so a
+     * live row may hold something outside the eight. Rejecting it on edit would
+     * mean nobody could correct that row's amount without also reclassifying it.
+     */
+    it('still lets a legacy row with an off-list type be edited', async () => {
+      await signInAs('ADMIN')
+      anExpense({ id: '1', expense_type: 'Something historic' })
+
+      const { status } = await updateExpense({
+        id: '1',
+        expense_type: 'Something historic',
+        amount: 250,
+        expense_date: TODAY,
+      })
+
+      expect(status).toBe(200)
+      expect(db.rows('expenses')[0].amount).toBe(250)
+    })
+
+    it('but a change of type has to land on a valid one', async () => {
+      await signInAs('ADMIN')
+      anExpense({ id: '1', expense_type: 'Something historic' })
+
+      const { status, body } = await updateExpense({
+        id: '1',
+        expense_type: 'Something else historic',
+        amount: 250,
+        expense_date: TODAY,
+      })
+
+      expect(status).toBe(400)
+      expect(body.error).toContain('Expense type must be one of')
+    })
+
+    /** Two existing tests silently depend on the amount error winning. */
+    it('reports the amount error before the type error', async () => {
+      await signInAs('ADMIN')
+
+      const { body } = await createExpense({ expense_type: 'nope', amount: -5, expense_date: TODAY })
+      expect(body.error).toBe('Amount must be greater than 0')
+    })
+  })
+
+  describe('the Miscellaneous detail', () => {
+    const misc = (over: Record<string, unknown> = {}) =>
+      createExpense({
+        expense_type: MISCELLANEOUS_TYPE,
+        amount: 100,
+        expense_date: TODAY,
+        ...over,
+      })
+
+    it.each([undefined, null, '', '   '])('rejects a detail of %p', async (expense_type_detail) => {
+      await signInAs('ADMIN')
+
+      const { status, body } = await misc({ expense_type_detail })
+      expect(status).toBe(400)
+      expect(body.error).toBe('Describe the miscellaneous expense')
+      expect(db.count('expenses')).toBe(0)
+    })
+
+    it('stores it trimmed', async () => {
+      await signInAs('ADMIN')
+
+      await misc({ expense_type_detail: '  Broken window pane  ' })
+      expect(db.rows('expenses')[0].expense_type_detail).toBe('Broken window pane')
+    })
+
+    it('rejects one longer than the cap', async () => {
+      await signInAs('ADMIN')
+
+      const { status, body } = await misc({ expense_type_detail: 'x'.repeat(EXPENSE_DETAIL_MAX + 1) })
+      expect(status).toBe(400)
+      expect(body.error).toBe(`Detail must be ${EXPENSE_DETAIL_MAX} characters or fewer`)
+    })
+
+    it('discards a detail sent with a type that does not take one', async () => {
+      await signInAs('ADMIN')
+
+      await createExpense({
+        expense_type: 'Electric Bill',
+        amount: 100,
+        expense_date: TODAY,
+        expense_type_detail: 'should not stick',
+      })
+
+      expect(db.rows('expenses')[0].expense_type_detail).toBeNull()
+    })
+
+    /**
+     * The rows that predate the column. Requiring the detail on update is what
+     * gets them filled in — and it is the half of the rule that would regress
+     * without anyone noticing.
+     */
+    it('is required when editing a legacy row that has none', async () => {
+      await signInAs('ADMIN')
+      anExpense({ id: '1', expense_type: MISCELLANEOUS_TYPE, expense_type_detail: null })
+
+      const { status, body } = await updateExpense({
+        id: '1',
+        expense_type: MISCELLANEOUS_TYPE,
+        amount: 250,
+        expense_date: TODAY,
+      })
+
+      expect(status).toBe(400)
+      expect(body.error).toBe('Describe the miscellaneous expense')
+    })
+
+    it('saves the legacy row once a detail is supplied', async () => {
+      await signInAs('ADMIN')
+      anExpense({ id: '1', expense_type: MISCELLANEOUS_TYPE, expense_type_detail: null })
+
+      const { status } = await updateExpense({
+        id: '1',
+        expense_type: MISCELLANEOUS_TYPE,
+        amount: 250,
+        expense_date: TODAY,
+        expense_type_detail: 'Auto fare to the bank',
+      })
+
+      expect(status).toBe(200)
+      expect(db.rows('expenses')[0].expense_type_detail).toBe('Auto fare to the bank')
+    })
   })
 })
 

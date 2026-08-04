@@ -280,6 +280,9 @@ export function aTransaction(overrides: Row = {}): Row {
     verified_by: null,
     verified_at: null,
     notes: null,
+    // Only source: 'expense' rows carry these; the API nulls them on everything else.
+    expense_category: null,
+    expense_category_detail: null,
     ...overrides,
   })[0]
 }
@@ -362,6 +365,8 @@ export function anExpense(overrides: Row = {}): Row {
     expense_date: TODAY,
     month_year: THIS_MONTH,
     remarks: null,
+    // Only 'Miscellaneous' carries one; the API nulls it on every other type.
+    expense_type_detail: null,
     ...overrides,
   })[0]
 }

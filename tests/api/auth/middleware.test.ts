@@ -25,7 +25,15 @@ const PUBLIC_PATHS = [
   '/api/auth/change-password',
 ]
 
-const ADMIN_ONLY_PATHS = ['/employees', '/finances', '/daily-ledger/employee-ledger', '/admin']
+const ADMIN_ONLY_PATHS = [
+  '/employees',
+  '/finances',
+  '/daily-ledger/employee-ledger',
+  '/admin',
+  // The live shift settlement screen. The guard used to name only the dead stub
+  // above it, leaving this one reachable by anyone who typed the URL.
+  '/ledger/employee-shift',
+]
 
 describe('middleware — unauthenticated traffic', () => {
   it.each(PUBLIC_PATHS)('allows %s through without a session', async (path) => {

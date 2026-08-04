@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { verifyToken, getAccessToken, getRefreshToken, setAuthCookies, generateAccessToken, generateRefreshToken } from '@/lib/auth/jwt'
+import { normaliseLedgerCategoryDetail, validateLedgerExpenseCategory } from '@/lib/finances/validate'
 
 /**
  * PUT /api/ledger/transactions/[id]
@@ -96,13 +97,46 @@ export async function PUT(
     if (body.notes !== undefined) {
       updates.notes = body.notes || null
     }
+    // Only an expense row has a category. Silently ignoring these on a credit or
+    // an OPD row is deliberate — the alternative is a 400 for a field the edit
+    // form does not even show on those rows.
+    if (existing.source === 'expense') {
+      if (body.expense_category !== undefined) {
+        const categoryError = validateLedgerExpenseCategory(body.expense_category)
+        if (categoryError) {
+          return NextResponse.json({ error: categoryError }, { status: 400 })
+        }
+        updates.expense_category = body.expense_category
+      }
+      if (body.expense_category_detail !== undefined) {
+        updates.expense_category_detail = body.expense_category_detail || null
+      }
+    }
 
     // Validate UPI requirement
     const finalPaymentMode = updates.payment_mode || existing.payment_mode
     const finalReference = updates.reference_number !== undefined ? updates.reference_number : existing.reference_number
-    
+
     if (finalPaymentMode === 'upi' && (!finalReference || finalReference.trim() === '')) {
       return NextResponse.json({ error: 'Reference number required for UPI payments' }, { status: 400 })
+    }
+
+    // Same reconciliation as UPI above: resolve what the row will actually hold
+    // after the merge, so switching a row to 'other' cannot leave the detail
+    // behind, and switching away from it cannot strand one.
+    if (existing.source === 'expense') {
+      const finalCategory = updates.expense_category ?? existing.expense_category
+      const finalDetail = updates.expense_category_detail !== undefined
+        ? updates.expense_category_detail
+        : existing.expense_category_detail
+
+      const detail = normaliseLedgerCategoryDetail(finalCategory, finalDetail)
+      if ('error' in detail) {
+        return NextResponse.json({ error: detail.error }, { status: 400 })
+      }
+      if (detail.value !== finalDetail) {
+        updates.expense_category_detail = detail.value
+      }
     }
 
     // Update transaction
