@@ -106,21 +106,27 @@ describe('GET /api/patients/[id]/consultations', () => {
 })
 
 describe('POST /api/patients/[id]/consultations — validation', () => {
-  it('requires either a doctor or notes', async () => {
+  it('requires a doctor', async () => {
     await signInAs('NURSE')
     aPatient({ id: 'p1' })
 
     const { status, body } = await create('p1', {})
     expect(status).toBe(400)
-    expect(body.error).toBe('At least doctor_id or notes must be provided')
+    expect(body.error).toBe('Select the doctor for this consultation')
   })
 
-  it('accepts notes with no doctor', async () => {
+  /**
+   * The old rule let this through. A doctor-less consultation is skipped by the
+   * settlement sync, which groups by doctor_id, so the visit was recorded and could
+   * never be billed to anyone.
+   */
+  it('rejects notes with no doctor', async () => {
     await signInAs('NURSE')
     aPatient({ id: 'p1', date_of_join: '2026-01-01' })
 
     const { status } = await create('p1', { notes: 'Follow-up call' })
-    expect(status).toBe(200)
+    expect(status).toBe(400)
+    expect(db.count('patient_consultations')).toBe(0)
   })
 
   it('accepts a doctor with no notes', async () => {
@@ -135,8 +141,10 @@ describe('POST /api/patients/[id]/consultations — validation', () => {
   it('rejects a consultation dated before the patient joined', async () => {
     await signInAs('NURSE')
     aPatient({ id: 'p1', date_of_join: '2026-03-10' })
+    aDoctor({ id: 'd1' })
 
     const { status, body } = await create('p1', {
+      doctor_id: 'd1',
       notes: 'Backdated',
       consultation_date: '2026-03-01T10:00:00.000Z',
     })
@@ -149,16 +157,43 @@ describe('POST /api/patients/[id]/consultations — validation', () => {
   it('accepts a consultation on the join date itself', async () => {
     await signInAs('NURSE')
     aPatient({ id: 'p1', date_of_join: '2026-03-10' })
+    aDoctor({ id: 'd1' })
 
-    const { status } = await create('p1', { notes: 'Admission', consultation_date: '2026-03-10T10:00:00.000Z' })
+    const { status } = await create('p1', {
+      doctor_id: 'd1',
+      notes: 'Admission',
+      consultation_date: '2026-03-10T10:00:00.000Z',
+    })
+    expect(status).toBe(200)
+  })
+
+  /**
+   * The join-date check compares IST calendar days. 20:30 UTC on the 9th is 02:00 IST on
+   * the 10th — the admission day — so an early-morning visit must be accepted. Comparing
+   * instants rejected it, and nothing in the form could work around that.
+   */
+  it('accepts an early-morning IST visit on the join date', async () => {
+    await signInAs('NURSE')
+    aPatient({ id: 'p1', date_of_join: '2026-03-10' })
+    aDoctor({ id: 'd1' })
+
+    const { status } = await create('p1', {
+      doctor_id: 'd1',
+      consultation_date: '2026-03-09T20:30:00.000Z',
+    })
     expect(status).toBe(200)
   })
 
   it('skips the join-date check for a patient with no join date', async () => {
     await signInAs('NURSE')
     aPatient({ id: 'p1', date_of_join: null })
+    aDoctor({ id: 'd1' })
 
-    const { status } = await create('p1', { notes: 'x', consultation_date: '2020-01-01T00:00:00.000Z' })
+    const { status } = await create('p1', {
+      doctor_id: 'd1',
+      notes: 'x',
+      consultation_date: '2020-01-01T00:00:00.000Z',
+    })
     expect(status).toBe(200)
   })
 })
@@ -192,17 +227,25 @@ describe('POST /api/patients/[id]/consultations — stored record', () => {
   it('defaults the consultation date to now', async () => {
     await signInAs('NURSE')
     aPatient({ id: 'p1', date_of_join: '2026-01-01' })
+    aDoctor({ id: 'd1' })
 
-    await create('p1', { notes: 'Walk-in' })
+    await create('p1', { doctor_id: 'd1', notes: 'Walk-in' })
     expect(db.rows('patient_consultations')[0].consultation_date).toBe(NOW.toISOString())
   })
 
   it('normalises the consultation date to UTC', async () => {
     await signInAs('NURSE')
     aPatient({ id: 'p1', date_of_join: '2026-01-01' })
+    aDoctor({ id: 'd1' })
 
-    // What the UI sends: a wall-clock time with an explicit IST offset.
-    await create('p1', { notes: 'Evening round', consultation_date: '2026-03-12T18:30:00+05:30' })
+    // What the UI sends: a wall-clock time with an explicit IST offset. This is exactly
+    // the string toISTInstant() produces, and the assertion below is the contract it has
+    // to keep meeting.
+    await create('p1', {
+      doctor_id: 'd1',
+      notes: 'Evening round',
+      consultation_date: '2026-03-12T18:30:00+05:30',
+    })
 
     expect(db.rows('patient_consultations')[0].consultation_date).toBe('2026-03-12T13:00:00.000Z')
   })
@@ -232,16 +275,6 @@ describe('POST /api/patients/[id]/consultations — stored record', () => {
     await create('p1', { doctor_id: 'd1', notes: 'fresh' })
 
     expect(db.rows('patient_consultations').find((c) => c.notes === 'fresh')!.visit_number).toBe(1)
-  })
-
-  it('leaves the visit number at 1 when no doctor is set', async () => {
-    await signInAs('NURSE')
-    aPatient({ id: 'p1', date_of_join: '2026-01-01' })
-
-    await create('p1', { notes: 'one' })
-    await create('p1', { notes: 'two' })
-
-    expect(db.rows('patient_consultations').every((c) => c.visit_number === 1)).toBe(true)
   })
 
   it('does not count another patient’s visits to the same doctor', async () => {

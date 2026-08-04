@@ -1,9 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Plus, Calendar, Clock, Search, X, Edit2, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { AlertCircle, Edit2, Plus, Trash2 } from 'lucide-react';
 import { useUser } from '@/hooks/use-user';
+import { Button } from '@/components/ui/button';
+import { Modal } from '@/components/ui/modal';
 import { UpdatedStamp } from '@/components/ui/updated-stamp';
+import { ConsultationFormModal } from '@/components/patients/consultation-form-modal';
+import { formatIST } from '@/lib/consultations/ist';
 
 interface DoctorVisitsTabProps {
     patientId: string;
@@ -12,263 +16,112 @@ interface DoctorVisitsTabProps {
     onCreateBilling: () => void;
 }
 
-interface Doctor {
-    id: string;
-    name: string;
-    specialist?: string;
-}
-
 export default function DoctorVisitsTab({ patientId, patientJoinDate, billing, onCreateBilling }: DoctorVisitsTabProps) {
     const { user } = useUser();
     const [consultations, setConsultations] = useState<any[]>([]);
-    const [doctors, setDoctors] = useState<Doctor[]>([]);
-    const [filteredDoctors, setFilteredDoctors] = useState<Doctor[]>([]);
-    const [showForm, setShowForm] = useState(false);
-    const [loading, setLoading] = useState(false);
     const [dischargeDate, setDischargeDate] = useState<string | null>(null);
-    const [doctorSearch, setDoctorSearch] = useState('');
-    const [showDoctorDropdown, setShowDoctorDropdown] = useState(false);
-    const [editingId, setEditingId] = useState<string | null>(null);
 
-    const getCurrentTime = () => {
-        const now = new Date()
-        return now.toTimeString().slice(0, 5) // "HH:mm"
-    }
+    const [formOpen, setFormOpen] = useState(false);
+    const [editing, setEditing] = useState<any | null>(null);
+    const [deleting, setDeleting] = useState<any | null>(null);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState('');
 
-    const [formData, setFormData] = useState({
-        doctor_id: '',
-        consultation_date: '',
-        consultation_time: getCurrentTime(),
-        notes: '',
-        billing_id: billing?.id || '',
-    });
-
-    useEffect(() => {
-        fetchConsultations();
-        fetchDoctors();
-        fetchDischargeDate();
-    }, [patientId]);
-
-    // Filter doctors based on search term
-    useEffect(() => {
-        if (doctorSearch.trim() === '') {
-            setFilteredDoctors(doctors);
-        } else {
-            const searchLower = doctorSearch.toLowerCase();
-            setFilteredDoctors(
-                doctors.filter((doctor) =>
-                    doctor.name.toLowerCase().includes(searchLower) ||
-                    doctor.specialist?.toLowerCase().includes(searchLower)
-                )
-            );
-        }
-    }, [doctorSearch, doctors]);
-
-    const fetchConsultations = async () => {
+    const fetchConsultations = useCallback(async () => {
         try {
             const response = await fetch(`/api/patients/${patientId}/consultations`);
             if (response.ok) {
                 const data = await response.json();
-                setConsultations(data);
+                setConsultations(Array.isArray(data) ? data : []);
             }
-        } catch (error) {
-            console.error('Error fetching consultations:', error);
+        } catch (err) {
+            console.error('Error fetching consultations:', err);
         }
-    };
+    }, [patientId]);
 
     /**
-     * `/api/doctors/all` only returns active doctors. Editing a visit whose
-     * doctor has since been deactivated would otherwise open with an empty
-     * picker and no way to save, so that one doctor is asked for by id.
+     * The ceiling for the date field when the patient has been discharged.
+     *
+     * This read was broken: it tested `data.length` on a `{ success, data }` envelope, so
+     * the discharge date was always null and every patient silently fell through to the
+     * "not discharged" branch. Reading `json.data` matches how case-sheet-tab.tsx has
+     * always read the same endpoint.
+     *
+     * Only a *finalised* summary counts. A draft can carry a typed-but-unsigned discharge
+     * date, and a patient is not discharged until the summary is finalised — clamping on a
+     * draft would block legitimate entry.
      */
-    const fetchDoctors = async (includeId?: string | null) => {
-        try {
-            const url = includeId
-                ? `/api/doctors/all?includeId=${encodeURIComponent(includeId)}`
-                : '/api/doctors/all';
-            const response = await fetch(url);
-            if (response.ok) {
-                const data = await response.json();
-                setDoctors(Array.isArray(data) ? data : []);
-                setFilteredDoctors(Array.isArray(data) ? data : []);
-            }
-        } catch (error) {
-            console.error('Error fetching doctors:', error);
-        }
-    };
-
-    const fetchDischargeDate = async () => {
+    const fetchDischargeDate = useCallback(async () => {
         try {
             const response = await fetch(`/api/patients/${patientId}/case-sheets`);
-            if (response.ok) {
-                const data = await response.json();
-                if (data && data.length > 0 && data[0].discharge_date) {
-                    setDischargeDate(data[0].discharge_date);
-                }
-            }
-        } catch (error) {
-            console.error('Error fetching discharge date:', error);
+            if (!response.ok) return;
+
+            const json = await response.json();
+            const sheets = Array.isArray(json?.data) ? json.data : [];
+            const dates = sheets
+                .filter((s: any) => s.status === 'final' && s.discharge_date)
+                .map((s: any) => String(s.discharge_date).slice(0, 10))
+                .sort();
+
+            setDischargeDate(dates.length > 0 ? dates[dates.length - 1] : null);
+        } catch (err) {
+            console.error('Error fetching discharge date:', err);
         }
-    };
+    }, [patientId]);
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setLoading(true);
+    useEffect(() => {
+        void fetchConsultations();
+        void fetchDischargeDate();
+    }, [fetchConsultations, fetchDischargeDate]);
 
-        try {
-            const consultationDateTime = new Date(
-                `${formData.consultation_date}T${formData.consultation_time}:00+05:30`
-            ).toISOString();
-
-            const url = editingId
-                ? `/api/patients/${patientId}/consultations/${editingId}`
-                : `/api/patients/${patientId}/consultations`;
-            const method = editingId ? 'PATCH' : 'POST';
-
-            const response = await fetch(url, {
-                method,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    doctor_id: formData.doctor_id,
-                    consultation_date: consultationDateTime,
-                    notes: formData.notes,
-                    billing_id: formData.billing_id,
-                }),
-            });
-
-            if (response.ok) {
-                await fetchConsultations();
-                setShowForm(false);
-                setEditingId(null);
-                setDoctorSearch('');
-                setShowDoctorDropdown(false);
-                resetForm();
-            } else {
-                const error = await response.json();
-                alert(error.error || 'Failed to save consultation');
-            }
-        } catch (error) {
-            console.error('Error saving consultation:', error);
-            alert('Failed to save consultation');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const resetForm = () => {
-        setFormData({
-            doctor_id: '',
-            consultation_date: '',
-            consultation_time: getCurrentTime(),
-            notes: '',
-            billing_id: billing?.id || '',
-        });
-        setEditingId(null);
-        setDoctorSearch('');
-        setShowDoctorDropdown(false);
+    const handleAdd = () => {
+        setEditing(null);
+        setFormOpen(true);
     };
 
     const handleEdit = (consultation: any) => {
-        setEditingId(consultation.id);
-        if (consultation.doctor_id) void fetchDoctors(consultation.doctor_id);
-        const dateTime = new Date(consultation.consultation_date);
-        setFormData({
-            doctor_id: consultation.doctor_id,
-            consultation_date: dateTime.toISOString().split('T')[0],
-            consultation_time: dateTime.toTimeString().slice(0, 5),
-            billing_id: consultation.billing_id || billing?.id || '',
-            notes: consultation.notes || '',
-        });
-        setShowForm(true);
+        setEditing(consultation);
+        setFormOpen(true);
     };
 
-    const handleDelete = async (id: string, consultation: any) => {
-        const confirmMsg = 'Are you sure you want to delete this consultation?' +
-            (consultation.payment_status === 'paid' ? '\n\nWarning: This consultation has been settled.' : '');
+    const closeForm = () => {
+        setFormOpen(false);
+        setEditing(null);
+    };
 
-        if (!confirm(confirmMsg)) return;
+    const confirmDelete = async () => {
+        if (!deleting) return;
+
+        setBusy(true);
+        setError('');
 
         try {
-            const response = await fetch(`/api/patients/${patientId}/consultations/${id}`, {
+            const response = await fetch(`/api/patients/${patientId}/consultations/${deleting.id}`, {
                 method: 'DELETE',
             });
 
             if (response.ok) {
+                setDeleting(null);
                 await fetchConsultations();
-            } else {
-                const error = await response.json();
-                if (error.settlementFound) {
-                    alert('Cannot delete: ' + error.message);
-                } else {
-                    alert(error.error || 'Failed to delete consultation');
-                }
+                return;
             }
-        } catch (error) {
-            console.error('Error deleting consultation:', error);
-            alert('Failed to delete consultation');
+
+            const body = await response.json().catch(() => ({}));
+            // A settled visit cannot be removed; the route explains why, so pass it through.
+            setError(body.settlementFound ? body.message : body.error || 'Failed to delete the consultation');
+            setDeleting(null);
+        } catch (err) {
+            console.error('Error deleting consultation:', err);
+            setError('Failed to delete the consultation');
+            setDeleting(null);
+        } finally {
+            setBusy(false);
         }
     };
 
     const canEditOrDelete = (consultation: any) => {
         return user?.role === 'ADMIN' || consultation.created_by === user?.id;
     };
-
-    // Calculate date constraints
-    const getMaxDate = () => {
-        if (dischargeDate) {
-            // If discharged, can only add consultations up to discharge date
-            return dischargeDate;
-        }
-        // If not discharged, can only add consultations up to yesterday (not tomorrow)
-        const today = new Date();
-        today.setDate(today.getDate() - 1);
-        return today.toISOString().split('T')[0];
-    };
-
-    const minDate = patientJoinDate || new Date().toISOString().split('T')[0];
-    const maxDate = getMaxDate();
-
-    const getSelectedDoctorName = () => {
-        if (!formData.doctor_id) return '';
-        const doctor = doctors.find(d => d.id === formData.doctor_id);
-        return doctor ? `${doctor.name} ${doctor.specialist ? `- ${doctor.specialist}` : ''}` : '';
-    };
-
-    // Format date in IST as "2nd Feb 2026 6:34 PM"
-    const normalizeISO = (dateString: string) =>
-        dateString.replace(/\+00:00$/, 'Z');
-
-    const formatConsultationDateIST = (dateString: string) => {
-        console.log('Formatting date:', dateString);
-
-        const normalized = dateString.replace(/\+00:00$/, 'Z');
-        const date = new Date(normalized);
-
-        const parts = new Intl.DateTimeFormat('en-IN', {
-            timeZone: 'Asia/Kolkata',
-            day: 'numeric',
-            month: 'short',
-            year: 'numeric',
-            hour: 'numeric',
-            minute: '2-digit',
-            hour12: true,
-        }).formatToParts(date);
-
-        const get = (type: string) =>
-            parts.find(p => p.type === type)?.value || '';
-
-        const day = Number(get('day'));
-
-        const suffix =
-            day % 10 === 1 && day !== 11 ? 'st' :
-                day % 10 === 2 && day !== 12 ? 'nd' :
-                    day % 10 === 3 && day !== 13 ? 'rd' :
-                        'th';
-
-        return `${day}${suffix} ${get('month')} ${get('year')} ${get('hour')}:${get('minute')} ${get('dayPeriod')}`;
-    };
-
-
 
     return (
         <div className="space-y-6">
@@ -289,7 +142,7 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate, billing, o
                     <div className="flex justify-between items-center">
                         <h3 className="text-lg sm:text-xl font-semibold text-foreground">Doctor Consultations</h3>
                         <button
-                            onClick={() => setShowForm(!showForm)}
+                            onClick={handleAdd}
                             className="flex items-center gap-2 bg-info hover:bg-info-hover text-foreground px-3 sm:px-4 py-2 rounded-lg transition-colors min-h-[44px] text-sm"
                         >
                             <Plus className="h-4 w-4" />
@@ -298,139 +151,11 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate, billing, o
                         </button>
                     </div>
 
-                    {showForm && (
-                        <form onSubmit={handleSubmit} className="bg-surface-hover rounded-lg p-6 space-y-4">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="relative">
-                                    <label className="block text-sm font-medium text-muted mb-2">
-                                        Doctor (Optional)
-                                    </label>
-                                    <div className="relative">
-                                        <div
-                                            onClick={() => setShowDoctorDropdown(!showDoctorDropdown)}
-                                            className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none cursor-pointer flex items-center justify-between"
-                                        >
-                                            <span>{getSelectedDoctorName() || 'Select Doctor'}</span>
-                                            <Search className="h-4 w-4 text-muted" />
-                                        </div>
-
-                                        {showDoctorDropdown && (
-                                            <div className="absolute top-full left-0 right-0 mt-1 bg-surface-inset border border-border rounded-lg shadow-lg z-10">
-                                                <div className="p-2 border-b border-border">
-                                                    <input
-                                                        type="text"
-                                                        placeholder="Search doctor name or specialist..."
-                                                        value={doctorSearch}
-                                                        onChange={(e) => setDoctorSearch(e.target.value)}
-                                                        className="w-full bg-surface-inset text-foreground rounded px-3 py-2 text-sm focus:outline-none focus:border-ring"
-                                                    />
-                                                </div>
-                                                <div className="max-h-48 overflow-y-auto">
-                                                    {filteredDoctors.length === 0 ? (
-                                                        <div className="px-4 py-3 text-sm text-muted">
-                                                            No doctors found
-                                                        </div>
-                                                    ) : (
-                                                        filteredDoctors.map((doctor) => (
-                                                            <button
-                                                                key={doctor.id}
-                                                                type="button"
-                                                                onClick={() => {
-                                                                    setFormData({ ...formData, doctor_id: doctor.id });
-                                                                    setShowDoctorDropdown(false);
-                                                                    setDoctorSearch('');
-                                                                }}
-                                                                className={`w-full text-left px-4 py-2 text-sm hover:bg-surface-hover transition-colors ${formData.doctor_id === doctor.id
-                                                                        ? 'bg-info text-foreground'
-                                                                        : 'text-foreground'
-                                                                    }`}
-                                                            >
-                                                                <div className="font-medium">{doctor.name}</div>
-                                                                {doctor.specialist && (
-                                                                    <div className="text-xs text-muted">
-                                                                        {doctor.specialist}
-                                                                    </div>
-                                                                )}
-                                                            </button>
-                                                        ))
-                                                    )}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-muted mb-2">
-                                        <Calendar className="inline h-4 w-4 mr-1" />
-                                        Consultation Date *
-                                    </label>
-                                    <input
-                                        type="date"
-                                        required
-                                        min={minDate}
-                                        max={maxDate}
-                                        value={formData.consultation_date}
-                                        onChange={(e) => setFormData({ ...formData, consultation_date: e.target.value })}
-                                        className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
-                                    />
-                                    <p className="text-xs text-muted mt-1">
-                                        {dischargeDate
-                                            ? `Consultations until discharge date: ${new Date(dischargeDate).toLocaleDateString()}`
-                                            : 'Consultations up to yesterday only'
-                                        }
-                                    </p>
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-muted mb-2">
-                                        <Clock className="inline h-4 w-4 mr-1" />
-                                        Consultation Time
-                                    </label>
-                                    <input
-                                        type="time"
-                                        value={formData.consultation_time}
-                                        onChange={(e) => setFormData({ ...formData, consultation_time: e.target.value })}
-                                        className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
-                                    />
-                                </div>
-
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-muted mb-2">
-                                    Notes
-                                </label>
-                                <textarea
-                                    rows={3}
-                                    value={formData.notes}
-                                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                                    className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
-                                />
-                            </div>
-
-                            <div className="flex gap-3">
-                                <button
-                                    type="submit"
-                                    disabled={loading || !formData.doctor_id}
-                                    className="bg-success hover:bg-success-hover text-foreground px-6 py-2 rounded-lg transition-colors disabled:opacity-50"
-                                >
-                                    {loading ? 'Saving...' : editingId ? 'Update Consultation' : 'Save Consultation'}
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setShowForm(false);
-                                        resetForm();
-                                        setDoctorSearch('');
-                                        setShowDoctorDropdown(false);
-                                    }}
-                                    className="bg-surface-inset hover:bg-surface-inset text-foreground px-6 py-2 rounded-lg transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                            </div>
-                        </form>
+                    {error && (
+                        <div className="flex items-start gap-2 p-3 rounded-md bg-destructive-subtle border border-destructive/30 text-destructive text-sm">
+                            <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                            <span>{error}</span>
+                        </div>
                     )}
 
                     {/* Desktop Table */}
@@ -454,48 +179,46 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate, billing, o
                                         </td>
                                     </tr>
                                 ) : (
-                                    consultations.map((consultation) => {
-                                        return (
-                                            <tr key={consultation.id} className="hover:bg-table-row-hover">
-                                                <td className="px-4 py-3 text-sm text-foreground">
-                                                    {formatConsultationDateIST(consultation.consultation_date)}
-                                                </td>
-                                                <td className="px-4 py-3 text-sm text-foreground">
-                                                    {consultation.doctor?.name}
-                                                </td>
-                                                <td className="px-4 py-3 text-sm text-muted">
-                                                    {consultation.doctor?.specialist || 'N/A'}
-                                                </td>
-                                                <td className="px-4 py-3 text-sm text-muted">
-                                                    {consultation.notes || '-'}
-                                                </td>
-                                                <td className="px-4 py-3 text-sm text-foreground">
-                                                    {consultation.created_by_user?.username || 'Unknown'}
-                                                    <UpdatedStamp by={consultation.updated_by_user?.username} at={consultation.updated_at} className="mt-0.5" />
-                                                </td>
-                                                <td className="px-4 py-3 text-center">
-                                                    {canEditOrDelete(consultation) && (
-                                                        <div className="flex justify-center gap-2">
-                                                            <button
-                                                                onClick={() => handleEdit(consultation)}
-                                                                className="text-info hover:text-info transition-colors"
-                                                                title="Edit"
-                                                            >
-                                                                <Edit2 className="h-4 w-4" />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handleDelete(consultation.id, consultation)}
-                                                                className="text-destructive hover:text-destructive transition-colors"
-                                                                title="Delete"
-                                                            >
-                                                                <Trash2 className="h-4 w-4" />
-                                                            </button>
-                                                        </div>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        );
-                                    })
+                                    consultations.map((consultation) => (
+                                        <tr key={consultation.id} className="hover:bg-table-row-hover">
+                                            <td className="px-4 py-3 text-sm text-foreground">
+                                                {formatIST(consultation.consultation_date)}
+                                            </td>
+                                            <td className="px-4 py-3 text-sm text-foreground">
+                                                {consultation.doctor?.name || 'No Doctor'}
+                                            </td>
+                                            <td className="px-4 py-3 text-sm text-muted">
+                                                {consultation.doctor?.specialist || 'N/A'}
+                                            </td>
+                                            <td className="px-4 py-3 text-sm text-muted">
+                                                {consultation.notes || '-'}
+                                            </td>
+                                            <td className="px-4 py-3 text-sm text-foreground">
+                                                {consultation.created_by_user?.username || 'Unknown'}
+                                                <UpdatedStamp by={consultation.updated_by_user?.username} at={consultation.updated_at} className="mt-0.5" />
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                {canEditOrDelete(consultation) && (
+                                                    <div className="flex justify-center gap-2">
+                                                        <button
+                                                            onClick={() => handleEdit(consultation)}
+                                                            className="text-info hover:text-info transition-colors"
+                                                            title="Edit"
+                                                        >
+                                                            <Edit2 className="h-4 w-4" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setDeleting(consultation)}
+                                                            className="text-destructive hover:text-destructive transition-colors"
+                                                            title="Delete"
+                                                        >
+                                                            <Trash2 className="h-4 w-4" />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))
                                 )}
                             </tbody>
                         </table>
@@ -529,7 +252,7 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate, billing, o
                                                     <Edit2 className="h-4 w-4" />
                                                 </button>
                                                 <button
-                                                    onClick={() => handleDelete(consultation.id, consultation)}
+                                                    onClick={() => setDeleting(consultation)}
                                                     className="text-destructive min-h-[44px] min-w-[44px] flex items-center justify-center"
                                                     title="Delete"
                                                 >
@@ -540,7 +263,7 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate, billing, o
                                     </div>
                                     <div className="flex flex-wrap gap-2 text-xs">
                                         <span className="bg-surface-inset px-2 py-1 rounded text-muted">
-                                            {formatConsultationDateIST(consultation.consultation_date)}
+                                            {formatIST(consultation.consultation_date)}
                                         </span>
                                         <span className="bg-surface-inset px-2 py-1 rounded text-muted">
                                             by {consultation.created_by_user?.username || 'Unknown'}
@@ -554,6 +277,47 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate, billing, o
                             ))
                         )}
                     </div>
+
+                    <ConsultationFormModal
+                        isOpen={formOpen}
+                        onClose={closeForm}
+                        onSuccess={fetchConsultations}
+                        patientId={patientId}
+                        billingId={billing?.id ?? null}
+                        patientJoinDate={patientJoinDate}
+                        dischargeDate={dischargeDate}
+                        consultation={editing}
+                    />
+
+                    <Modal
+                        isOpen={!!deleting}
+                        onClose={() => setDeleting(null)}
+                        size="sm"
+                        title="Delete this consultation?"
+                        footer={
+                            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+                                <Button variant="outline" onClick={() => setDeleting(null)} disabled={busy}>
+                                    Cancel
+                                </Button>
+                                <Button variant="destructive" onClick={confirmDelete} disabled={busy}>
+                                    Delete
+                                </Button>
+                            </div>
+                        }
+                    >
+                        <div className="space-y-3">
+                            <p className="text-sm text-muted">
+                                {deleting?.doctor?.name || 'No Doctor'} on{' '}
+                                {deleting && formatIST(deleting.consultation_date)}. This cannot be undone.
+                            </p>
+                            {deleting?.payment_status === 'paid' && (
+                                <div className="flex items-start gap-2 p-3 rounded-md bg-destructive-subtle border border-destructive/30 text-destructive text-sm">
+                                    <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                                    <span>This consultation has been settled.</span>
+                                </div>
+                            )}
+                        </div>
+                    </Modal>
                 </>
             )}
         </div>

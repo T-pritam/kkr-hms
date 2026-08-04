@@ -447,8 +447,9 @@ export function PatientFormModal({
                 value={form.phone}
                 onChange={e => update('phone', e.target.value)}
                 disabled={saving}
-                placeholder="+91 98765 43210"
+                placeholder="9876543210"
                 inputMode="tel"
+                max={10}
               />
             </Field>
           </div>

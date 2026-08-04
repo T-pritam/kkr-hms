@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { verifyAuth } from '@/lib/auth/verify';
+import { istFields } from '@/lib/consultations/ist';
 
 export async function GET(
   request: NextRequest,
@@ -55,10 +56,13 @@ export async function POST(
     const patientId = id;
     const body = await request.json();
 
-    // Validate required fields (doctor_id is now optional)
-    if (!body.doctor_id && !body.notes) {
+    // A consultation names the doctor who gave it. The old rule admitted a row with notes
+    // and no doctor, and those rows are invisible to the settlement sync — it groups by
+    // doctor_id and skips the nulls — so the visit was recorded and never billable.
+    // Existing doctor-less rows stay readable and editable; only new ones are refused.
+    if (!body.doctor_id) {
       return NextResponse.json(
-        { error: 'At least doctor_id or notes must be provided' },
+        { error: 'Select the doctor for this consultation' },
         { status: 400 }
       );
     }
@@ -71,10 +75,14 @@ export async function POST(
       .single();
 
     if (patient?.date_of_join) {
-      const consultationDate = new Date(body.consultation_date || new Date());
-      const joinDate = new Date(patient.date_of_join);
-      
-      if (consultationDate < joinDate) {
+      // Compare IST calendar days, not instants. `date_of_join` is a bare YYYY-MM-DD and
+      // parses as UTC midnight, so a visit entered between 00:00 and 05:29 IST on the
+      // admission day is an instant on the *previous* UTC day and was rejected — an error
+      // with no way round it from the form, which now defaults to today.
+      const istDay = istFields(new Date(body.consultation_date || new Date())).date;
+      const joinDay = String(patient.date_of_join).slice(0, 10);
+
+      if (istDay < joinDay) {
         return NextResponse.json(
           { error: 'Consultation date cannot be before patient join date' },
           { status: 400 }

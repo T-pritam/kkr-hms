@@ -1,19 +1,29 @@
 /**
  * Discharge summary PDF.
  *
- * A4 **portrait**, laid out to the client's template:
+ * A4 **portrait**, laid out to the client's template. The hospital branding,
+ * title, and the patient's admission/discharge details sit at the top of
+ * page 1; the clinical content — complaints, history, diagnosis,
+ * investigations, summary, medication, advice and follow-up — continues
+ * immediately after on the same page, spilling onto further pages only when
+ * a section actually runs out of room. It used to force a page break right
+ * after the patient details regardless of how much of page 1 was still
+ * blank, which is why a summary with little to say could leave more than
+ * half a page empty before the content resumed on page 2.
  *
- *   Page 1  — hospital branding and the patient's details, and nothing else.
- *             It is the cover the patient's family looks at first, and it is
- *             what a receiving hospital reads before anything clinical.
- *   Page 2+ — plain content, one section after another.
+ * All heading and body text is set at 2x its original size for readability.
+ * The patient/admission detail block used to be a two-column grid — at this
+ * size two columns of label+value text no longer fit side by side on an A4
+ * portrait page, so it is now a single stacked column instead.
  *
- * Styled to match `lab-report-pdf.ts` — borderless, navy section headings, the
- * shared footer band — so the two clinical documents a patient goes home with
- * look like they came from the same hospital.
+ * Styled to match `lab-report-pdf.ts` — borderless, navy section headings —
+ * so the two clinical documents a patient goes home with look like they came
+ * from the same hospital. Unlike the shared footer used elsewhere, this one
+ * omits the "Generated: ..." timestamp entirely — a discharge summary is
+ * dated by its own discharge date, not by when someone happened to print it.
  *
- * As with the lab report: no ✓ / ⚠ / ↑ / ↓ and no ₹. jsPDF's built-in Helvetica
- * is WinAnsi-encoded and renders them as substitute characters.
+ * As with the lab report: no ✓ / ⚠ / ↑ / ↓ and no ₹. jsPDF's built-in
+ * Helvetica is WinAnsi-encoded and renders them as substitute characters.
  */
 
 import { C, M, fmtDate, fmtDateTime, mkDoc, footers } from './base'
@@ -22,12 +32,12 @@ import { resolveAge } from '@/lib/patients/age'
 import type { H } from './base'
 
 // ── Geometry (portrait: pw 210, cw 182, right edge 196) ──────────────────────
-const LINE_H = 4.6
+const LINE_H = 9.2
 const MED = {
   name: M,
-  dosage: M + 74,
-  qty: M + 110,
-  usage: M + 138,
+  dosage: M + 80,
+  qty: M + 120,
+  usage: M + 152,
 }
 
 // ── Public types ─────────────────────────────────────────────────────────────
@@ -145,18 +155,18 @@ const has = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '
 
 /** Section heading in the lab report's style: small navy caps over a hairline. */
 function heading(h: H, title: string): void {
-  h.checkPage(18)
-  h.bold(8.5)
+  h.checkPage(30)
+  h.bold(17)
   h.doc.setTextColor(...C.navy)
   h.doc.text(title.toUpperCase(), M, h.y)
   h.doc.setTextColor(...C.dark)
-  h.y += 2
+  h.y += 4
   rule(h, 0.4, C.navy)
-  h.y += 5
+  h.y += 10
 }
 
 /** Wrapped body text that breaks across pages without losing a line. */
-function body(h: H, text: string, size = 8.5): void {
+function body(h: H, text: string, size = 17): void {
   h.normal(size)
   h.doc.setTextColor(...C.dark)
   const lines: string[] = h.doc.splitTextToSize(text.trim(), h.cw)
@@ -168,7 +178,7 @@ function body(h: H, text: string, size = 8.5): void {
     h.doc.text(line, M, h.y)
     h.y += LINE_H
   }
-  h.y += 3
+  h.y += 6
 }
 
 /** A section that prints only when it has something to say. */
@@ -196,31 +206,31 @@ function coverHeader(h: H): void {
   }
 
   const top = h.y
-  h.bold(17)
+  h.bold(34)
   h.doc.setTextColor(...C.navy)
-  h.doc.text(BRANDING.name, centre, top + 7, { align: 'center' })
+  h.doc.text(BRANDING.name, centre, top + 14, { align: 'center' })
 
-  h.normal(8.5)
+  h.normal(17)
   h.doc.setTextColor(...C.muted)
-  h.doc.text(BRANDING.address, centre, top + 13.5, { align: 'center' })
+  h.doc.text(BRANDING.address, centre, top + 27, { align: 'center' })
   h.doc.text(
     [BRANDING.phone && `Ph: ${BRANDING.phone}`, BRANDING.email].filter(Boolean).join('   |   '),
-    centre, top + 18.5, { align: 'center' },
+    centre, top + 37, { align: 'center' },
   )
 
   h.doc.setTextColor(...C.dark)
-  h.y = Math.max(top + 23, logo ? top + logo.heightMm + 3 : 0)
+  h.y = Math.max(top + 46, logo ? top + logo.heightMm + 3 : 0)
   rule(h, 0.8, C.navy)
-  h.y += 14
+  h.y += 28
 }
 
 function coverTitle(h: H, data: DischargeSummaryData): void {
-  h.bold(15)
+  h.bold(30)
   h.doc.setTextColor(...C.navy)
   h.doc.text('DISCHARGE SUMMARY', h.pw / 2, h.y, { align: 'center' })
-  h.y += 7
+  h.y += 14
 
-  h.normal(8.5)
+  h.normal(17)
   h.doc.setTextColor(...C.muted)
   const meta = [
     data.summary_no && `No: ${data.summary_no}`,
@@ -229,38 +239,34 @@ function coverTitle(h: H, data: DischargeSummaryData): void {
   if (meta) h.doc.text(meta, h.pw / 2, h.y, { align: 'center' })
 
   h.doc.setTextColor(...C.dark)
-  h.y += 16
+  h.y += 32
 }
 
-/** Two-column label/value block, borderless, matching the lab report. */
-function detailColumns(h: H, left: [string, string][], right: [string, string][]): void {
-  const top = h.y
-  const rightX = M + 96
+/**
+ * One label/value row, stacked full-width.
+ *
+ * Replaces the old side-by-side two-column grid — two columns of label and
+ * value text no longer both fit across an A4 portrait page's content width
+ * once the font doubled, so each field gets its own line instead.
+ */
+function detailLine(h: H, label: string, value: string): void {
+  const labelW = 46
 
-  const column = (rows: [string, string][], labelX: number, valueX: number, wrapTo: number) => {
-    let y = top
-    for (const [label, value] of rows) {
-      h.normal(8.5)
-      h.doc.setTextColor(...C.muted)
-      h.doc.text(label, labelX, y)
-      h.doc.text(':', valueX - 3, y)
+  h.normal(17)
+  h.doc.setTextColor(...C.muted)
+  h.doc.text(label, M, h.y)
+  h.doc.text(':', M + labelW - 5, h.y)
 
-      h.bold(8.5)
-      h.doc.setTextColor(...C.dark)
-      const lines: string[] = h.doc.splitTextToSize(String(value), wrapTo)
-      for (const line of lines) {
-        h.doc.text(line, valueX, y)
-        y += 5.4
-      }
-    }
-    return y
-  }
-
-  const leftEnd = column(left, M, M + 30, 60)
-  const rightEnd = column(right, rightX, rightX + 30, 66)
+  h.bold(17)
+  h.doc.setTextColor(...C.dark)
+  const lines: string[] = h.doc.splitTextToSize(value, h.cw - labelW)
+  lines.forEach((line, i) => {
+    if (i > 0) h.y += LINE_H
+    h.doc.text(line, M + labelW, h.y)
+  })
 
   h.doc.setTextColor(...C.dark)
-  h.y = Math.max(leftEnd, rightEnd)
+  h.y += LINE_H
 }
 
 function coverDetails(h: H, data: DischargeSummaryData): void {
@@ -276,41 +282,39 @@ function coverDetails(h: H, data: DischargeSummaryData): void {
 
   const ageSex = [age, patient.gender || null].filter(Boolean).join(' / ') || '—'
 
-  const left: [string, string][] = [
+  const fields: [string, string][] = [
     ['Name', patient.name || '—'],
     ['Age / Sex', ageSex],
     ['Patient ID', patient.patient_id || '—'],
     ['Phone', patient.phone || '—'],
   ]
 
-  if (patient.blood_group) left.push(['Blood group', patient.blood_group])
-  left.push(['Address', patient.address || '—'])
+  if (patient.blood_group) fields.push(['Blood group', patient.blood_group])
+  fields.push(['Address', patient.address || '—'])
 
-  const right: [string, string][] = [
-    ['Admitted', fmtDate(data.admission_date)],
-    ['Discharged', fmtDate(data.discharge_date)],
-  ]
+  fields.push(['Admitted', fmtDate(data.admission_date)])
+  fields.push(['Discharged', fmtDate(data.discharge_date)])
 
   const place = [data.ward, data.bed && `Bed ${data.bed}`].filter(Boolean).join(' / ')
-  if (place) right.push(['Ward / Bed', place])
-  if (has(data.condition_on_discharge)) right.push(['Condition', data.condition_on_discharge])
+  if (place) fields.push(['Ward / Bed', place])
+  if (has(data.condition_on_discharge)) fields.push(['Condition', data.condition_on_discharge])
 
   const doctors = data.doctors || []
   if (doctors.length > 0) {
-    right.push([
+    fields.push([
       doctors.length > 1 ? 'Consultants' : 'Consultant',
       doctors.map(d => d.doctor_name).join(', '),
     ])
   }
 
   rule(h, 0.4)
-  h.y += 8
-  detailColumns(h, left, right)
+  h.y += 10
+  for (const [label, value] of fields) detailLine(h, label, value)
   h.y += 6
   rule(h, 0.4)
 }
 
-// ── Page 2+: content ─────────────────────────────────────────────────────────
+// ── Content ──────────────────────────────────────────────────────────────────
 
 function vitalsSection(h: H, data: DischargeSummaryData): void {
   const vitals = [
@@ -324,20 +328,20 @@ function vitalsSection(h: H, data: DischargeSummaryData): void {
 
   heading(h, 'Condition on Discharge')
   if (has(data.condition_on_discharge)) body(h, data.condition_on_discharge)
-  if (vitals.length > 0) body(h, vitals.join('        '), 8)
+  if (vitals.length > 0) body(h, vitals.join('        '), 16)
 }
 
 function medicationHeadings(h: H): void {
-  h.bold(8)
+  h.bold(16)
   h.doc.setTextColor(...C.navy)
   h.doc.text('Medicine', MED.name, h.y)
   h.doc.text('Dosage', MED.dosage, h.y)
   h.doc.text('Qty', MED.qty, h.y)
   h.doc.text('Usage', MED.usage, h.y)
   h.doc.setTextColor(...C.dark)
-  h.y += 2
+  h.y += 4
   rule(h, 0.3)
-  h.y += 4.5
+  h.y += 9
 }
 
 function medicationSection(h: H, medications: DischargeMedication[]): void {
@@ -349,33 +353,43 @@ function medicationSection(h: H, medications: DischargeMedication[]): void {
   for (const med of medications) {
     // Repeat the column headings after a page break — the same fix the lab
     // report needed, where page two arrived as an unlabelled list.
-    if (h.y + 6 > h.ph - 22) {
+    if (h.y + 12 > h.ph - 30) {
       h.doc.addPage()
       h.y = M
       medicationHeadings(h)
     }
 
-    h.normal(8.5)
+    h.normal(17)
     h.doc.setTextColor(...C.dark)
     const nameLines: string[] = h.doc.splitTextToSize(med.medicine_name, MED.dosage - MED.name - 4)
+    const dosageLines: string[] = h.doc.splitTextToSize(med.dosage || '—', MED.qty - MED.dosage - 4)
+    const qtyLines: string[] = h.doc.splitTextToSize(med.quantity || '—', MED.usage - MED.qty - 4)
     const usageLines: string[] = h.doc.splitTextToSize(med.usage || '—', h.re - MED.usage)
 
     h.doc.text(nameLines[0], MED.name, h.y)
     h.doc.setTextColor(...C.muted)
-    h.doc.text(med.dosage || '—', MED.dosage, h.y)
-    h.doc.text(med.quantity || '—', MED.qty, h.y)
+    h.doc.text(dosageLines[0], MED.dosage, h.y)
+    h.doc.text(qtyLines[0], MED.qty, h.y)
     h.doc.text(usageLines[0], MED.usage, h.y)
     h.doc.setTextColor(...C.dark)
 
-    // Wrapped remainders of either column, so a long name never overruns the
-    // dosage and a long usage note never runs off the page.
-    const extra = Math.max(nameLines.length, usageLines.length)
+    // Wrapped remainders of any column, so a long name, dosage or usage note
+    // never overruns its neighbour or runs off the page.
+    const extra = Math.max(nameLines.length, dosageLines.length, qtyLines.length, usageLines.length)
     for (let i = 1; i < extra; i++) {
       h.y += LINE_H
-      h.normal(8.5)
+      h.normal(17)
       if (nameLines[i]) {
         h.doc.setTextColor(...C.dark)
         h.doc.text(nameLines[i], MED.name, h.y)
+      }
+      if (dosageLines[i]) {
+        h.doc.setTextColor(...C.muted)
+        h.doc.text(dosageLines[i], MED.dosage, h.y)
+      }
+      if (qtyLines[i]) {
+        h.doc.setTextColor(...C.muted)
+        h.doc.text(qtyLines[i], MED.qty, h.y)
       }
       if (usageLines[i]) {
         h.doc.setTextColor(...C.muted)
@@ -384,12 +398,12 @@ function medicationSection(h: H, medications: DischargeMedication[]): void {
       h.doc.setTextColor(...C.dark)
     }
 
-    h.y += 5.8
+    h.y += 11.6
   }
 
-  h.y += 1
+  h.y += 2
   rule(h, 0.3)
-  h.y += 6
+  h.y += 12
 }
 
 function followUpSection(h: H, data: DischargeSummaryData): void {
@@ -397,24 +411,24 @@ function followUpSection(h: H, data: DischargeSummaryData): void {
 
   heading(h, 'Follow-up')
   if (data.follow_up_date) {
-    h.bold(9)
+    h.bold(18)
     h.doc.setTextColor(...C.navy)
     h.doc.text(`Review on ${fmtDate(data.follow_up_date)}`, M, h.y)
     h.doc.setTextColor(...C.dark)
-    h.y += 6
+    h.y += 12
   }
   if (has(data.follow_up_instructions)) body(h, data.follow_up_instructions)
 }
 
 function signOff(h: H, data: DischargeSummaryData): void {
-  h.checkPage(46)
-  h.y += 6
+  h.checkPage(90)
+  h.y += 12
 
-  h.normal(8.5)
+  h.normal(17)
   h.doc.setTextColor(...C.muted)
   h.doc.text('- -   End of Summary   - -', h.pw / 2, h.y, { align: 'center' })
   h.doc.setTextColor(...C.dark)
-  h.y += 16
+  h.y += 32
 
   // A signature rule per consulting doctor, up to three across the page —
   // beyond that they are simply listed, which is what a wide consultant panel
@@ -433,19 +447,19 @@ function signOff(h: H, data: DischargeSummaryData): void {
       h.doc.setLineWidth(0.3)
       h.doc.line(left, lineY, right, lineY)
 
-      h.bold(8)
+      h.bold(16)
       h.doc.setTextColor(...C.dark)
-      h.doc.text(doctor.doctor_name, left, lineY + 4.5)
+      h.doc.text(doctor.doctor_name, left, lineY + 9)
 
       if (doctor.doctor_specialist) {
-        h.normal(7)
+        h.normal(14)
         h.doc.setTextColor(...C.muted)
-        h.doc.text(doctor.doctor_specialist, left, lineY + 8.5)
+        h.doc.text(doctor.doctor_specialist, left, lineY + 17)
       }
     })
 
     h.doc.setTextColor(...C.dark)
-    h.y = lineY + 14
+    h.y = lineY + 28
   }
 
   const attribution = [
@@ -455,11 +469,11 @@ function signOff(h: H, data: DischargeSummaryData): void {
   ].filter(Boolean).join('        ')
 
   if (attribution) {
-    h.normal(7)
+    h.normal(14)
     h.doc.setTextColor(...C.muted)
     h.doc.text(attribution, M, h.y)
     h.doc.setTextColor(...C.dark)
-    h.y += 5
+    h.y += 10
   }
 }
 
@@ -500,14 +514,13 @@ export function dischargeSummaryFilename(data: DischargeSummaryData): string {
 export function renderDischargeSummary(data: DischargeSummaryData) {
   const h = mkDoc('portrait')
 
-  // ── Page 1: branding and patient details, nothing else ───────────────────
+  // Branding, title and the patient's admission/discharge details, then the
+  // clinical content continues immediately after on this same page — it only
+  // moves to a new page when a section actually runs out of room.
   coverHeader(h)
   coverTitle(h, data)
   coverDetails(h, data)
-
-  // ── Page 2 onwards: the content ──────────────────────────────────────────
-  h.doc.addPage()
-  h.y = M
+  h.y += 10
 
   textSection(h, 'Chief Complaints', data.chief_complaints)
   textSection(h, 'History of Present Illness', data.history_present_illness)
@@ -521,7 +534,7 @@ export function renderDischargeSummary(data: DischargeSummaryData) {
   followUpSection(h, data)
 
   signOff(h, data)
-  footers(h)
+  footers(h, { showGenerated: false })
 
   if (data.status !== 'final') draftWatermark(h)
 

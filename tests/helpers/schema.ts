@@ -125,7 +125,8 @@ export const SCHEMA: Record<string, string[]> = {
     'referral_settlement_date', 'referral_settlement_notes', 'total_doctor_fees', 'billing_status',
     'created_at', 'updated_at', 'created_by', 'updated_by', 'patient_charges_total', 'total_charges',
     'patient_paid_amount', 'payment_status', 'joined_date', 'month_year', 'referral_transaction_ref',
-    'referral_settlement_payment_method',
+    'referral_settlement_payment_method', 'referral_commission_included_in_package',
+    'doctor_fees_included_in_package',
   ],
 
   patient_billing_installments: [

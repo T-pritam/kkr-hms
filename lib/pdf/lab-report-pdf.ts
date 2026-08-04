@@ -151,10 +151,10 @@ function patientBlock(h: H, data: LabReportData): void {
   ]
   const right: [string, string][] = [
     ['Order No', data.order_no],
-    ['Registered', dateTime(data.registered_at)],
-    ['Collected', dateTime(data.collected_at)],
-    ['Received', dateTime(data.received_at)],
-    ['Reported', dateTime(data.reported_at)],
+    ['Registered At', dateTime(data.registered_at)],
+    ['Collected Sample', dateTime(data.collected_at)],
+    ['Received Sample', dateTime(data.received_at)],
+    ['Report Generated', dateTime(data.reported_at)],
   ]
 
   const top = h.y
@@ -176,7 +176,9 @@ function patientBlock(h: H, data: LabReportData): void {
   }
 
   const leftEnd = column(left, M, M + 26)
-  const rightEnd = column(right, rightX, rightX + 24)
+  // Widened from +24 — "Report Generated" / "Collected Sample" are longer
+  // than the old "Reported" / "Collected" labels and need the extra room.
+  const rightEnd = column(right, rightX, rightX + 34)
 
   h.doc.setTextColor(...C.dark)
   h.y = Math.max(leftEnd, rightEnd) + 1

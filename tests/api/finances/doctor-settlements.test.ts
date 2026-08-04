@@ -175,11 +175,11 @@ describe('PUT /api/doctor-settlements/[settlementId] — pricing', () => {
   })
 
   /**
-   * Known defect — see BUGS.md #26. total_amount is a plain column that nothing computes,
-   * and the pricing endpoint never writes it. After changing the rate, the settlement's
-   * own total is stale — and that is precisely the column the billing roll-up sums.
+   * BUGS.md #26, resolved — the pricing endpoint now recomputes total_amount
+   * whenever amount_per_visit/visit_count change, so it can't go stale against
+   * the rate just set (which is also the column the billing roll-up sums).
    */
-  it.fails('should keep total_amount in step with the rate it just set', async () => {
+  it('should keep total_amount in step with the rate it just set', async () => {
     await signInAs('ADMIN')
     aSettlement({ id: 's1', visit_count: 3, amount_per_visit: 1000, total_amount: 3000 })
 

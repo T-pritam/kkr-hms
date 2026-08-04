@@ -10,9 +10,10 @@ import {
 } from '@/app/api/patients/[id]/billing/route'
 import { call } from '../../helpers/request'
 import { signInAs, signOut } from '../../helpers/auth'
-import { db } from '../../helpers/fake-supabase'
+import { db, createFakeClient } from '../../helpers/fake-supabase'
 import { aPatient, aBilling, aReferral } from '../../helpers/seed'
 import { TODAY, THIS_MONTH } from '../../setup'
+import { recalculatePatientBilling } from '@/lib/recalculate-billing'
 
 const read = (patientId: string) =>
   call(getBilling, 'GET', `/api/patients/${patientId}/billing`, { params: { id: patientId } })
@@ -248,11 +249,11 @@ describe('PATCH /api/patients/[id]/billing', () => {
   })
 
   /**
-   * Known defect — see BUGS.md #23. The route writes two columns the live schema does not
-   * have. Any request carrying either flag fails outright with a 500, which is what the
-   * "included in package" checkboxes in the billing tab send.
+   * BUGS.md #16/#23, resolved — patient_billing now has both columns
+   * (supabase/migrations/20260805000001_patient_billing_package_flags.sql), so the
+   * "included in package" checkboxes the billing tab always sends no longer 500.
    */
-  it.fails('should accept the "included in package" flags the UI sends', async () => {
+  it('should accept the "included in package" flags the UI sends', async () => {
     await signInAs('ADMIN')
     aBilling({ id: 'b1', patient_id: 'p1' })
 
@@ -263,19 +264,26 @@ describe('PATCH /api/patients/[id]/billing', () => {
     })
 
     expect(status).toBe(200)
+    expect(db.find('patient_billing', (r) => r.id === 'b1')).toMatchObject({
+      doctor_fees_included_in_package: true,
+    })
   })
 
-  it('rejects the package flags today, because the columns do not exist', async () => {
+  it('excludes the referral commission from total_charges once marked included in the package', async () => {
     await signInAs('ADMIN')
-    aBilling({ id: 'b1', patient_id: 'p1' })
+    aBilling({ id: 'b1', patient_id: 'p1', base_charge: 20000, referral_commission_amount: 3000 })
 
-    const { status, body } = await update('p1', {
+    const { status } = await update('p1', {
       billing_id: 'b1',
       referral_commission_included_in_package: true,
     })
 
-    expect(status).toBe(500)
-    expect(body.error).toBe('Failed to update patient billing')
+    expect(status).toBe(200)
+
+    await recalculatePatientBilling(createFakeClient(db) as any, 'b1')
+
+    // 20000 base only — the 3000 commission is already in the package, not added on top.
+    expect(Number(db.find('patient_billing', (r) => r.id === 'b1')!.total_charges)).toBe(20000)
   })
 
   /**

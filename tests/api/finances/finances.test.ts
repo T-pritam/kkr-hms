@@ -281,41 +281,29 @@ describe('GET /api/finances/summary', () => {
   })
 
   /**
-   * Known defect — see BUGS.md #16/#23. The billing query selects two columns the live
-   * schema does not have, so it errors and every figure derived from patient_billing —
-   * commission, doctor fees, pending receivables, billing count — silently reads zero.
+   * BUGS.md #16/#23, resolved — patient_billing now has both package-flag columns
+   * (supabase/migrations/20260805000001_patient_billing_package_flags.sql), so the
+   * summary's billing query no longer errors and these figures read real values again.
    */
-  it.fails('should report referral commission for the month', async () => {
+  it('should report referral commission for the month', async () => {
     await signInAs('ADMIN')
     aBilling({ month_year: THIS_MONTH, referral_commission_amount: 3000 })
 
     expect((await summary({ month_year: THIS_MONTH })).body.income.total_commission).toBe(3000)
   })
 
-  it.fails('should report doctor fees for the month', async () => {
+  it('should report doctor fees for the month', async () => {
     await signInAs('ADMIN')
     aBilling({ month_year: THIS_MONTH, total_doctor_fees: 6500 })
 
     expect((await summary({ month_year: THIS_MONTH })).body.expenses.doctor_fees).toBe(6500)
   })
 
-  it.fails('should report pending receivables', async () => {
+  it('should report pending receivables', async () => {
     await signInAs('ADMIN')
     aBilling({ month_year: THIS_MONTH, total_charges: 26500, patient_paid_amount: 7000 })
 
     expect((await summary({ month_year: THIS_MONTH })).body.income.pending_receivables).toBe(19500)
-  })
-
-  it('reports zeroes for all billing-derived figures today', async () => {
-    await signInAs('ADMIN')
-    aBilling({ month_year: THIS_MONTH, total_charges: 26500, patient_paid_amount: 7000, referral_commission_amount: 3000 })
-
-    const { body } = await summary({ month_year: THIS_MONTH })
-
-    expect(body.income.total_commission).toBe(0)
-    expect(body.income.pending_receivables).toBe(0)
-    expect(body.income.billing_count).toBe(0)
-    expect(body.expenses.doctor_fees).toBe(0)
   })
 
   /**

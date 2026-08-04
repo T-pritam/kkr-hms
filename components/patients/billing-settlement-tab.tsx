@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Check, DollarSign, Edit2, Trash2, X, Download } from 'lucide-react';
+import { Plus, Check, DollarSign, Edit2, Trash2, X, Download, RefreshCw } from 'lucide-react';
 import { useUser } from '@/hooks/use-user';
-import { ReferralSelect } from './referral-select';
 import { fetchPatientPDFData, generatePatientPDF } from '@/lib/pdf/patient-pdf';
+import { SetChargesModal } from './set-charges-modal';
+import { UpdatedStamp } from '@/components/ui/updated-stamp';
 
 interface BillingSettlementTabProps {
   patientId: string;
@@ -12,6 +13,18 @@ interface BillingSettlementTabProps {
   onCreateBilling: () => void;
   onBillingUpdate: () => void;
   onSettlementUpdate: () => void;
+}
+
+/** Who recorded a row, and — only if it was actually touched again since — who last updated it. */
+function RecordedStamp({ record }: { record: any }) {
+  return (
+    <>
+      <UpdatedStamp by={record?.created_by_user?.username} at={record?.created_at} action="Recorded" />
+      {record?.updated_at && record.updated_at !== record.created_at && (
+        <UpdatedStamp by={record?.updated_by_user?.username} at={record?.updated_at} action="Updated" />
+      )}
+    </>
+  );
 }
 
 export default function BillingSettlementTab({
@@ -24,17 +37,9 @@ export default function BillingSettlementTab({
   const { user } = useUser();
   const [settlements, setSettlements] = useState<any[]>([]);
   const [doctors, setDoctors] = useState<any[]>([]);
-  const [showChargesForm, setShowChargesForm] = useState(false);
+  const [showSetCharges, setShowSetCharges] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showSettleModal, setShowSettleModal] = useState(false);
-  const [chargesData, setChargesData] = useState({
-    base_charge: 0,
-    referral_commission_amount: 0,
-    referral_settlement_notes: '',
-    referral_id: '',
-    referral_commission_included_in_package: false,
-    doctor_fees_included_in_package: false,
-  });
   const [referrals, setReferrals] = useState<any[]>([]);
   const [settleData, setSettleData] = useState({
     settlement_id: '',
@@ -43,6 +48,7 @@ export default function BillingSettlementTab({
     transaction_reference: '',
     settlement_notes: '',
     settlement_type: 'regular',
+    given_by: '',
   });
   const [syncing, setSyncing] = useState(false);
   const [editingSettlement, setEditingSettlement] = useState<any>(null);
@@ -66,6 +72,7 @@ export default function BillingSettlementTab({
     payment_method: 'cash',
     transaction_reference: '',
     settlement_notes: '',
+    given_by: '',
   });
 
   useEffect(() => {
@@ -90,9 +97,6 @@ export default function BillingSettlementTab({
 
   const fetchDoctors = async () => {
     try {
-      // Was `/api/doctors`, whose envelope is `{ doctors, total, … }` — so
-      // `data.data` was always undefined and this picker was permanently empty.
-      // It was also paginated, meaning at best it would have shown 10 doctors.
       const response = await fetch('/api/doctors/all');
       if (response.ok) {
         const data = await response.json();
@@ -146,8 +150,8 @@ export default function BillingSettlementTab({
     setEditingSettlement(settlement);
     setEditFormData({
       pricing_mode: 'per_visit',
-      amount_per_visit: parseFloat(settlement.amount_per_visit || 0),
-      total_amount: parseFloat(settlement.total_amount || 0),
+      amount_per_visit: parseInt(settlement.amount_per_visit || 0),
+      total_amount: parseInt(settlement.total_amount || 0),
       visit_count: settlement.visit_count || 0,
       settlement_type: settlement.settlement_type || 'regular',
       notes: settlement.settlement_notes || '',
@@ -155,30 +159,21 @@ export default function BillingSettlementTab({
   };
 
   const handlePricingModeChange = (mode: 'per_visit' | 'total') => {
-    setEditFormData(prev => ({
-      ...prev,
-      pricing_mode: mode,
-    }));
+    setEditFormData(prev => ({ ...prev, pricing_mode: mode }));
   };
 
   const handleSettlePricingModeChange = (mode: 'per_visit' | 'total') => {
-    setSettlePricingData(prev => ({
-      ...prev,
-      pricing_mode: mode,
-    }));
+    setSettlePricingData(prev => ({ ...prev, pricing_mode: mode }));
   };
 
   const handlePriceChange = (field: 'amount_per_visit' | 'total_amount' | 'visit_count', value: number) => {
     setEditFormData(prev => {
       const updated = { ...prev, [field]: value };
-
-      // Auto-calculate based on pricing mode
       if (prev.pricing_mode === 'per_visit' && (field === 'amount_per_visit' || field === 'visit_count')) {
         updated.total_amount = updated.amount_per_visit * updated.visit_count;
       } else if (prev.pricing_mode === 'total' && (field === 'total_amount' || field === 'visit_count')) {
-        updated.amount_per_visit = updated.visit_count > 0 ? updated.total_amount / updated.visit_count : 0;
+        updated.amount_per_visit = updated.visit_count > 0 ? Math.floor(updated.total_amount / updated.visit_count) : 0;
       }
-
       return updated;
     });
   };
@@ -186,17 +181,13 @@ export default function BillingSettlementTab({
   const handleSettlePriceChange = (field: 'amount_per_visit' | 'total_amount' | 'visit_count', value: number) => {
     setSettlePricingData(prev => {
       const updated = { ...prev, [field]: value };
-
-      // Auto-calculate based on pricing mode
       if (prev.pricing_mode === 'per_visit' && (field === 'amount_per_visit' || field === 'visit_count')) {
         updated.total_amount = updated.amount_per_visit * updated.visit_count;
       } else if (prev.pricing_mode === 'total' && (field === 'total_amount' || field === 'visit_count')) {
-        updated.amount_per_visit = updated.visit_count > 0 ? updated.total_amount / updated.visit_count : 0;
+        updated.amount_per_visit = updated.visit_count > 0 ? Math.floor(updated.total_amount / updated.visit_count) : 0;
       }
-
       return updated;
     });
-    // Update settlement amount automatically
     const updatedData = { ...settleData };
     if (field === 'total_amount' || (field === 'amount_per_visit' && settlePricingData.pricing_mode === 'per_visit') || (field === 'visit_count')) {
       updatedData.settlement_amount = field === 'total_amount' ? value : settlePricingData.pricing_mode === 'per_visit' ? settlePricingData.amount_per_visit * (field === 'visit_count' ? value : settlePricingData.visit_count) : settlePricingData.total_amount;
@@ -210,7 +201,6 @@ export default function BillingSettlementTab({
       return;
     }
 
-    // Update settlement with pricing details
     setLoading(true);
     try {
       const response = await fetch(`/api/doctor-settlements/${settleData.settlement_id}`, {
@@ -225,11 +215,7 @@ export default function BillingSettlementTab({
       });
 
       if (response.ok) {
-        // Update settlement amount to match total_amount
-        setSettleData(prev => ({
-          ...prev,
-          settlement_amount: settlePricingData.total_amount,
-        }));
+        setSettleData(prev => ({ ...prev, settlement_amount: settlePricingData.total_amount }));
         setSettlePricingComplete(true);
       } else {
         const error = await response.json();
@@ -302,6 +288,7 @@ export default function BillingSettlementTab({
           payment_method: settleData.payment_method,
           transaction_reference: settleData.transaction_reference,
           settlement_notes: settleData.settlement_notes,
+          given_by: settleData.given_by,
         }),
       });
 
@@ -316,6 +303,7 @@ export default function BillingSettlementTab({
           transaction_reference: '',
           settlement_notes: '',
           settlement_type: 'regular',
+          given_by: '',
         });
       } else {
         const error = await response.json();
@@ -373,6 +361,7 @@ export default function BillingSettlementTab({
           referral_settlement_payment_method: settleReferralData.payment_method,
           referral_settlement_transaction_ref: settleReferralData.transaction_reference,
           referral_settlement_notes: settleReferralData.settlement_notes,
+          referral_settlement_given_by: settleReferralData.given_by,
         }),
       });
 
@@ -384,6 +373,7 @@ export default function BillingSettlementTab({
           payment_method: 'cash',
           transaction_reference: '',
           settlement_notes: '',
+          given_by: '',
         });
       } else {
         const error = await response.json();
@@ -392,49 +382,6 @@ export default function BillingSettlementTab({
     } catch (error) {
       console.error('Error settling referral commission:', error);
       alert('Failed to settle referral commission');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleUpdateCharges = async (
-    e?: React.FormEvent | null,
-    isDelete = false
-  ) => {
-    if (e) e.preventDefault();
-    setLoading(true);
-
-    try {
-      const response = await fetch(`/api/patients/${patientId}/billing`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          billing_id: billing.id,
-          base_charge: isDelete ? 0 : chargesData.base_charge,
-          referral_id: isDelete ? null : chargesData.referral_id,
-          referral_commission_amount: isDelete ? 0 : chargesData.referral_commission_amount,
-          referral_commission_included_in_package: isDelete ? false : chargesData.referral_commission_included_in_package,
-          doctor_fees_included_in_package: isDelete ? false : chargesData.doctor_fees_included_in_package,
-        }),
-      });
-
-      if (response.ok) {
-        onBillingUpdate();
-        setShowChargesForm(false);
-        setChargesData({
-          base_charge: 0,
-          referral_commission_amount: 0,
-          referral_settlement_notes: '',
-          referral_id: '',
-          referral_commission_included_in_package: false,
-          doctor_fees_included_in_package: false,
-        });
-      } else {
-        alert('Failed to update charges');
-      }
-    } catch (error) {
-      console.error('Error updating charges:', error);
-      alert('Failed to update charges');
     } finally {
       setLoading(false);
     }
@@ -455,6 +402,9 @@ export default function BillingSettlementTab({
   }
 
   const isAdmin = user?.role === 'ADMIN';
+
+  // Shared input class for the inline number inputs in modals
+  const numInputClass = "w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none";
 
   return (
     <div className="space-y-6">
@@ -478,17 +428,7 @@ export default function BillingSettlementTab({
             </button>
             {isAdmin && (
               <button
-                onClick={() => {
-                  setShowChargesForm(!showChargesForm);
-                  setChargesData({
-                    base_charge: parseFloat(billing.base_charge || 0),
-                    referral_commission_amount: parseFloat(billing.referral_commission_amount || 0),
-                    referral_settlement_notes: billing.referral_settlement_notes || '',
-                    referral_id: billing.referral?.id || '',
-                    referral_commission_included_in_package: billing.referral_commission_included_in_package || false,
-                    doctor_fees_included_in_package: billing.doctor_fees_included_in_package || false,
-                  });
-                }}
+                onClick={() => setShowSetCharges(true)}
                 className="flex items-center gap-2 bg-info hover:bg-info-hover text-foreground px-4 py-2 rounded-lg transition-colors"
               >
                 <Plus className="h-4 w-4" />
@@ -498,106 +438,16 @@ export default function BillingSettlementTab({
           </div>
         </div>
 
-        {showChargesForm && isAdmin && (
-          <form onSubmit={handleUpdateCharges} className="bg-surface-inset rounded-lg p-4 mb-4 space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                Base Charge (₹)
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={chargesData.base_charge}
-                onChange={(e) => setChargesData({ ...chargesData, base_charge: parseFloat(e.target.value) })}
-                className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <ReferralSelect
-                value={chargesData.referral_id}
-                onChange={(value) => setChargesData({ ...chargesData, referral_id: value })}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                Referral Commission (₹)
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={chargesData.referral_commission_amount}
-                onChange={(e) => setChargesData({ ...chargesData, referral_commission_amount: parseFloat(e.target.value) })}
-                className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
-              />
-            </div>
-
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="commission_included"
-                checked={chargesData.referral_commission_included_in_package}
-                onChange={(e) => setChargesData({ ...chargesData, referral_commission_included_in_package: e.target.checked })}
-                className="h-4 w-4 rounded border-border text-primary focus:ring-ring"
-              />
-              <label htmlFor="commission_included" className="text-sm text-foreground">
-                Commission included in package
-              </label>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="doctor_fees_included"
-                checked={chargesData.doctor_fees_included_in_package}
-                onChange={(e) => setChargesData({ ...chargesData, doctor_fees_included_in_package: e.target.checked })}
-                className="h-4 w-4 rounded border-border text-primary focus:ring-ring"
-              />
-              <label htmlFor="doctor_fees_included" className="text-sm text-foreground">
-                Doctor fees included in package
-              </label>
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                type="submit"
-                disabled={loading}
-                className="bg-success hover:bg-success-hover text-foreground px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
-              >
-                {loading ? 'Saving...' : 'Save Charges'}
-              </button>
-              <button
-                type="submit"
-                disabled={loading}
-                onClick={() => handleUpdateCharges(null, true)}
-                className="bg-destructive hover:bg-success-hover text-foreground px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
-              >
-                {loading ? 'Deleting...' : 'Delete'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowChargesForm(false)}
-                className="bg-surface-inset hover:bg-surface-inset text-foreground px-4 py-2 rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        )}
-
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-surface-inset rounded-lg p-4">
             <p className="text-muted text-sm">Base Charge</p>
             <p className="text-2xl font-bold text-foreground">
-              ₹{parseFloat(billing.base_charge || 0).toFixed(2)}
+              ₹{parseInt(billing.base_charge || 0)}
             </p>
           </div>
           <div className="bg-surface-inset rounded-lg p-4">
             <p className="text-muted text-sm">Referral Person</p>
-            <p className="text-sm text-foreground">
+            <p className="text-2xl text-foreground">
               {billing.referral?.name || 'Not set'}
             </p>
             {billing.referral?.phone && (
@@ -609,37 +459,37 @@ export default function BillingSettlementTab({
           <div className="bg-surface-inset rounded-lg p-4">
             <p className="text-muted text-sm">Referral Commission</p>
             <p className="text-2xl font-bold text-foreground">
-              ₹{parseFloat(billing.referral_commission_amount || 0).toFixed(2)}
+              ₹{parseInt(billing.referral_commission_amount || 0)}
             </p>
           </div>
           <div className="bg-surface-inset rounded-lg p-4">
             <p className="text-muted text-sm">Doctor Fees</p>
             <p className="text-2xl font-bold text-foreground">
-              ₹{parseFloat(billing.total_doctor_fees || 0).toFixed(2)}
+              ₹{parseInt(billing.total_doctor_fees || 0)}
             </p>
           </div>
           <div className="bg-surface-inset rounded-lg p-4">
             <p className="text-muted text-sm">Other Charges</p>
             <p className="text-2xl font-bold text-foreground">
-              ₹{parseFloat(billing.patient_charges_total || 0).toFixed(2)}
+              ₹{parseInt(billing.patient_charges_total || 0)}
             </p>
           </div>
           <div className="bg-info rounded-lg p-4">
             <p className="text-info-foreground text-sm">Total Charges</p>
             <p className="text-2xl font-bold text-foreground">
-              ₹{parseFloat(billing.total_charges || 0).toFixed(2)}
+              ₹{parseInt(billing.total_charges || 0)}
             </p>
           </div>
           <div className="bg-success rounded-lg p-4">
             <p className="text-success-foreground text-sm">Total Paid</p>
             <p className="text-2xl font-bold text-foreground">
-              ₹{parseFloat(billing.patient_paid_amount || 0).toFixed(2)}
+              ₹{parseInt(billing.patient_paid_amount || 0)}
             </p>
           </div>
           <div className="bg-primary rounded-lg p-4">
             <p className="text-primary-foreground text-sm">Balance</p>
             <p className="text-2xl font-bold text-foreground">
-              ₹{(parseFloat(billing.total_charges || 0) - parseFloat(billing.patient_paid_amount || 0)).toFixed(2)}
+              ₹{parseInt(billing.total_charges || 0) - parseInt(billing.patient_paid_amount || 0)}
             </p>
           </div>
         </div>
@@ -658,7 +508,7 @@ export default function BillingSettlementTab({
             <div className="bg-surface-inset rounded-lg p-4">
               <p className="text-muted text-sm">Commission Amount</p>
               <p className="text-2xl font-bold text-foreground">
-                ₹{parseFloat(billing.referral_commission_amount || 0).toFixed(2)}
+                ₹{parseInt(billing.referral_commission_amount || 0)}
               </p>
             </div>
             <div className="bg-surface-inset rounded-lg p-4">
@@ -674,6 +524,13 @@ export default function BillingSettlementTab({
                 </span>
               )}
             </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-4 text-sm">
+            <span className="text-muted">
+              Given by: <span className="text-foreground">{billing.referral_settlement_given_by || '—'}</span>
+            </span>
+            <RecordedStamp record={billing} />
           </div>
 
           {!billing.referral_settled && (
@@ -698,7 +555,8 @@ export default function BillingSettlementTab({
                 disabled={syncing}
                 className="flex items-center gap-2 bg-success hover:bg-success-hover text-foreground px-3 sm:px-4 py-2 rounded-lg transition-colors disabled:opacity-50 min-h-[44px] text-sm"
               >
-                {syncing ? 'Syncing...' : '🔄 Sync Visits'}
+                <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+                {syncing ? 'Syncing...' : 'Sync Visits'}
               </button>
             )}
           </div>
@@ -714,6 +572,7 @@ export default function BillingSettlementTab({
                 <th className="px-4 py-3 text-center text-sm font-medium text-foreground">Visits</th>
                 <th className="px-4 py-3 text-right text-sm font-medium text-foreground">Per Visit</th>
                 <th className="px-4 py-3 text-right text-sm font-medium text-foreground">Total</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Given By</th>
                 <th className="px-4 py-3 text-center text-sm font-medium text-foreground">Status</th>
                 <th className="px-4 py-3 text-center text-sm font-medium text-foreground">Actions</th>
               </tr>
@@ -721,7 +580,7 @@ export default function BillingSettlementTab({
             <tbody className="divide-y divide-input-border">
               {settlements.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-muted">
+                  <td colSpan={8} className="px-4 py-8 text-center text-muted">
                     No settlements created yet
                   </td>
                 </tr>
@@ -743,10 +602,14 @@ export default function BillingSettlementTab({
                       {settlement.visit_count}
                     </td>
                     <td className="px-4 py-3 text-sm text-foreground text-right">
-                      ₹{parseFloat(settlement.amount_per_visit).toFixed(2)}
+                      ₹{parseInt(settlement.amount_per_visit || 0)}
                     </td>
                     <td className="px-4 py-3 text-sm text-foreground text-right font-medium">
-                      ₹{parseFloat(settlement.total_amount).toFixed(2)}
+                      ₹{parseInt(settlement.total_amount || 0)}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-foreground">
+                      {settlement.given_by || '—'}
+                      <RecordedStamp record={settlement} />
                     </td>
                     <td className="px-4 py-3 text-center">
                       {settlement.settled ? (
@@ -776,18 +639,19 @@ export default function BillingSettlementTab({
                                 onClick={() => {
                                   setSettlePricingData({
                                     pricing_mode: settlement.pricing_mode || 'per_visit',
-                                    amount_per_visit: parseFloat(settlement.amount_per_visit || 0),
-                                    total_amount: parseFloat(settlement.total_amount || 0),
+                                    amount_per_visit: parseInt(settlement.amount_per_visit || 0),
+                                    total_amount: parseInt(settlement.total_amount || 0),
                                     visit_count: settlement.visit_count || 0,
                                   });
                                   setSettlePricingComplete(false);
                                   setSettleData({
                                     settlement_id: settlement.id,
-                                    settlement_amount: parseFloat(settlement.total_amount),
+                                    settlement_amount: parseInt(settlement.total_amount || 0),
                                     payment_method: 'cash',
                                     transaction_reference: '',
                                     settlement_notes: '',
                                     settlement_type: settlement.settlement_type || 'regular',
+                                    given_by: '',
                                   });
                                   setShowSettleModal(true);
                                 }}
@@ -810,7 +674,7 @@ export default function BillingSettlementTab({
                           <div className="text-xs text-muted">
                             {new Date(settlement.settlement_date).toLocaleDateString()}
                             <br />
-                            ₹{parseFloat(settlement.settlement_amount).toFixed(2)}
+                            ₹{parseInt(settlement.settlement_amount || 0)}
                           </div>
                         )}
                       </div>
@@ -856,12 +720,16 @@ export default function BillingSettlementTab({
                   </div>
                   <div className="bg-surface-inset rounded p-2 text-center">
                     <p className="text-muted">Per Visit</p>
-                    <p className="font-semibold text-foreground">₹{parseFloat(settlement.amount_per_visit).toFixed(0)}</p>
+                    <p className="font-semibold text-foreground">₹{parseInt(settlement.amount_per_visit || 0)}</p>
                   </div>
                   <div className="bg-surface-inset rounded p-2 text-center">
                     <p className="text-muted">Total</p>
-                    <p className="font-semibold text-foreground">₹{parseFloat(settlement.total_amount).toFixed(0)}</p>
+                    <p className="font-semibold text-foreground">₹{parseInt(settlement.total_amount || 0)}</p>
                   </div>
+                </div>
+                <div className="text-xs text-muted">
+                  Given by: <span className="text-foreground">{settlement.given_by || '—'}</span>
+                  <RecordedStamp record={settlement} />
                 </div>
                 {isAdmin && (
                   <div className="flex gap-3 pt-2 border-t border-input-border">
@@ -876,18 +744,19 @@ export default function BillingSettlementTab({
                         onClick={() => {
                           setSettlePricingData({
                             pricing_mode: settlement.pricing_mode || 'per_visit',
-                            amount_per_visit: parseFloat(settlement.amount_per_visit || 0),
-                            total_amount: parseFloat(settlement.total_amount || 0),
+                            amount_per_visit: parseInt(settlement.amount_per_visit || 0),
+                            total_amount: parseInt(settlement.total_amount || 0),
                             visit_count: settlement.visit_count || 0,
                           });
                           setSettlePricingComplete(false);
                           setSettleData({
                             settlement_id: settlement.id,
-                            settlement_amount: parseFloat(settlement.total_amount),
+                            settlement_amount: parseInt(settlement.total_amount || 0),
                             payment_method: 'cash',
                             transaction_reference: '',
                             settlement_notes: '',
                             settlement_type: settlement.settlement_type || 'regular',
+                            given_by: '',
                           });
                           setShowSettleModal(true);
                         }}
@@ -906,7 +775,7 @@ export default function BillingSettlementTab({
                 )}
                 {!isAdmin && settlement.settled && (
                   <div className="text-xs text-muted pt-2 border-t border-input-border">
-                    Settled: {new Date(settlement.settlement_date).toLocaleDateString()} — ₹{parseFloat(settlement.settlement_amount).toFixed(2)}
+                    Settled: {new Date(settlement.settlement_date).toLocaleDateString()} — ₹{parseInt(settlement.settlement_amount || 0)}
                   </div>
                 )}
               </div>
@@ -935,6 +804,7 @@ export default function BillingSettlementTab({
                     transaction_reference: '',
                     settlement_notes: '',
                     settlement_type: 'regular',
+                    given_by: '',
                   });
                 }}
                 className="text-muted hover:text-foreground"
@@ -944,7 +814,6 @@ export default function BillingSettlementTab({
             </div>
 
             {!settlePricingComplete ? (
-              // STEP 1: Add Consultation Fee
               <div className="space-y-4">
                 <h5 className="text-lg font-semibold text-foreground">Add Consultation Fee</h5>
 
@@ -958,27 +827,19 @@ export default function BillingSettlementTab({
                 )}
 
                 <div>
-                  <label className="block text-sm font-medium text-muted mb-2">
-                    Pricing Mode
-                  </label>
+                  <label className="block text-sm font-medium text-muted mb-2">Pricing Mode</label>
                   <div className="flex gap-2">
                     <button
                       type="button"
                       onClick={() => handleSettlePricingModeChange('per_visit')}
-                      className={`flex-1 py-2 px-3 rounded-lg font-medium transition-colors ${settlePricingData.pricing_mode === 'per_visit'
-                          ? 'bg-info text-foreground'
-                          : 'bg-surface-inset text-foreground hover:bg-surface-hover'
-                        }`}
+                      className={`flex-1 py-2 px-3 rounded-lg font-medium transition-colors ${settlePricingData.pricing_mode === 'per_visit' ? 'bg-info text-foreground' : 'bg-surface-inset text-foreground hover:bg-surface-hover'}`}
                     >
                       Price per Visit
                     </button>
                     <button
                       type="button"
                       onClick={() => handleSettlePricingModeChange('total')}
-                      className={`flex-1 py-2 px-3 rounded-lg font-medium transition-colors ${settlePricingData.pricing_mode === 'total'
-                          ? 'bg-info text-foreground'
-                          : 'bg-surface-inset text-foreground hover:bg-surface-hover'
-                        }`}
+                      className={`flex-1 py-2 px-3 rounded-lg font-medium transition-colors ${settlePricingData.pricing_mode === 'total' ? 'bg-info text-foreground' : 'bg-surface-inset text-foreground hover:bg-surface-hover'}`}
                     >
                       Total Price
                     </button>
@@ -986,47 +847,47 @@ export default function BillingSettlementTab({
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-muted mb-2">
-                    Visit Count *
-                  </label>
+                  <label className="block text-sm font-medium text-muted mb-2">Visit Count *</label>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
                     required
                     readOnly
                     value={settlePricingData.visit_count}
-                    onChange={(e) => handleSettlePriceChange('visit_count', parseInt(e.target.value) || 0)}
-                    className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
+                    className={numInputClass}
                   />
                 </div>
 
                 {settlePricingData.pricing_mode === 'per_visit' ? (
                   <div>
-                    <label className="block text-sm font-medium text-muted mb-2">
-                      Amount Per Visit (₹) *
-                    </label>
+                    <label className="block text-sm font-medium text-muted mb-2">Amount Per Visit (₹) *</label>
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="numeric"
                       required
-                      step="0.01"
-                      min="0"
                       value={settlePricingData.amount_per_visit}
-                      onChange={(e) => handleSettlePriceChange('amount_per_visit', parseFloat(e.target.value) || 0)}
-                      className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
+                      onFocus={e => e.target.select()}
+                      onChange={e => {
+                        if (/^\d*$/.test(e.target.value))
+                          handleSettlePriceChange('amount_per_visit', parseInt(e.target.value) || 0);
+                      }}
+                      className={numInputClass}
                     />
                   </div>
                 ) : (
                   <div>
-                    <label className="block text-sm font-medium text-muted mb-2">
-                      Total Amount (₹) *
-                    </label>
+                    <label className="block text-sm font-medium text-muted mb-2">Total Amount (₹) *</label>
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="numeric"
                       required
-                      step="0.01"
-                      min="0"
                       value={settlePricingData.total_amount}
-                      onChange={(e) => handleSettlePriceChange('total_amount', parseFloat(e.target.value) || 0)}
-                      className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
+                      onFocus={e => e.target.select()}
+                      onChange={e => {
+                        if (/^\d*$/.test(e.target.value))
+                          handleSettlePriceChange('total_amount', parseInt(e.target.value) || 0);
+                      }}
+                      className={numInputClass}
                     />
                   </div>
                 )}
@@ -1034,11 +895,11 @@ export default function BillingSettlementTab({
                 <div className="bg-info rounded-lg p-3 space-y-1">
                   <div className="flex justify-between text-sm">
                     <span className="text-info-foreground">Price per Visit:</span>
-                    <span className="text-foreground font-medium">₹{settlePricingData.amount_per_visit.toFixed(2)}</span>
+                    <span className="text-foreground font-medium">₹{settlePricingData.amount_per_visit}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-info-foreground">Total Amount:</span>
-                    <span className="text-foreground font-bold text-lg">₹{settlePricingData.total_amount.toFixed(2)}</span>
+                    <span className="text-foreground font-bold text-lg">₹{settlePricingData.total_amount}</span>
                   </div>
                 </div>
 
@@ -1056,14 +917,7 @@ export default function BillingSettlementTab({
                     onClick={() => {
                       setShowSettleModal(false);
                       setSettlePricingComplete(false);
-                      setSettleData({
-                        settlement_id: '',
-                        settlement_amount: 0,
-                        payment_method: 'cash',
-                        transaction_reference: '',
-                        settlement_notes: '',
-                        settlement_type: 'regular',
-                      });
+                      setSettleData({ settlement_id: '', settlement_amount: 0, payment_method: 'cash', transaction_reference: '', settlement_notes: '', settlement_type: 'regular', given_by: '' });
                     }}
                     className="bg-surface-inset hover:bg-surface-inset text-foreground px-6 py-2 rounded-lg transition-colors"
                   >
@@ -1072,14 +926,12 @@ export default function BillingSettlementTab({
                 </div>
               </div>
             ) : (
-              // STEP 2: Complete Settlement
               <div className="space-y-4">
-                {/* Fee Summary */}
                 <div className="bg-surface-inset rounded-lg p-4 space-y-2">
                   <h5 className="text-lg font-semibold text-foreground mb-3">Consultation Fee Summary</h5>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted">Price per Visit:</span>
-                    <span className="text-foreground font-medium">₹{settlePricingData.amount_per_visit.toFixed(2)}</span>
+                    <span className="text-foreground font-medium">₹{settlePricingData.amount_per_visit}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted">Visit Count:</span>
@@ -1087,36 +939,34 @@ export default function BillingSettlementTab({
                   </div>
                   <div className="border-t border-border pt-2 mt-2 flex justify-between">
                     <span className="text-foreground font-semibold">Total Amount:</span>
-                    <span className="text-info font-bold text-lg">₹{settlePricingData.total_amount.toFixed(2)}</span>
+                    <span className="text-info font-bold text-lg">₹{settlePricingData.total_amount}</span>
                   </div>
                 </div>
 
-                {/* Settlement Form */}
                 <div>
-                  <label className="block text-sm font-medium text-muted mb-2">
-                    Settlement Amount (₹) *
-                  </label>
+                  <label className="block text-sm font-medium text-muted mb-2">Settlement Amount (₹) *</label>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
                     required
-                    step="0.01"
-                    min="0"
                     value={settleData.settlement_amount}
-                    onChange={(e) => setSettleData({ ...settleData, settlement_amount: parseFloat(e.target.value) })}
-                    className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
+                    onFocus={e => e.target.select()}
+                    onChange={e => {
+                      if (/^\d*$/.test(e.target.value))
+                        setSettleData({ ...settleData, settlement_amount: parseInt(e.target.value) || 0 });
+                    }}
+                    className={numInputClass}
                   />
-                  <p className="text-xs text-muted mt-1">Should match total amount: ₹{settlePricingData.total_amount.toFixed(2)}</p>
+                  <p className="text-xs text-muted mt-1">Should match total amount: ₹{settlePricingData.total_amount}</p>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-muted mb-2">
-                    Payment Method *
-                  </label>
+                  <label className="block text-sm font-medium text-muted mb-2">Payment Method *</label>
                   <select
                     required
                     value={settleData.payment_method}
-                    onChange={(e) => setSettleData({ ...settleData, payment_method: e.target.value })}
-                    className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
+                    onChange={e => setSettleData({ ...settleData, payment_method: e.target.value })}
+                    className={numInputClass}
                   >
                     <option value="cash">CASH</option>
                     <option value="upi">UPI</option>
@@ -1127,26 +977,34 @@ export default function BillingSettlementTab({
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-muted mb-2">
-                    Transaction Reference
-                  </label>
+                  <label className="block text-sm font-medium text-muted mb-2">Transaction Reference</label>
                   <input
                     type="text"
                     value={settleData.transaction_reference}
-                    onChange={(e) => setSettleData({ ...settleData, transaction_reference: e.target.value })}
-                    className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
+                    onChange={e => setSettleData({ ...settleData, transaction_reference: e.target.value })}
+                    className={numInputClass}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-muted mb-2">
-                    Notes
-                  </label>
+                  <label className="block text-sm font-medium text-muted mb-2">Given By</label>
+                  <input
+                    type="text"
+                    placeholder="Who handed over the payment"
+                    value={settleData.given_by}
+                    onChange={e => setSettleData({ ...settleData, given_by: e.target.value })}
+                    className={numInputClass}
+                  />
+                  <p className="text-xs text-muted mt-1">Leave blank if that was you.</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-muted mb-2">Notes</label>
                   <textarea
                     rows={2}
                     value={settleData.settlement_notes}
-                    onChange={(e) => setSettleData({ ...settleData, settlement_notes: e.target.value })}
-                    className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
+                    onChange={e => setSettleData({ ...settleData, settlement_notes: e.target.value })}
+                    className={numInputClass}
                   />
                 </div>
 
@@ -1179,19 +1037,13 @@ export default function BillingSettlementTab({
           <form onSubmit={handleUpdateSettlement} className="bg-surface-hover rounded-t-2xl sm:rounded-lg p-4 sm:p-6 w-full sm:max-w-md space-y-4 max-h-[95vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h4 className="text-xl font-semibold text-foreground">Edit Settlement</h4>
-              <button
-                type="button"
-                onClick={() => setEditingSettlement(null)}
-                className="text-muted hover:text-foreground"
-              >
+              <button type="button" onClick={() => setEditingSettlement(null)} className="text-muted hover:text-foreground">
                 <X className="h-5 w-5" />
               </button>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-muted mb-2">
-                Doctor
-              </label>
+              <label className="block text-sm font-medium text-muted mb-2">Doctor</label>
               <input
                 type="text"
                 disabled
@@ -1201,27 +1053,19 @@ export default function BillingSettlementTab({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-muted mb-2">
-                Pricing Mode
-              </label>
+              <label className="block text-sm font-medium text-muted mb-2">Pricing Mode</label>
               <div className="flex gap-2">
                 <button
                   type="button"
                   onClick={() => handlePricingModeChange('per_visit')}
-                  className={`flex-1 py-2 px-3 rounded-lg font-medium transition-colors ${editFormData.pricing_mode === 'per_visit'
-                      ? 'bg-info text-foreground'
-                      : 'bg-surface-inset text-foreground hover:bg-surface-hover'
-                    }`}
+                  className={`flex-1 py-2 px-3 rounded-lg font-medium transition-colors ${editFormData.pricing_mode === 'per_visit' ? 'bg-info text-foreground' : 'bg-surface-inset text-foreground hover:bg-surface-hover'}`}
                 >
                   Price per Visit
                 </button>
                 <button
                   type="button"
                   onClick={() => handlePricingModeChange('total')}
-                  className={`flex-1 py-2 px-3 rounded-lg font-medium transition-colors ${editFormData.pricing_mode === 'total'
-                      ? 'bg-info text-foreground'
-                      : 'bg-surface-inset text-foreground hover:bg-surface-hover'
-                    }`}
+                  className={`flex-1 py-2 px-3 rounded-lg font-medium transition-colors ${editFormData.pricing_mode === 'total' ? 'bg-info text-foreground' : 'bg-surface-inset text-foreground hover:bg-surface-hover'}`}
                 >
                   Total Price
                 </button>
@@ -1229,47 +1073,47 @@ export default function BillingSettlementTab({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-muted mb-2">
-                Visit Count *
-              </label>
+              <label className="block text-sm font-medium text-muted mb-2">Visit Count *</label>
               <input
-                type="number"
+                type="text"
+                inputMode="numeric"
                 required
-                min="1"
-                value={editFormData.visit_count}
                 readOnly
-                className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
+                value={editFormData.visit_count}
+                className={numInputClass}
               />
             </div>
 
             {editFormData.pricing_mode === 'per_visit' ? (
               <div>
-                <label className="block text-sm font-medium text-muted mb-2">
-                  Amount Per Visit (₹) *
-                </label>
+                <label className="block text-sm font-medium text-muted mb-2">Amount Per Visit (₹) *</label>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
                   required
-                  step="0.01"
-                  min="0"
                   value={editFormData.amount_per_visit}
-                  onChange={(e) => handlePriceChange('amount_per_visit', parseFloat(e.target.value) || 0)}
-                  className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
+                  onFocus={e => e.target.select()}
+                  onChange={e => {
+                    if (/^\d*$/.test(e.target.value))
+                      handlePriceChange('amount_per_visit', parseInt(e.target.value) || 0);
+                  }}
+                  className={numInputClass}
                 />
               </div>
             ) : (
               <div>
-                <label className="block text-sm font-medium text-muted mb-2">
-                  Total Amount (₹) *
-                </label>
+                <label className="block text-sm font-medium text-muted mb-2">Total Amount (₹) *</label>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
                   required
-                  step="0.01"
-                  min="0"
                   value={editFormData.total_amount}
-                  onChange={(e) => handlePriceChange('total_amount', parseFloat(e.target.value) || 0)}
-                  className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
+                  onFocus={e => e.target.select()}
+                  onChange={e => {
+                    if (/^\d*$/.test(e.target.value))
+                      handlePriceChange('total_amount', parseInt(e.target.value) || 0);
+                  }}
+                  className={numInputClass}
                 />
               </div>
             )}
@@ -1277,22 +1121,20 @@ export default function BillingSettlementTab({
             <div className="bg-surface-inset rounded-lg p-3 space-y-1">
               <div className="flex justify-between text-sm">
                 <span className="text-muted">Price per Visit:</span>
-                <span className="text-foreground font-medium">₹{editFormData.amount_per_visit.toFixed(2)}</span>
+                <span className="text-foreground font-medium">₹{editFormData.amount_per_visit}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted">Total Amount:</span>
-                <span className="text-foreground font-medium">₹{editFormData.total_amount.toFixed(2)}</span>
+                <span className="text-foreground font-medium">₹{editFormData.total_amount}</span>
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-muted mb-2">
-                Settlement Type
-              </label>
+              <label className="block text-sm font-medium text-muted mb-2">Settlement Type</label>
               <select
                 value={editFormData.settlement_type}
-                onChange={(e) => setEditFormData({ ...editFormData, settlement_type: e.target.value })}
-                className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
+                onChange={e => setEditFormData({ ...editFormData, settlement_type: e.target.value })}
+                className={numInputClass}
               >
                 <option value="regular">REGULAR</option>
                 <option value="partial">PARTIAL</option>
@@ -1302,14 +1144,12 @@ export default function BillingSettlementTab({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-muted mb-2">
-                Notes
-              </label>
+              <label className="block text-sm font-medium text-muted mb-2">Notes</label>
               <textarea
                 rows={2}
                 value={editFormData.notes}
-                onChange={(e) => setEditFormData({ ...editFormData, notes: e.target.value })}
-                className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
+                onChange={e => setEditFormData({ ...editFormData, notes: e.target.value })}
+                className={numInputClass}
               />
             </div>
 
@@ -1339,11 +1179,7 @@ export default function BillingSettlementTab({
           <form onSubmit={handleSettleReferralCommission} className="bg-surface-hover rounded-t-2xl sm:rounded-lg p-4 sm:p-6 w-full sm:max-w-md space-y-4 max-h-[95vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h4 className="text-xl font-semibold text-foreground">Settle Referral Commission</h4>
-              <button
-                type="button"
-                onClick={() => setShowSettleReferralModal(false)}
-                className="text-muted hover:text-foreground"
-              >
+              <button type="button" onClick={() => setShowSettleReferralModal(false)} className="text-muted hover:text-foreground">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -1355,19 +1191,17 @@ export default function BillingSettlementTab({
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted">Commission Amount:</span>
-                <span className="text-foreground font-medium">₹{parseFloat(billing?.referral_commission_amount || 0).toFixed(2)}</span>
+                <span className="text-foreground font-medium">₹{parseInt(billing?.referral_commission_amount || 0)}</span>
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-muted mb-2">
-                Payment Method *
-              </label>
+              <label className="block text-sm font-medium text-muted mb-2">Payment Method *</label>
               <select
                 required
                 value={settleReferralData.payment_method}
-                onChange={(e) => setSettleReferralData({ ...settleReferralData, payment_method: e.target.value })}
-                className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
+                onChange={e => setSettleReferralData({ ...settleReferralData, payment_method: e.target.value })}
+                className={numInputClass}
               >
                 <option value="cash">CASH</option>
                 <option value="upi">UPI</option>
@@ -1378,26 +1212,34 @@ export default function BillingSettlementTab({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-muted mb-2">
-                Transaction Reference
-              </label>
+              <label className="block text-sm font-medium text-muted mb-2">Transaction Reference</label>
               <input
                 type="text"
                 value={settleReferralData.transaction_reference}
-                onChange={(e) => setSettleReferralData({ ...settleReferralData, transaction_reference: e.target.value })}
-                className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
+                onChange={e => setSettleReferralData({ ...settleReferralData, transaction_reference: e.target.value })}
+                className={numInputClass}
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-muted mb-2">
-                Notes
-              </label>
+              <label className="block text-sm font-medium text-muted mb-2">Given By</label>
+              <input
+                type="text"
+                placeholder="Who handed over the commission"
+                value={settleReferralData.given_by}
+                onChange={e => setSettleReferralData({ ...settleReferralData, given_by: e.target.value })}
+                className={numInputClass}
+              />
+              <p className="text-xs text-muted mt-1">Leave blank if that was you.</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-muted mb-2">Notes</label>
               <textarea
                 rows={2}
                 value={settleReferralData.settlement_notes}
-                onChange={(e) => setSettleReferralData({ ...settleReferralData, settlement_notes: e.target.value })}
-                className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
+                onChange={e => setSettleReferralData({ ...settleReferralData, settlement_notes: e.target.value })}
+                className={numInputClass}
               />
             </div>
 
@@ -1421,6 +1263,13 @@ export default function BillingSettlementTab({
         </div>
       )}
 
+      <SetChargesModal
+        isOpen={showSetCharges}
+        onClose={() => setShowSetCharges(false)}
+        patientId={patientId}
+        billing={billing}
+        onSuccess={onBillingUpdate}
+      />
     </div>
   );
 }

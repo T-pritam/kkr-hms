@@ -31,6 +31,7 @@ export async function GET(
       .from('patient_billing')
       .select(`
         *,
+        created_by_user:users!created_by(id, username),
         updated_by_user:users!updated_by(id, username)
       `)
       .eq('patient_id', patientId)
@@ -153,6 +154,9 @@ export async function PATCH(
     }
     if (body.referral_settlement_notes !== undefined) {
       updateData.referral_settlement_notes = body.referral_settlement_notes;
+    }
+    if (body.referral_settlement_given_by !== undefined) {
+      updateData.referral_settlement_given_by = body.referral_settlement_given_by?.trim() || null;
     }
     if (body.referral_settlement_payment_method !== undefined) {
       updateData.referral_settlement_payment_method = body.referral_settlement_payment_method;

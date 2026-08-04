@@ -265,10 +265,11 @@ describe('DELETE /api/patients/[id]/charges/[chargeId]', () => {
 
 describe('charges — effect on billing totals', () => {
   /**
-   * Known defect — see BUGS.md #16. Each of these calls recalculatePatientBilling, which
-   * cannot run against the live schema, so the billing record never moves.
+   * BUGS.md #16, resolved — recalculatePatientBilling's query now succeeds
+   * (supabase/migrations/20260805000001_patient_billing_package_flags.sql), so adding or
+   * removing a charge moves the billing record again.
    */
-  it.fails('should raise patient_charges_total when a charge is added', async () => {
+  it('should raise patient_charges_total when a charge is added', async () => {
     await signInAs('ADMIN')
     aBilling({ id: 'b1', patient_id: 'p1', base_charge: 0, patient_charges_total: 0, total_charges: 0 })
 
@@ -277,7 +278,7 @@ describe('charges — effect on billing totals', () => {
     expect(Number(db.find('patient_billing', (r) => r.id === 'b1')!.patient_charges_total)).toBe(1500)
   })
 
-  it.fails('should lower the total when a charge is deleted', async () => {
+  it('should lower the total when a charge is deleted', async () => {
     await signInAs('ADMIN')
     aBilling({ id: 'b1', patient_id: 'p1', patient_charges_total: 1500, total_charges: 1500 })
     aCharge({ id: 'c1', patient_id: 'p1', patient_billing_id: 'b1', amount: 1500, qty: 1 })
@@ -285,17 +286,5 @@ describe('charges — effect on billing totals', () => {
     await remove('p1', 'c1')
 
     expect(Number(db.find('patient_billing', (r) => r.id === 'b1')!.patient_charges_total)).toBe(0)
-  })
-
-  it('leaves the billing record untouched today (documents the current no-op)', async () => {
-    await signInAs('ADMIN')
-    aBilling({ id: 'b1', patient_id: 'p1', patient_charges_total: 0, total_charges: 0 })
-
-    await create('p1', { patient_billing_id: 'b1', charge_type: 'Procedure', amount: 1500 })
-
-    expect(db.find('patient_billing', (r) => r.id === 'b1')).toMatchObject({
-      patient_charges_total: 0,
-      total_charges: 0,
-    })
   })
 })

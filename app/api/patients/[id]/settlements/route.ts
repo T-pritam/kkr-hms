@@ -28,7 +28,9 @@ export async function GET(
       .select(`
         *,
         doctor:doctors(id, name, specialist),
-        patient:patients(id, patient_id, name)
+        patient:patients(id, patient_id, name),
+        created_by_user:users!created_by(id, username),
+        updated_by_user:users!updated_by(id, username)
       `)
       .eq('patient_billing_id', billingId)
       .order('created_at', { ascending: false });

@@ -219,7 +219,8 @@ export function ttotal(h: H, cells: Cell[]): void {
 
 // ── Per-page footers ──────────────────────────────────────────────────────────
 /** Call once, last: it walks every page that ended up in the document. */
-export function footers(h: H): void {
+export function footers(h: H, opts: { showGenerated?: boolean } = {}): void {
+  const { showGenerated = true } = opts
   const total = h.doc.getNumberOfPages()
   const now = new Date().toLocaleString('en-IN')
   for (let i = 1; i <= total; i++) {
@@ -231,7 +232,7 @@ export function footers(h: H): void {
     h.doc.line(M, ph - 11, pw - M, ph - 11)
     h.normal(6.5)
     h.doc.setTextColor(...C.muted)
-    h.doc.text(`Generated: ${now}`, M, ph - 6)
+    if (showGenerated) h.doc.text(`Generated: ${now}`, M, ph - 6)
     h.doc.text(BRANDING.name, pw / 2, ph - 6, { align: 'center' })
     h.doc.text(`Page ${i} of ${total}`, pw - M, ph - 6, { align: 'right' })
   }

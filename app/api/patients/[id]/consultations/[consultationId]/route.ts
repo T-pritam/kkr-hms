@@ -48,6 +48,17 @@ export async function PATCH(
       );
     }
 
+    // An edit must not be able to clear the doctor, now that creating without one is
+    // refused. Note `'doctor_id' in body` rather than a bare falsy check: this route's
+    // model is "omitted means unchanged", so a bare check would reject every edit that
+    // only touches the notes.
+    if ('doctor_id' in body && !body.doctor_id) {
+      return NextResponse.json(
+        { error: 'Select the doctor for this consultation' },
+        { status: 400 }
+      );
+    }
+
     // Update consultation
     const updateData: any = {
       doctor_id: body.doctor_id !== undefined ? body.doctor_id : consultation.doctor_id,

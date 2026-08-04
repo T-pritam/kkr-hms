@@ -145,18 +145,27 @@ export async function PUT(
       updateData.visit_count = visitCount;
     } else if (body.amount_per_visit !== undefined || body.visit_count !== undefined) {
       console.log('Pricing mode: legacy (individual fields)');
-      
+
       if (body.amount_per_visit !== undefined) {
         const newAmount = parseFloat(body.amount_per_visit);
         console.log(`amount_per_visit: ${currentSettlement.amount_per_visit} → ${newAmount}`);
         updateData.amount_per_visit = newAmount;
       }
-      
+
       if (body.visit_count !== undefined) {
         const newCount = parseInt(body.visit_count);
         console.log(`visit_count: ${currentSettlement.visit_count} → ${newCount}`);
         updateData.visit_count = newCount;
       }
+    }
+
+    // total_amount is a stored column, not derived — every branch above that
+    // touches amount_per_visit or visit_count must keep it in sync, or it's
+    // exactly the gap that left it null forever (BUGS.md #26).
+    if (updateData.amount_per_visit !== undefined || updateData.visit_count !== undefined) {
+      const amt = updateData.amount_per_visit ?? currentSettlement.amount_per_visit ?? 0;
+      const count = updateData.visit_count ?? currentSettlement.visit_count ?? 0;
+      updateData.total_amount = Math.floor(amt * count);
     }
 
     // =====================================================
@@ -210,6 +219,12 @@ export async function PUT(
       updateData.settlement_notes = body.settlement_notes;
     }
 
+    // Who physically handled the payout — optional, same convention as
+    // advances' given_by.
+    if (body.given_by !== undefined) {
+      updateData.given_by = body.given_by?.trim() || null;
+    }
+
     if (body.settlement_type !== undefined) {
       console.log(`settlement_type: ${currentSettlement.settlement_type} → ${body.settlement_type}`);
       updateData.settlement_type = body.settlement_type;
@@ -244,7 +259,9 @@ export async function PUT(
       .select(`
         *,
         doctor:doctors(id, name, specialist),
-        patient:patients(id, name)
+        patient:patients(id, name),
+        created_by_user:users!created_by(id, username),
+        updated_by_user:users!updated_by(id, username)
       `)
       .single();
 

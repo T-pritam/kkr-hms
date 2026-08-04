@@ -85,10 +85,15 @@ export async function POST(
         console.log(`Existing settlements for patient ${patientId} and doctor ${doctorId}:`, existingSettlements);
 
       if (existingSettlements && existingSettlements.length > 0) {
+        // Keep total_amount in step with the new visit_count — otherwise a
+        // re-sync leaves it stale against the already-priced amount_per_visit.
+        const existingAmountPerVisit = Number(existingSettlements[0].amount_per_visit) || 0;
+
         const { error: updateError } = await supabase
           .from('doctor_visit_settlements')
           .update({
             visit_count: visitCount,
+            total_amount: Math.floor(existingAmountPerVisit * visitCount),
             updated_by: authResult.user.id,
           })
           .eq('id', existingSettlements[0].id);
@@ -111,6 +116,7 @@ export async function POST(
             patient_billing_id: billingId,
             visit_count: visitCount,
             amount_per_visit: 0,
+            total_amount: 0,
             settlement_type: 'regular',
             created_by: authResult.user.id,
           })
