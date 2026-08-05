@@ -13,8 +13,9 @@ import { AuditTrail } from '@/components/case-sheet/audit-trail'
 import { hasCapability } from '@/lib/case-sheet/authz'
 import { STATUS_LABELS } from '@/lib/case-sheet/constants'
 import type { CaseSheet } from '@/lib/case-sheet/types'
+import { fetchDischargeSummaryData, printDischargeSummary } from '@/lib/pdf/discharge-summary-pdf'
 import {
-  AlertCircle, Download, Eye, FileText, History, Paperclip, Pencil, Plus, RotateCcw, Trash2,
+  AlertCircle, Download, Eye, FileText, History, Paperclip, Pencil, Plus, Printer, RotateCcw, Trash2,
 } from 'lucide-react'
 
 /**
@@ -109,6 +110,19 @@ export default function CaseSheetTab({
       const json = await res.json()
       if (!res.ok || !json.success) throw new Error(json.error || 'Failed to reopen the summary')
       await fetchSheets()
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const printSheet = async (sheet: CaseSheet) => {
+    setBusyId(sheet.id)
+    setError('')
+    try {
+      const data = await fetchDischargeSummaryData(patientId, sheet.id)
+      printDischargeSummary(data)
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -227,7 +241,16 @@ export default function CaseSheetTab({
               </Button>
               <Button size="sm" variant="outline" onClick={() => setDownloading(sheet)}>
                 <Download size={14} className="mr-1.5" />
-                Download
+                Download PDF
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => printSheet(sheet)}
+                disabled={busyId === sheet.id}
+              >
+                <Printer size={14} className="mr-1.5" />
+                Print
               </Button>
 
               {canWrite && (

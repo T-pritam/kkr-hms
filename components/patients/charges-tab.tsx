@@ -1,12 +1,15 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, ChevronRight, Plus } from 'lucide-react';
+import { AlertCircle, ChevronRight, Download, Plus, Printer } from 'lucide-react';
 import { useUser } from '@/hooks/use-user';
 import { UpdatedStamp } from '@/components/ui/updated-stamp';
 import { Button } from '@/components/ui/button';
 import { ChargeEntryModal } from '@/components/patients/charge-entry-modal';
 import { CHARGE_CATEGORY_LABELS } from '@/lib/billing/constants';
+import {
+  generatePatientChargesPDF, printPatientCharges, type PatientChargesPatient,
+} from '@/lib/pdf/patient-charges-pdf';
 
 /**
  * The itemised charges on a patient's bill.
@@ -29,6 +32,8 @@ interface ChargesTabProps {
   patientId: string;
   billing: any;
   onCreateBilling: () => void;
+  /** For the Download/Print PDF buttons — the Name/Age-Sex/Id No block. */
+  patient?: PatientChargesPatient | null;
 }
 
 const money = (n: number) =>
@@ -46,7 +51,7 @@ interface Group {
   isBlock: boolean;
 }
 
-export default function ChargesTab({ patientId, billing, onCreateBilling }: ChargesTabProps) {
+export default function ChargesTab({ patientId, billing, onCreateBilling, patient }: ChargesTabProps) {
   const { user } = useUser();
   const [charges, setCharges] = useState<any[]>([]);
   const [view, setView] = useState<'all' | 'grouped'>('all');
@@ -115,6 +120,17 @@ export default function ChargesTab({ patientId, billing, onCreateBilling }: Char
   };
 
   const total = useMemo(() => charges.reduce((sum, c) => sum + lineTotal(c), 0), [charges]);
+
+  const pdfData = useMemo(() => ({
+    patient: patient ?? { name: 'Patient', patient_id: null },
+    charges: charges.map((c) => ({
+      charge_date: c.charge_date,
+      charge_type: c.charge_type || 'Charge',
+      description: c.description,
+      qty: c.qty || 1,
+      amount: lineTotal(c),
+    })),
+  }), [charges, patient]);
 
   /**
    * Rows a single date-range entry produced group on `charge_group_id`. Everything
@@ -202,6 +218,23 @@ export default function ChargesTab({ patientId, billing, onCreateBilling }: Char
               </button>
             ))}
           </div>
+
+          <Button
+            variant="outline"
+            onClick={() => generatePatientChargesPDF(pdfData)}
+            className="min-h-[44px]"
+          >
+            <Download className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Download PDF</span>
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => printPatientCharges(pdfData)}
+            className="min-h-[44px]"
+          >
+            <Printer className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Print</span>
+          </Button>
 
           <Button onClick={openAdd} className="min-h-[44px]">
             <Plus className="h-4 w-4 sm:mr-2" />

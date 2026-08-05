@@ -18,7 +18,8 @@
     "test:finances": "vitest run tests/api/finances",
     "test:employees": "vitest run tests/api/employees",
     "test:lab": "vitest run tests/api/lab",
-    "test:casesheets": "vitest run tests/api/case-sheets"
+    "test:casesheets": "vitest run tests/api/case-sheets",
+    "pdf:demo": "vitest run tests/__pdf_letterhead_demo.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.985.0",

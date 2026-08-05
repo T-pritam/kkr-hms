@@ -1,13 +1,18 @@
 /**
  * Laboratory report PDF.
  *
- * A4 **portrait**, deliberately unlike the landscape billing and finance
- * reports — pathology reports are always portrait.
+ * A4 **portrait**, on the KKR Diagnostic Centre letterhead (see
+ * `letterhead.ts`) rather than a hand-drawn header — `renderLabReport`
+ * takes a `mode` so callers can render either the self-contained 'digital'
+ * copy (letterhead background baked in, for sharing) or the 'print' copy
+ * (no background, same coordinates) meant to go onto the pre-printed paper.
  *
  * The layout is the borderless clinical style used by Indian diagnostic labs
  * and expected by NABL 112 / ISO 15189 §7.4: no cell borders, one rule under
- * the column headings, abnormal results in bold with an H or L beside them, and
- * every timestamp in the sample's journey printed in the patient block.
+ * the column headings, abnormal results in bold with an H or L beside them.
+ * Colour is off by default (`LETTERHEAD_CONFIG.useColor`) — the clinic's
+ * printer is black-and-white, so a critical result is bold rather than red;
+ * the H/L letter already carries the meaning.
  *
  * Notably absent, by design:
  *   - no "Flag" column — no real lab report has one
@@ -16,9 +21,12 @@
  *     and renders them as substitute characters
  */
 
-import { C, M, fmt, mkDoc, footers } from './base'
-import { BRANDING } from './branding'
+import { M, fmt, fmtDate } from './base'
 import type { H } from './base'
+import {
+  mkLetterheadDoc, minimalPatientBlock, letterheadSectionTitle, autoPrint, ink,
+} from './letterhead'
+import type { LetterheadMode } from './letterhead'
 
 // ── Geometry (portrait: pw 210, cw 182, right edge 196) ──────────────────────
 const COL = {
@@ -29,22 +37,12 @@ const COL = {
   ref:    M + 146,   // 160
 }
 const ROW_H = 5.4
+const CRITICAL: [number, number, number] = [220, 38, 38]
 
-const grey = (h: H, on: boolean) => h.doc.setTextColor(...(on ? C.muted : C.dark))
-
-function rule(h: H, weight = 0.3, colour: [number, number, number] = C.border): void {
-  h.doc.setDrawColor(...colour)
+function rule(h: H, weight = 0.3): void {
+  h.doc.setDrawColor(0, 0, 0)
   h.doc.setLineWidth(weight)
   h.doc.line(M, h.y, h.re, h.y)
-}
-
-function dateTime(iso?: string | null): string {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  if (isNaN(d.getTime())) return '—'
-  return d.toLocaleString('en-IN', {
-    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
-  })
 }
 
 // ── Public types ─────────────────────────────────────────────────────────────
@@ -108,94 +106,15 @@ export async function fetchLabReportData(orderId: string): Promise<LabReportData
 
 // ── Sections ─────────────────────────────────────────────────────────────────
 
-function reportHeader(h: H): void {
-  const logo = BRANDING.logo
-  let textLeft = M
-  let centre = h.pw / 2
-
-  if (logo) {
-    try {
-      h.doc.addImage(logo.dataUri, logo.format, M, h.y, logo.widthMm, logo.heightMm)
-      textLeft = M + logo.widthMm + 4
-      centre = textLeft + (h.re - textLeft) / 2
-    } catch {
-      // A bad data URI must not stop the report printing.
-    }
-  }
-
-  const top = h.y
-  h.bold(14)
-  h.doc.setTextColor(...C.navy)
-  h.doc.text(BRANDING.name, centre, top + 5, { align: 'center' })
-
-  h.normal(7.5)
-  h.doc.setTextColor(...C.muted)
-  h.doc.text(BRANDING.address, centre, top + 10, { align: 'center' })
-  h.doc.text(
-    [BRANDING.phone && `Ph: ${BRANDING.phone}`, BRANDING.email].filter(Boolean).join('   |   '),
-    centre, top + 14.5, { align: 'center' },
-  )
-
-  h.doc.setTextColor(...C.dark)
-  h.y = Math.max(top + 18, logo ? top + logo.heightMm + 2 : 0)
-  rule(h, 0.6, C.navy)
-  h.y += 5
-}
-
-function patientBlock(h: H, data: LabReportData): void {
-  const left: [string, string][] = [
-    ['Name', data.patient_name || '—'],
-    ['Age / Sex', `${data.patient_age !== null && data.patient_age !== undefined ? `${data.patient_age} Y` : '—'} / ${data.patient_gender || '—'}`],
-    ['Patient ID', data.patient_display_id || 'Walk-in'],
-    ['Referred By', data.referring_doctor_name || 'Self'],
-  ]
-  const right: [string, string][] = [
-    ['Order No', data.order_no],
-    ['Registered At', dateTime(data.registered_at)],
-    ['Collected Sample', dateTime(data.collected_at)],
-    ['Received Sample', dateTime(data.received_at)],
-    ['Report Generated', dateTime(data.reported_at)],
-  ]
-
-  const top = h.y
-  const rightX = M + 96
-
-  const column = (rows: [string, string][], labelX: number, valueX: number) => {
-    let y = top
-    for (const [label, value] of rows) {
-      h.normal(8)
-      h.doc.setTextColor(...C.muted)
-      h.doc.text(label, labelX, y)
-      h.doc.text(':', valueX - 3, y)
-      h.bold(8)
-      h.doc.setTextColor(...C.dark)
-      h.doc.text(String(value), valueX, y)
-      y += 5
-    }
-    return y
-  }
-
-  const leftEnd = column(left, M, M + 26)
-  // Widened from +24 — "Report Generated" / "Collected Sample" are longer
-  // than the old "Reported" / "Collected" labels and need the extra room.
-  const rightEnd = column(right, rightX, rightX + 34)
-
-  h.doc.setTextColor(...C.dark)
-  h.y = Math.max(leftEnd, rightEnd) + 1
-  rule(h, 0.4)
-  h.y += 6
-}
-
 function columnHeadings(h: H): void {
   h.bold(8)
-  h.doc.setTextColor(...C.navy)
+  h.doc.setTextColor(0, 0, 0)
   h.doc.text('Investigation', COL.name, h.y)
   h.doc.text('Result', COL.result, h.y)
   h.doc.text('Unit', COL.unit, h.y)
   h.doc.text('Biological Ref. Interval', COL.ref, h.y)
-  h.doc.setTextColor(...C.dark)
   h.y += 2
-  rule(h, 0.4, C.navy)
+  rule(h, 0.4)
   h.y += 4.5
 }
 
@@ -204,14 +123,7 @@ function testSection(h: H, item: LabReportItem): boolean {
   const printable = item.values.filter(v => byId.has(v.parameter_id))
   if (printable.length === 0) return false
 
-  h.checkPage(34)
-
-  // Test heading
-  h.bold(9.5)
-  h.doc.setTextColor(...C.navy)
-  h.doc.text(item.test_name.toUpperCase(), COL.name, h.y)
-  h.doc.setTextColor(...C.dark)
-  h.y += 4.5
+  letterheadSectionTitle(h, item.test_name.toUpperCase())
 
   const meta = [
     item.specimen && `Specimen: ${item.specimen}`,
@@ -220,12 +132,9 @@ function testSection(h: H, item: LabReportItem): boolean {
 
   if (meta) {
     h.normal(7.5)
-    h.doc.setTextColor(...C.muted)
+    h.doc.setTextColor(0, 0, 0)
     h.doc.text(meta, COL.name, h.y)
-    h.doc.setTextColor(...C.dark)
     h.y += 5
-  } else {
-    h.y += 1
   }
 
   columnHeadings(h)
@@ -236,11 +145,13 @@ function testSection(h: H, item: LabReportItem): boolean {
   for (const value of printable) {
     const parameter = byId.get(value.parameter_id)!
 
-    // Repeat the column headings after a page break — the old report did not,
-    // so page two arrived as an unlabelled column of numbers.
-    if (h.y + ROW_H > h.ph - 22) {
-      h.doc.addPage()
-      h.y = M
+    // Repeat the column headings after a page break — page two used to
+    // arrive as an unlabelled column of numbers. checkPage resets h.y to the
+    // top of the new page when it breaks, which is how a break is detected
+    // here: y ends up somewhere other than where it started.
+    const yBefore = h.y
+    h.checkPage(ROW_H + 2)
+    if (h.y !== yBefore) {
       columnHeadings(h)
       lastGroup = null
     }
@@ -248,9 +159,8 @@ function testSection(h: H, item: LabReportItem): boolean {
     if (parameter.group_name && parameter.group_name !== lastGroup) {
       h.y += 2
       h.bold(7.5)
-      h.doc.setTextColor(...C.muted)
+      h.doc.setTextColor(0, 0, 0)
       h.doc.text(parameter.group_name.toUpperCase(), COL.name + 2, h.y)
-      h.doc.setTextColor(...C.dark)
       h.y += 4.5
       lastGroup = parameter.group_name
     }
@@ -267,22 +177,19 @@ function testSection(h: H, item: LabReportItem): boolean {
       : (value.text_value || '—')
 
     if (abnormal) h.bold(8); else h.normal(8)
-    h.doc.setTextColor(...(value.is_critical ? C.red : C.dark))
+    h.doc.setTextColor(...(value.is_critical ? ink(CRITICAL) : ([0, 0, 0] as [number, number, number])))
     h.doc.text(resultText, COL.result, h.y)
 
     if (abnormal) {
       h.bold(8)
-      h.doc.setTextColor(...(value.is_critical ? C.red : C.dark))
       h.doc.text(abnormal, COL.mark, h.y)
     }
 
     h.normal(8)
-    h.doc.setTextColor(...C.dark)
+    h.doc.setTextColor(0, 0, 0)
     h.doc.text(nameLines[0], COL.name, h.y)
-    grey(h, true)
     h.doc.text(value.unit || '—', COL.unit, h.y)
     h.doc.text(value.ref_display || '—', COL.ref, h.y)
-    h.doc.setTextColor(...C.dark)
 
     h.y += ROW_H
 
@@ -294,9 +201,7 @@ function testSection(h: H, item: LabReportItem): boolean {
 
     if (parameter.method) {
       h.normal(6.5)
-      grey(h, true)
       h.doc.text(parameter.method, COL.name + 2, h.y - 1.4)
-      h.doc.setTextColor(...C.dark)
       h.y += 2.4
     }
   }
@@ -307,24 +212,20 @@ function testSection(h: H, item: LabReportItem): boolean {
 
   if (anyAbnormal) {
     h.normal(7)
-    h.doc.setTextColor(...C.muted)
     h.doc.text('H = above reference interval          L = below reference interval', COL.name, h.y)
-    h.doc.setTextColor(...C.dark)
     h.y += 5
   }
 
   if (item.interpretation?.trim()) {
     h.checkPage(20)
     h.bold(8)
-    h.doc.setTextColor(...C.navy)
     h.doc.text('INTERPRETATION', COL.name, h.y)
-    h.doc.setTextColor(...C.dark)
     h.y += 4.5
 
     h.normal(8)
     const lines: string[] = h.doc.splitTextToSize(item.interpretation.trim(), h.cw - 4)
     for (const line of lines) {
-      if (h.y > h.ph - 24) { h.doc.addPage(); h.y = M }
+      h.checkPage(5)
       h.doc.text(line, COL.name, h.y)
       h.y += 4.4
     }
@@ -339,32 +240,24 @@ function signOff(h: H, items: LabReportItem[]): void {
   h.y += 4
 
   h.normal(8)
-  h.doc.setTextColor(...C.muted)
+  h.doc.setTextColor(0, 0, 0)
   h.doc.text('- -   End of Report   - -', h.pw / 2, h.y, { align: 'center' })
-  h.doc.setTextColor(...C.dark)
   h.y += 12
 
-  const enteredBy = [...new Set(items.map(i => i.entered_by_name).filter(Boolean))].join(', ')
   const authorisedBy = [...new Set(items.map(i => i.authorised_by_name).filter(Boolean))].join(', ')
 
   const top = h.y
   h.normal(7.5)
-  h.doc.setTextColor(...C.muted)
-  // if (enteredBy) { h.doc.text(`Entered by: ${enteredBy}`, M, top); h.y += 4.5 }
   if (authorisedBy) { h.doc.text(`Authorised by: ${authorisedBy}`, M, h.y); h.y += 4.5 }
-  h.doc.setTextColor(...C.dark)
 
-  // Signature rule on the right, level with the attribution.
   const sigRight = h.re
   const sigLeft = sigRight - 50
   const sigY = top + 8
-  h.doc.setDrawColor(...C.muted)
+  h.doc.setDrawColor(0, 0, 0)
   h.doc.setLineWidth(0.3)
   h.doc.line(sigLeft, sigY, sigRight, sigY)
   h.normal(7)
-  h.doc.setTextColor(...C.muted)
   h.doc.text('Authorised Signatory', sigRight, sigY + 4, { align: 'right' })
-  h.doc.setTextColor(...C.dark)
 
   h.y = Math.max(h.y, sigY + 8)
 }
@@ -383,13 +276,18 @@ export function labReportFilename(data: LabReportData): string {
  *
  * Split out so the discharge summary can append lab reports: merging needs the
  * bytes, and calling `save()` would trigger a download of each report as a
- * side effect of building the combined file.
+ * side effect of building the combined file. `mode` defaults to 'digital'
+ * since that's what a merged discharge pack always wants.
  */
-export function renderLabReport(data: LabReportData) {
-  const h = mkDoc('portrait')
+export function renderLabReport(data: LabReportData, mode: LetterheadMode = 'digital') {
+  const h = mkLetterheadDoc(mode)
 
-  reportHeader(h)
-  patientBlock(h, data)
+  minimalPatientBlock(h, {
+    name: data.patient_name || 'Patient',
+    ageSex: `${data.patient_age !== null && data.patient_age !== undefined ? `${data.patient_age} Y` : '—'} / ${data.patient_gender || '—'}`,
+    date: fmtDate(data.reported_at || data.registered_at),
+    idNo: data.patient_display_id || 'Walk-in',
+  })
 
   const reportable = (data.items || []).filter(i => i.status !== 'cancelled')
   let printedAny = false
@@ -403,20 +301,24 @@ export function renderLabReport(data: LabReportData) {
 
   if (!printedAny) {
     h.normal(9)
-    h.doc.setTextColor(...C.muted)
+    h.doc.setTextColor(0, 0, 0)
     h.doc.text('No results have been entered for this order yet.', M, h.y)
-    h.doc.setTextColor(...C.dark)
     h.y += 8
   }
 
   signOff(h, reportable)
-  footers(h)
 
   return h.doc
 }
 
 export function generateLabReportPDF(data: LabReportData): void {
-  renderLabReport(data).save(labReportFilename(data))
+  renderLabReport(data, 'digital').save(labReportFilename(data))
+}
+
+/** Renders the print (no-background) copy and sends it straight to the
+ * browser's print dialog, for the pre-printed letterhead paper. */
+export function printLabReport(data: LabReportData): void {
+  autoPrint(renderLabReport(data, 'print'))
 }
 
 /** Exported for the totals line some labs print on the patient copy. */

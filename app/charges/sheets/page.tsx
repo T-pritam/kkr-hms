@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { AlertCircle, Pencil, Plus, Printer, Search, Send, Trash2 } from 'lucide-react'
+import { AlertCircle, Download, Pencil, Plus, Printer, Search, Send, Trash2 } from 'lucide-react'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -10,7 +10,7 @@ import { Select } from '@/components/ui/select'
 import { ChargeSheetModal } from '@/components/charges/charge-sheet-modal'
 import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch'
 import { useUser } from '@/hooks/use-user'
-import { printChargeSheet } from '@/lib/pdf/charge-sheet-pdf'
+import { printChargeSheet, printChargeSheetToPrinter } from '@/lib/pdf/charge-sheet-pdf'
 
 /**
  * Temporary charge sheets.
@@ -93,15 +93,31 @@ export default function ChargeSheetsPage() {
       ? sheet.patient?.name || 'Unknown patient'
       : sheet.opd_name || 'Walk-in'
 
-  const print = async (sheet: ChargeSheet) => {
+  // The list carries no lines, so both actions fetch the detail first.
+  const loadSheetDetail = async (sheet: ChargeSheet) => {
+    const res = await fetch(`/api/charge-sheets/${sheet.id}`)
+    const json = await res.json()
+    if (!res.ok) throw new Error(json.error || 'Failed to load the charge sheet')
+    return json.chargeSheet
+  }
+
+  const download = async (sheet: ChargeSheet) => {
     setError('')
     setBusyId(sheet.id)
     try {
-      // The list carries no lines, so fetch the detail the document needs.
-      const res = await fetch(`/api/charge-sheets/${sheet.id}`)
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Failed to load the charge sheet')
-      printChargeSheet(json.chargeSheet)
+      printChargeSheet(await loadSheetDetail(sheet))
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const printToPrinter = async (sheet: ChargeSheet) => {
+    setError('')
+    setBusyId(sheet.id)
+    try {
+      printChargeSheetToPrinter(await loadSheetDetail(sheet))
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -268,7 +284,15 @@ export default function ChargeSheetsPage() {
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-1">
                           <button
-                            onClick={() => print(sheet)}
+                            onClick={() => download(sheet)}
+                            disabled={busyId === sheet.id}
+                            aria-label={`Download ${sheet.sheet_no} as PDF`}
+                            className="p-2 text-muted hover:text-foreground disabled:opacity-50"
+                          >
+                            <Download size={16} />
+                          </button>
+                          <button
+                            onClick={() => printToPrinter(sheet)}
                             disabled={busyId === sheet.id}
                             aria-label={`Print ${sheet.sheet_no}`}
                             className="p-2 text-muted hover:text-foreground disabled:opacity-50"
@@ -340,7 +364,15 @@ export default function ChargeSheetsPage() {
                   </div>
                   <div className="flex justify-end gap-1">
                     <button
-                      onClick={() => print(sheet)}
+                      onClick={() => download(sheet)}
+                      disabled={busyId === sheet.id}
+                      aria-label={`Download ${sheet.sheet_no} as PDF`}
+                      className="p-2 text-muted hover:text-foreground disabled:opacity-50"
+                    >
+                      <Download size={16} />
+                    </button>
+                    <button
+                      onClick={() => printToPrinter(sheet)}
                       disabled={busyId === sheet.id}
                       aria-label={`Print ${sheet.sheet_no}`}
                       className="p-2 text-muted hover:text-foreground disabled:opacity-50"

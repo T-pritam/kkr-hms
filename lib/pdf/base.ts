@@ -184,8 +184,8 @@ export function sec(h: H, title: string, color: [number, number, number] = C.blu
 export type Col  = { label: string; x: number; align?: 'left' | 'right' | 'center' }
 export type Cell = { text: string;  x: number; align?: 'left' | 'right' | 'center' }
 
-export function thead(h: H, cols: Col[]): void {
-  h.doc.setFillColor(...C.tblHead)
+export function thead(h: H, cols: Col[], fill: [number, number, number] = C.tblHead): void {
+  h.doc.setFillColor(...fill)
   h.doc.rect(M, h.y, h.cw, TH_H, 'F')
   h.bold(7.5)
   h.doc.setTextColor(...C.white)

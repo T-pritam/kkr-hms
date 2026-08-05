@@ -243,6 +243,7 @@ export default function PatientDetailsPage() {
                 patientId={patientId}
                 billing={billing}
                 onCreateBilling={createBilling}
+                patient={patientData}
               />
             )}
 

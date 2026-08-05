@@ -1,21 +1,24 @@
-import {
-  M, ROW_H, C,
-  mkDoc, hdr, sec, thead, trow, ttotal, footers,
-  fmt, fmtDate,
-} from './base'
-
 /**
  * The printable charge sheet.
  *
- * Portrait rather than the landscape the billing reports use: this is a short
- * itemised list handed across a desk, not a wide financial table.
+ * A4 **portrait**, on the KKR Diagnostic Centre letterhead (see
+ * `letterhead.ts`) — `renderChargeSheet` takes a `mode` so callers can
+ * render either the self-contained 'digital' copy (letterhead background
+ * baked in) or the 'print' copy (no background, same coordinates) meant to
+ * go onto the pre-printed paper.
  *
- * The one thing this document must never do is read as an invoice. A sheet is an
- * estimate — the money is not owed, and for a walk-in there is not even an
- * account for it to be owed on — so the status is stated in the header and an
- * unforwarded sheet carries an explicit "not a bill" note above the total. A
- * forwarded one says so instead, because by then the amount *is* on a bill.
+ * The one thing this document must never do is read as an invoice. A sheet is
+ * an estimate — the money is not owed, and for a walk-in there is not even an
+ * account for it to be owed on — so the status is stated under the title and
+ * an unforwarded sheet carries an explicit "not a bill" note above the total.
+ * A forwarded one says so instead, because by then the amount *is* on a bill.
  */
+
+import { M, fmt, fmtDate } from './base'
+import {
+  mkLetterheadDoc, minimalPatientBlock, letterheadSectionTitle, letterheadTable, autoPrint,
+} from './letterhead'
+import type { LetterheadMode } from './letterhead'
 
 export interface ChargeSheetLineData {
   description: string
@@ -45,8 +48,8 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled: 'Cancelled',
 }
 
-export function renderChargeSheet(data: ChargeSheetData) {
-  const h = mkDoc('portrait')
+export function renderChargeSheet(data: ChargeSheetData, mode: LetterheadMode = 'digital') {
+  const h = mkLetterheadDoc(mode)
   const items = data.items ?? []
 
   const who =
@@ -54,113 +57,72 @@ export function renderChargeSheet(data: ChargeSheetData) {
       ? data.patient?.name || 'Unknown patient'
       : data.opd_name || 'Walk-in'
 
-  hdr(
+  const ageSex = data.subject_type === 'opd'
+    ? [data.opd_age != null ? `${data.opd_age} Y` : null, data.opd_gender || null].filter(Boolean).join(' / ') || '—'
+    : '—'
+
+  minimalPatientBlock(h, {
+    name: who,
+    ageSex,
+    date: fmtDate(data.created_at),
+    idNo: data.subject_type === 'patient' ? (data.patient?.patient_id || '—') : '—',
+  })
+
+  letterheadSectionTitle(h, `CHARGE SHEET ${data.sheet_no}`)
+
+  h.doc.setFont('helvetica', 'normal')
+  h.doc.setFontSize(9)
+  h.doc.setTextColor(0, 0, 0)
+  const statusLine = [
+    STATUS_LABEL[data.status] ?? data.status,
+    data.subject_type === 'patient' ? data.patient?.phone : data.opd_phone,
+  ].filter(Boolean).join('   •   ')
+  h.doc.text(statusLine, h.pw / 2, h.y, { align: 'center' })
+  h.y += 9
+
+  letterheadTable(
     h,
-    `Charge Sheet ${data.sheet_no}`,
-    `${who}  •  ${STATUS_LABEL[data.status] ?? data.status}  •  ${fmtDate(data.created_at)}`,
+    [
+      { label: 'Date', width: 20 },
+      { label: 'Description', width: 42 },
+      { label: 'Qty', width: 12, align: 'right' },
+      { label: 'Rate', width: 20, align: 'right' },
+      { label: 'Amount', width: 20, align: 'right' },
+    ],
+    items.map(item => [
+      item.service_date ? fmtDate(item.service_date) : '—',
+      String(item.description || '—'),
+      String(Number(item.qty) || 1),
+      fmt(Number(item.unit_price) || 0),
+      fmt((Number(item.unit_price) || 0) * (Number(item.qty) || 1)),
+    ]),
+    { totalLabel: 'TOTAL', totalValue: fmt(data.total_amount) },
   )
 
-  // ── Who it is for ──────────────────────────────────────────────────────────
-  sec(h, 'DETAILS', C.blue)
-
-  const details: [string, string][] =
-    data.subject_type === 'patient'
-      ? [
-          ['Name', data.patient?.name || '—'],
-          ['Patient ID', data.patient?.patient_id || '—'],
-          ['Phone', data.patient?.phone || '—'],
-        ]
-      : [
-          ['Name', data.opd_name || '—'],
-          ['Phone', data.opd_phone || '—'],
-          ['Age', data.opd_age != null ? String(data.opd_age) : '—'],
-          ['Gender', data.opd_gender || '—'],
-          ['Type', 'OPD / walk-in (not registered)'],
-        ]
-
-  h.normal(9)
-  details.forEach(([label, value], i) => {
-    if (i % 2 === 0) {
-      h.doc.setFillColor(...C.tblAlt)
-      h.doc.rect(M, h.y, h.cw, ROW_H, 'F')
-    }
-    h.bold(9)
-    h.doc.text(label, M + 3, h.y + 5)
-    h.normal(9)
-    h.doc.text(value, M + 45, h.y + 5)
-    h.y += ROW_H
-  })
-
-  h.y += 6
-
-  // ── The lines ──────────────────────────────────────────────────────────────
-  sec(h, 'CHARGES', C.blue)
-
-  // Right edge of the portrait content area, for the money columns.
-  const re = M + h.cw
-
-  thead(h, [
-    { label: 'Date', x: M + 3 },
-    { label: 'Description', x: M + 32 },
-    { label: 'Qty', x: re - 58, align: 'right' },
-    { label: 'Rate', x: re - 33, align: 'right' },
-    { label: 'Amount', x: re - 3, align: 'right' },
-  ])
-
-  items.forEach((item, index) => {
-    h.checkPage()
-    const qty = Number(item.qty) || 1
-    const rate = Number(item.unit_price) || 0
-
-    trow(
-      h,
-      [
-        { text: item.service_date ? fmtDate(item.service_date) : '—', x: M + 3 },
-        { text: String(item.description || '—').substring(0, 48), x: M + 32 },
-        { text: String(qty), x: re - 58, align: 'right' },
-        { text: fmt(rate), x: re - 33, align: 'right' },
-        { text: fmt(rate * qty), x: re - 3, align: 'right' },
-      ],
-      index,
-    )
-  })
-
-  if (items.length === 0) {
-    h.normal(9)
-    h.doc.setTextColor(...C.dark)
-    h.doc.text('No charges on this sheet.', M + 3, h.y + 5)
-    h.y += ROW_H
-  }
-
-  ttotal(h, [
-    { text: 'TOTAL', x: M + 3 },
-    { text: fmt(data.total_amount), x: re - 3, align: 'right' },
-  ])
-
-  h.y += 6
-
-  // ── What this document is, and is not ──────────────────────────────────────
   h.checkPage(20)
-  h.normal(8)
-  h.doc.setTextColor(...C.dark)
+  h.doc.setFont('helvetica', 'normal')
+  h.doc.setFontSize(8)
+  h.doc.setTextColor(0, 0, 0)
 
   const disclaimer =
     data.status === 'forwarded'
       ? 'These charges have been added to the patient\'s bill and are payable there.'
       : 'This is an estimate, not a bill. No amount is due and no payment is being requested. Charges are payable only once added to a patient account.'
 
-  h.doc.text(h.doc.splitTextToSize(disclaimer, h.cw - 6), M + 3, h.y + 4)
+  h.doc.text(h.doc.splitTextToSize(disclaimer, h.cw), M, h.y)
   h.y += 12
 
   if (data.notes) {
     h.checkPage(20)
-    h.bold(9)
-    h.doc.text('Notes', M + 3, h.y + 4)
-    h.normal(8)
-    h.doc.text(h.doc.splitTextToSize(data.notes, h.cw - 6), M + 3, h.y + 10)
+    h.doc.setFont('helvetica', 'bold')
+    h.doc.setFontSize(9)
+    h.doc.text('Notes', M, h.y)
+    h.y += 5
+    h.doc.setFont('helvetica', 'normal')
+    h.doc.setFontSize(8)
+    h.doc.text(h.doc.splitTextToSize(data.notes, h.cw), M, h.y)
   }
 
-  footers(h, { showGenerated: true })
   return h.doc
 }
 
@@ -168,8 +130,14 @@ export function chargeSheetFilename(data: ChargeSheetData): string {
   return `${data.sheet_no}.pdf`
 }
 
-/** Opens the document in a new tab for printing. */
+/** Downloads the self-contained digital copy. */
 export function printChargeSheet(data: ChargeSheetData): void {
-  const doc = renderChargeSheet(data)
+  const doc = renderChargeSheet(data, 'digital')
   doc.save(chargeSheetFilename(data))
+}
+
+/** Renders the print (no-background) copy and sends it straight to the
+ * browser's print dialog, for the pre-printed letterhead paper. */
+export function printChargeSheetToPrinter(data: ChargeSheetData): void {
+  autoPrint(renderChargeSheet(data, 'print'))
 }
