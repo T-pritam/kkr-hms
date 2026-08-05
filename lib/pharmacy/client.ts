@@ -106,8 +106,11 @@ async function authedFetch(
   retry = true,
 ): Promise<any> {
   const token = await getPharmacyToken(supabase)
+  // SmartPharma360 expects the raw token in the Authorization header — no
+  // "Bearer " scheme prefix. Sending one gets "Incorrect token is provided,
+  // try re-login" even though the token itself is valid.
   const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: token },
   })
 
   if (res.status === 401 && retry) {
