@@ -49,11 +49,21 @@ export const SCHEMA: Record<string, string[]> = {
     'expense_category', 'expense_category_detail',
   ],
 
+  doctor_fee_schedule: [
+    // 20260808000004 — per-doctor, per-purpose rate card
+    'id', 'doctor_id', 'visit_purpose_id', 'fee', 'is_active',
+    'created_at', 'created_by', 'updated_at', 'updated_by',
+  ],
+
   doctor_visit_settlements: [
     'id', 'patient_billing_id', 'patient_id', 'doctor_id', 'visit_count', 'amount_per_visit',
     'total_amount', 'settled', 'settlement_date', 'settlement_amount', 'settlement_notes',
     'payment_method', 'transaction_reference', 'created_at', 'updated_at', 'created_by',
     'updated_by', 'deleted_at', 'settlement_type',
+    // 20260805000003 — who handed the payout over (was missing from this dump)
+    'given_by',
+    // 20260808000005 — settlements are per purpose, not per doctor
+    'visit_purpose_id',
   ],
 
   doctors: [
@@ -69,6 +79,29 @@ export const SCHEMA: Record<string, string[]> = {
   ],
 
   case_sheet_counters: ['year', 'last_no'],
+
+  // 20260808000001 — the charge master. Replaces the hardcoded dropdown that
+  // used to live in components/patients/charges-tab.tsx.
+  charge_items: [
+    'id', 'code', 'name', 'category', 'billing_mode', 'default_price', 'unit_label',
+    'is_active', 'notes', 'created_at', 'created_by', 'updated_at', 'updated_by',
+  ],
+
+  // 20260808000003 — temporary charge sheets. Not billing until forwarded.
+  charge_sheets: [
+    'id', 'sheet_no', 'subject_type', 'patient_id',
+    'opd_name', 'opd_phone', 'opd_age', 'opd_gender',
+    'status', 'total_amount', 'notes',
+    'forwarded_at', 'forwarded_by', 'forwarded_billing_id',
+    'created_at', 'created_by', 'updated_at', 'updated_by',
+  ],
+
+  charge_sheet_items: [
+    'id', 'charge_sheet_id', 'charge_item_id', 'description', 'unit_price', 'qty',
+    'service_date', 'line_total', 'created_at', 'updated_at',
+  ],
+
+  charge_sheet_counters: ['scope', 'last_no'],
 
   case_sheet_doctors: [
     'id', 'case_sheet_id', 'doctor_id', 'doctor_name', 'doctor_specialist', 'display_order',
@@ -148,6 +181,8 @@ export const SCHEMA: Record<string, string[]> = {
     'patient_paid_amount', 'payment_status', 'joined_date', 'month_year', 'referral_transaction_ref',
     'referral_settlement_payment_method', 'referral_commission_included_in_package',
     'doctor_fees_included_in_package',
+    // 20260805000003 — who handed the commission over (was missing from this dump)
+    'referral_settlement_given_by',
   ],
 
   patient_billing_installments: [
@@ -158,21 +193,37 @@ export const SCHEMA: Record<string, string[]> = {
   patient_case_sheets: [
     'id', 'patient_id', 'patient_billing_id', 'discharge_date', 'discharge_notes', 'case_sheet_url',
     'case_sheet_filename', 'uploaded_at', 'created_at', 'created_by', 'updated_at', 'updated_by',
+    // ward/bed genuinely still exist in the live database — this list is a dump of
+    // what's really there, not of what the app currently writes. They stay listed
+    // here even though 20260809000003 retired them from CASE_SHEET_WRITABLE, or
+    // this file would wrongly report a real column as nonexistent.
     'admission_date', 'ward', 'bed', 'chief_complaints', 'history_present_illness', 'past_history',
     'diagnosis', 'investigations', 'clinical_summary', 'advice_notes', 'condition_on_discharge',
     'vitals_bp', 'vitals_pulse', 'vitals_temp', 'vitals_spo2', 'follow_up_date',
     'follow_up_instructions', 'summary_no', 'status', 'finalised_by', 'finalised_at',
+    // 20260809000003 — what replaced them in the app, added alongside, not instead of.
+    'discharge_time', 'discharge_received_by',
   ],
 
   patient_charges: [
     'id', 'patient_billing_id', 'patient_id', 'charge_type', 'description', 'amount', 'charge_date',
     'created_at', 'created_by', 'updated_at', 'updated_by', 'qty',
+    // 20260808000002 — catalogue link, and the group a date range's rows share
+    'charge_item_id', 'billing_mode', 'charge_group_id', 'source_sheet_id',
   ],
 
   patient_consultations: [
     'id', 'patient_id', 'doctor_id', 'consultation_date', 'visit_number', 'price_per_visit',
     'payment_status', 'notes', 'created_at', 'updated_at', 'created_by', 'updated_by', 'deleted_at',
     'billing_id',
+    // 20260808000005 — what the visit was for. price_per_visit is vestigial again —
+    // pricing moved to settle time (20260809000002) and the visit form no longer
+    // collects it.
+    'visit_purpose_id',
+    // 20260809000002 — which settlement (if any) has billed this visit. Null means
+    // "not yet billed". Set only by the sync endpoint, cleared only by deleting
+    // that settlement.
+    'settlement_id',
   ],
 
   patient_test_results: [
@@ -222,6 +273,12 @@ export const SCHEMA: Record<string, string[]> = {
   users: [
     'id', 'username', 'email', 'password_hash', 'role', 'status', 'needs_password_change',
     'reset_token', 'reset_token_expiry', 'last_login', 'created_at', 'updated_at',
+  ],
+
+  // 20260808000004 — what kinds of doctor visit exist
+  visit_purposes: [
+    'id', 'code', 'name', 'default_fee', 'sort_order', 'is_active',
+    'created_at', 'created_by', 'updated_at', 'updated_by',
   ],
 }
 

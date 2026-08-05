@@ -15,8 +15,8 @@ export const CASE_SHEET_WRITABLE = [
   'patient_billing_id',
   'admission_date',
   'discharge_date',
-  'ward',
-  'bed',
+  'discharge_time',
+  'discharge_received_by',
   'chief_complaints',
   'history_present_illness',
   'past_history',
@@ -103,6 +103,12 @@ export function validateCaseSheet(values: Record<string, any>): Validation {
     !(DISCHARGE_CONDITIONS as readonly string[]).includes(values.condition_on_discharge)
   ) {
     errors.condition_on_discharge = 'Choose one of the listed conditions'
+  }
+
+  // Free text, often not a system user — same convention and cap as
+  // lib/employees/validate.ts's given_by.
+  if (!blank(values.discharge_received_by) && String(values.discharge_received_by).trim().length > 120) {
+    errors.discharge_received_by = 'Received by is too long'
   }
 
   return Object.keys(errors).length > 0 ? { ok: false, errors } : OK

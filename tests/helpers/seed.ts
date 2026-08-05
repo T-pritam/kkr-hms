@@ -100,6 +100,13 @@ export function aConsultation(overrides: Row = {}): Row {
     consultation_date: '2026-03-15T04:30:00.000Z',
     notes: 'Routine check',
     visit_number: 1,
+    // Null rather than a purpose: a visit recorded before 20260808000005 has
+    // none, and defaulting one here would hide the branch that back-fills it.
+    visit_purpose_id: null,
+    price_per_visit: 0,
+    // Null: not yet billed. Set only by the sync endpoint — see
+    // 20260809000002_settlement_visit_linking.sql.
+    settlement_id: null,
     deleted_at: null,
     created_by: null,
     updated_by: null,
@@ -117,7 +124,96 @@ export function aCharge(overrides: Row = {}): Row {
     amount: 1000,
     qty: 1,
     charge_date: TODAY,
+    charge_item_id: null,
+    billing_mode: 'one_time',
+    charge_group_id: null,
+    source_sheet_id: null,
     created_by: null,
+    ...overrides,
+  })[0]
+}
+
+export function aChargeItem(overrides: Row = {}): Row {
+  return db.seed('charge_items', {
+    id: overrides.id ?? nextId('chargeitem'),
+    code: `CI${sequence}`,
+    name: `Test Service ${sequence}`,
+    category: 'procedure',
+    billing_mode: 'one_time',
+    default_price: 500,
+    unit_label: null,
+    is_active: true,
+    notes: null,
+    created_by: null,
+    updated_by: null,
+    ...overrides,
+  })[0]
+}
+
+/** Defaults to a draft sheet for a registered patient. Pass `subject_type: 'opd'` for a walk-in. */
+export function aChargeSheet(overrides: Row = {}): Row {
+  return db.seed('charge_sheets', {
+    id: overrides.id ?? nextId('sheet'),
+    sheet_no: `CS-${String(sequence).padStart(6, '0')}`,
+    subject_type: 'patient',
+    patient_id: overrides.subject_type === 'opd' ? null : (overrides.patient_id ?? nextId('patient')),
+    opd_name: overrides.subject_type === 'opd' ? 'Walk-in Person' : null,
+    opd_phone: null,
+    opd_age: null,
+    opd_gender: null,
+    status: 'draft',
+    total_amount: 0,
+    notes: null,
+    forwarded_at: null,
+    forwarded_by: null,
+    forwarded_billing_id: null,
+    created_by: null,
+    updated_by: null,
+    ...overrides,
+  })[0]
+}
+
+export function aChargeSheetItem(overrides: Row = {}): Row {
+  const unitPrice = overrides.unit_price ?? 500
+  const qty = overrides.qty ?? 1
+  return db.seed('charge_sheet_items', {
+    id: overrides.id ?? nextId('sheetitem'),
+    charge_sheet_id: overrides.charge_sheet_id ?? nextId('sheet'),
+    charge_item_id: null,
+    description: 'Test line',
+    unit_price: unitPrice,
+    qty,
+    service_date: TODAY,
+    // Generated column in the database; the fake has no expression support, so
+    // the fixture computes it. Routes must never write it.
+    line_total: unitPrice * qty,
+    ...overrides,
+  })[0]
+}
+
+export function aVisitPurpose(overrides: Row = {}): Row {
+  return db.seed('visit_purposes', {
+    id: overrides.id ?? nextId('purpose'),
+    code: overrides.code ?? `purpose_${sequence}`,
+    name: 'Consultation',
+    default_fee: 0,
+    sort_order: 10,
+    is_active: true,
+    created_by: null,
+    updated_by: null,
+    ...overrides,
+  })[0]
+}
+
+export function aDoctorFee(overrides: Row = {}): Row {
+  return db.seed('doctor_fee_schedule', {
+    id: overrides.id ?? nextId('fee'),
+    doctor_id: overrides.doctor_id ?? nextId('doctor'),
+    visit_purpose_id: overrides.visit_purpose_id ?? nextId('purpose'),
+    fee: 300,
+    is_active: true,
+    created_by: null,
+    updated_by: null,
     ...overrides,
   })[0]
 }
@@ -146,6 +242,10 @@ export function aSettlement(overrides: Row = {}): Row {
     patient_id: overrides.patient_id ?? nextId('patient'),
     patient_billing_id: overrides.patient_billing_id ?? nextId('billing'),
     doctor_id: overrides.doctor_id ?? nextId('doctor'),
+    // Null by default so the partial unique index on
+    // (patient_billing_id, doctor_id, visit_purpose_id) stays out of the way of
+    // fixtures written before settlements were per-purpose — NULLs are distinct.
+    visit_purpose_id: null,
     visit_count: visitCount,
     amount_per_visit: amountPerVisit,
     settled: false,
@@ -174,8 +274,8 @@ export function aCaseSheet(overrides: Row = {}): Row {
     status: 'final',
     admission_date: TODAY,
     discharge_date: TODAY,
-    ward: 'General Ward',
-    bed: '12',
+    discharge_time: null,
+    discharge_received_by: null,
     chief_complaints: 'Fever with chills for 4 days',
     diagnosis: 'Acute gastroenteritis',
     investigations: 'Hb 9.2 g/dL, TLC 12,400',

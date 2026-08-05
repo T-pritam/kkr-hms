@@ -3,6 +3,25 @@ import { SupabaseClient } from '@supabase/supabase-js'
 /**
  * Recalculates patient_billing totals from source tables.
  * Call after any charge, settlement, or billing field mutation.
+ *
+ * ── On the package flags ────────────────────────────────────────────────────
+ *
+ * `base_charge` is the agreed all-in price for an admission — a package. The two
+ * `*_included_in_package` flags say whether the doctor fees and the referral
+ * commission are already inside that figure, and so must not be added on top.
+ *
+ * A base charge is no longer required. A patient can be billed purely from
+ * itemised charges, and when they are there is no package for anything to be
+ * "included in" — so both flags are ignored rather than trusted. Reading them
+ * literally with no base charge would silently drop the doctor's fees off the
+ * bill, because the flag would claim they were covered by a package worth zero.
+ *
+ * The referral commission is the sharper case. It is money the hospital pays the
+ * referrer, and the old formula added it to what the *patient* owed whenever the
+ * tick was off. With a package that is a pricing decision: the commission is
+ * being recovered from the patient as part of the deal. Without one there is no
+ * deal to recover it through, so the commission is a payout only — recorded,
+ * listed in Finance, settled as a ledger debit, and not billed to anybody.
  */
 export async function recalculatePatientBilling(
   supabase: SupabaseClient,
@@ -49,10 +68,18 @@ export async function recalculatePatientBilling(
   const commissionIncluded = billing.referral_commission_included_in_package === true
   const doctorFeesIncluded = billing.doctor_fees_included_in_package === true
 
+  // The flags only mean something when there is a package to be inside of.
+  const hasPackage = baseCharge > 0
+
+  const doctorFeesOnBill = hasPackage && doctorFeesIncluded ? 0 : totalDoctorFees
+
+  // No package: the commission is a payout to the referrer, not a patient charge.
+  const commissionOnBill = hasPackage && !commissionIncluded ? referralCommission : 0
+
   const totalCharges = baseCharge
     + patientChargesTotal
-    + (doctorFeesIncluded ? 0 : totalDoctorFees)
-    + (commissionIncluded ? 0 : referralCommission)
+    + doctorFeesOnBill
+    + commissionOnBill
 
   // 5. Update billing record
   const { error: updateError } = await supabase

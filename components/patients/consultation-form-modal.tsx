@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Modal } from '@/components/ui/modal'
+import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { DoctorSelect } from '@/components/patients/doctor-select'
 import { istFields, istNowFields, parseStoredInstant, toISTInstant } from '@/lib/consultations/ist'
@@ -27,6 +28,13 @@ import { istFields, istNowFields, parseStoredInstant, toISTInstant } from '@/lib
  * render. A consultation saved with a null billing is invisible to the settlement sync
  * (`settlements/sync/route.ts` filters on it), so the doctor is never paid for that visit
  * — silently. It is context, not input, so it is a prop here and read at submit.
+ *
+ * **Purpose** was added with 20260808000005 and stays required: settlement groups on it,
+ * so a visit without one falls into an unpriced bucket with every other purposeless
+ * visit. A **fee** field briefly lived here too, but pricing has moved to settle time —
+ * this form's job is to record what happened and who was involved, not what it costs. The
+ * doctor's rate card (`GET /api/doctors/[id]/fee-schedule`) is still consulted, just from
+ * the settle screen instead of here.
  */
 
 interface ConsultationFormModalProps {
@@ -44,6 +52,7 @@ interface ConsultationFormModalProps {
 
 interface FormState {
   doctor_id: string
+  visit_purpose_id: string
   consultation_date: string
   consultation_time: string
   notes: string
@@ -51,9 +60,16 @@ interface FormState {
 
 const EMPTY: FormState = {
   doctor_id: '',
+  visit_purpose_id: '',
   consultation_date: '',
   consultation_time: '',
   notes: '',
+}
+
+interface VisitPurpose {
+  id: string
+  code: string
+  name: string
 }
 
 /** Dates arrive as ISO or `YYYY-MM-DD`; a date input only accepts the latter. */
@@ -104,6 +120,7 @@ export function ConsultationFormModal({
   const [form, setForm] = useState<FormState>(EMPTY)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [purposes, setPurposes] = useState<VisitPurpose[]>([])
 
   useEffect(() => {
     if (!isOpen) return
@@ -113,6 +130,7 @@ export function ConsultationFormModal({
       const { date, time } = istFields(parseStoredInstant(consultation.consultation_date))
       setForm({
         doctor_id: consultation.doctor_id || '',
+        visit_purpose_id: consultation.visit_purpose_id || '',
         consultation_date: date,
         consultation_time: time,
         notes: consultation.notes || '',
@@ -122,6 +140,26 @@ export function ConsultationFormModal({
       setForm({ ...EMPTY, ...istNowFields() })
     }
   }, [isOpen, consultation])
+
+  useEffect(() => {
+    if (!isOpen) return
+    let cancelled = false
+
+    const load = async () => {
+      try {
+        const res = await fetch('/api/visit-purposes')
+        const json = await res.json()
+        if (!cancelled && res.ok) setPurposes(json.visitPurposes || [])
+      } catch (err) {
+        if (!cancelled) console.error('Failed to load visit purposes:', err)
+      }
+    }
+
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [isOpen])
 
   const update = <K extends keyof FormState>(field: K, value: FormState[K]) => {
     setForm(prev => ({ ...prev, [field]: value }))
@@ -156,6 +194,7 @@ export function ConsultationFormModal({
     try {
       const payload = {
         doctor_id: form.doctor_id,
+        visit_purpose_id: form.visit_purpose_id,
         consultation_date: toISTInstant(form.consultation_date, form.consultation_time),
         notes: form.notes,
         // On edit, keep whatever the row already points at and back-fill the rows the old
@@ -192,7 +231,7 @@ export function ConsultationFormModal({
       onClose={onClose}
       size="lg"
       title={mode === 'edit' ? 'Edit consultation' : 'Add a consultation'}
-      description="The doctor and the date are required."
+      description="The doctor, the purpose and the date are required. Pricing is set later, when the visit is settled."
       footer={
         <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
           <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
@@ -201,7 +240,13 @@ export function ConsultationFormModal({
           <Button
             type="submit"
             form="consultation-form"
-            disabled={saving || !form.doctor_id || !form.consultation_date || !billingId}
+            disabled={
+              saving ||
+              !form.doctor_id ||
+              !form.visit_purpose_id ||
+              !form.consultation_date ||
+              !billingId
+            }
           >
             {saving && <Loader2 size={16} className="mr-2 animate-spin" />}
             {mode === 'edit' ? 'Save changes' : 'Add consultation'}
@@ -230,6 +275,27 @@ export function ConsultationFormModal({
             includeId={consultation?.doctor_id}
             fallbackLabel={consultation?.doctor?.name}
           />
+        </Field>
+
+        <Field
+          id="visit_purpose"
+          label="Purpose of visit"
+          required
+          hint="The doctor is settled separately for each purpose."
+        >
+          <Select
+            id="visit_purpose"
+            value={form.visit_purpose_id}
+            onChange={e => update('visit_purpose_id', e.target.value)}
+            disabled={saving}
+          >
+            <option value="">Select…</option>
+            {purposes.map(purpose => (
+              <option key={purpose.id} value={purpose.id}>
+                {purpose.name}
+              </option>
+            ))}
+          </Select>
         </Field>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

@@ -1,11 +1,14 @@
 /**
  * /api/patients/[id]/consultations — doctor visits.
  *
- * Consultations carry no money of their own; the doctor's fee lives in
- * doctor_visit_settlements, derived later by the sync endpoint (see Section 3).
+ * A visit records what it was for (`visit_purpose_id`, added by 20260808000005)
+ * but carries no price of its own — pricing happens at settle time, against the
+ * settlement `settlements/sync/route.ts` creates for this doctor+purpose
+ * (20260809000002). A consultation and an operation by the same doctor settle
+ * through separate rows and are never averaged into one rate.
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { GET as listConsultations, POST as createConsultation } from '@/app/api/patients/[id]/consultations/route'
 import {
   PATCH as editConsultation,
@@ -14,14 +17,28 @@ import {
 import { call } from '../../helpers/request'
 import { signInAs, signOut } from '../../helpers/auth'
 import { db } from '../../helpers/fake-supabase'
-import { aPatient, aDoctor, aConsultation, aSettlement, aUser } from '../../helpers/seed'
+import { aPatient, aDoctor, aConsultation, aSettlement, aUser, aVisitPurpose } from '../../helpers/seed'
 import { NOW } from '../../setup'
+
+/**
+ * Every visit names a purpose, so one is seeded for the whole file and defaulted
+ * into `create`. Cases that care about the purpose pass their own; the rest stay
+ * about what they were written to test.
+ */
+const PURPOSE_ID = 'vp-consultation'
+
+beforeEach(() => {
+  aVisitPurpose({ id: PURPOSE_ID, code: 'consultation', name: 'Consultation' })
+})
 
 const list = (patientId: string) =>
   call(listConsultations, 'GET', `/api/patients/${patientId}/consultations`, { params: { id: patientId } })
 
-const create = (patientId: string, body: unknown) =>
-  call(createConsultation, 'POST', `/api/patients/${patientId}/consultations`, { body, params: { id: patientId } })
+const create = (patientId: string, body: Record<string, unknown>) =>
+  call(createConsultation, 'POST', `/api/patients/${patientId}/consultations`, {
+    body: { visit_purpose_id: PURPOSE_ID, ...body },
+    params: { id: patientId },
+  })
 
 const edit = (patientId: string, consultationId: string, body: unknown) =>
   call(editConsultation, 'PATCH', `/api/patients/${patientId}/consultations/${consultationId}`, {
@@ -423,43 +440,50 @@ describe('DELETE /api/patients/[id]/consultations/[consultationId]', () => {
     expect((await remove('p1', 'c1')).status).toBe(200)
   })
 
-  it('blocks deletion when the doctor’s fees for this patient are settled', async () => {
+  /**
+   * The guard checks this visit's *own* `settlement_id`, not "does a settled
+   * settlement exist for this doctor and patient" — see the "only blocks the
+   * consultation actually covered" case below for why that distinction matters.
+   */
+  it('blocks deletion when this visit’s own settlement has been settled', async () => {
     await signInAs('ADMIN', { seedUser: true })
     aDoctor({ id: 'd1' })
-    aConsultation({ id: 'c1', patient_id: 'p1', doctor_id: 'd1' })
     aSettlement({ id: 's1', patient_id: 'p1', doctor_id: 'd1', settled: true })
+    aConsultation({ id: 'c1', patient_id: 'p1', doctor_id: 'd1', settlement_id: 's1' })
 
     const { status, body } = await remove('p1', 'c1')
 
     expect(status).toBe(409)
     expect(body).toMatchObject({
-      error: 'Cannot delete consultation with settled fees',
+      error: 'Cannot delete a visit that has already been billed and paid',
       settlementFound: true,
     })
     expect(db.find('patient_consultations', (r) => r.id === 'c1')!.deleted_at).toBeNull()
   })
 
-  it('allows deletion when the settlement is unsettled', async () => {
+  it('allows deletion when the linked settlement is unsettled', async () => {
     await signInAs('ADMIN', { seedUser: true })
-    aConsultation({ id: 'c1', patient_id: 'p1', doctor_id: 'd1' })
     aSettlement({ id: 's1', patient_id: 'p1', doctor_id: 'd1', settled: false })
+    aConsultation({ id: 'c1', patient_id: 'p1', doctor_id: 'd1', settlement_id: 's1' })
 
     expect((await remove('p1', 'c1')).status).toBe(200)
   })
 
   it('ignores a settled settlement that was itself soft-deleted', async () => {
     await signInAs('ADMIN', { seedUser: true })
-    aConsultation({ id: 'c1', patient_id: 'p1', doctor_id: 'd1' })
     aSettlement({ id: 's1', patient_id: 'p1', doctor_id: 'd1', settled: true, deleted_at: '2026-03-01T00:00:00.000Z' })
+    aConsultation({ id: 'c1', patient_id: 'p1', doctor_id: 'd1', settlement_id: 's1' })
 
     expect((await remove('p1', 'c1')).status).toBe(200)
   })
 
-  it('ignores a settled settlement for a different doctor', async () => {
+  it('is unaffected by an unrelated settlement — settled or not, for any doctor', async () => {
     await signInAs('ADMIN', { seedUser: true })
     aConsultation({ id: 'c1', patient_id: 'p1', doctor_id: 'd1' })
-    aSettlement({ id: 's1', patient_id: 'p1', doctor_id: 'd2', settled: true })
+    aSettlement({ id: 's1', patient_id: 'p1', doctor_id: 'd1', settled: true })
+    aSettlement({ id: 's2', patient_id: 'p1', doctor_id: 'd2', settled: true })
 
+    // c1 is not linked to either — it's simply not yet billed.
     expect((await remove('p1', 'c1')).status).toBe(200)
   })
 
@@ -472,17 +496,21 @@ describe('DELETE /api/patients/[id]/consultations/[consultationId]', () => {
   })
 
   /**
-   * Known defect — see BUGS.md #15. The settled-fee guard matches on doctor + patient,
-   * not on this consultation's own billing cycle. One settled settlement therefore blocks
-   * deleting *every* consultation that patient ever had with that doctor, including
-   * later, unsettled ones.
+   * BUGS.md #15, resolved — and resolved more precisely than a same-cycle scope
+   * would have fixed it. The old guard matched on doctor + patient alone, so one
+   * settled fee blocked deleting *every* consultation that patient ever had with
+   * that doctor — including a later, entirely unrelated, unsettled visit. Now
+   * that a visit records which settlement (if any) actually billed it, an
+   * unlinked visit is never blocked by someone else's settled fee, regardless of
+   * doctor or billing cycle.
    */
-  it.fails('should only block the consultations covered by the settled settlement', async () => {
+  it('only blocks the consultation actually covered by the settled settlement', async () => {
     await signInAs('ADMIN', { seedUser: true })
     aSettlement({ id: 's1', patient_id: 'p1', patient_billing_id: 'b-old', doctor_id: 'd1', settled: true })
+    aConsultation({ id: 'c-old', patient_id: 'p1', doctor_id: 'd1', billing_id: 'b-old', settlement_id: 's1' })
     aConsultation({ id: 'c-new', patient_id: 'p1', doctor_id: 'd1', billing_id: 'b-new' })
 
-    const { status } = await remove('p1', 'c-new')
-    expect(status).toBe(200)
+    expect((await remove('p1', 'c-new')).status).toBe(200)
+    expect((await remove('p1', 'c-old')).status).toBe(409)
   })
 })

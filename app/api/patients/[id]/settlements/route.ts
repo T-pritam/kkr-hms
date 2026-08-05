@@ -28,11 +28,16 @@ export async function GET(
       .select(`
         *,
         doctor:doctors(id, name, specialist),
+        visit_purpose:visit_purposes(id, code, name),
         patient:patients(id, patient_id, name),
         created_by_user:users!created_by(id, username),
         updated_by_user:users!updated_by(id, username)
       `)
       .eq('patient_billing_id', billingId)
+      // BUGS.md #25 — this listing omitted the filter that sync and the billing
+      // roll-up both apply, so a deleted settlement showed in the table and the
+      // patient PDF while contributing nothing to the totals beside it.
+      .is('deleted_at', null)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
@@ -77,6 +82,7 @@ export async function POST(
       .select(`
         *,
         doctor:doctors(id, name, specialist),
+        visit_purpose:visit_purposes(id, code, name),
         patient:patients(id, patient_id, name)
       `)
       .single();
@@ -127,6 +133,7 @@ export async function PATCH(
       .select(`
         *,
         doctor:doctors(id, name, specialist),
+        visit_purpose:visit_purposes(id, code, name),
         patient:patients(id, patient_id, name)
       `)
       .single();

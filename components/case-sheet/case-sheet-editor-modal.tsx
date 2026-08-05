@@ -53,8 +53,8 @@ interface CaseSheetEditorModalProps {
 interface FormState {
   admission_date: string
   discharge_date: string
-  ward: string
-  bed: string
+  discharge_time: string
+  discharge_received_by: string
   chief_complaints: string
   history_present_illness: string
   past_history: string
@@ -74,8 +74,8 @@ interface FormState {
 const EMPTY: FormState = {
   admission_date: '',
   discharge_date: '',
-  ward: '',
-  bed: '',
+  discharge_time: '',
+  discharge_received_by: '',
   chief_complaints: '',
   history_present_illness: '',
   past_history: '',
@@ -95,12 +95,15 @@ const EMPTY: FormState = {
 /** Dates arrive as ISO or `YYYY-MM-DD`; a date input only accepts the latter. */
 const dateValue = (v: string | null | undefined) => (v ? String(v).slice(0, 10) : '')
 
+/** Postgres returns `time` as `HH:MM:SS`; a time input wants `HH:MM`. */
+const timeValue = (v: string | null | undefined) => (v ? String(v).slice(0, 5) : '')
+
 function toForm(sheet: CaseSheet): FormState {
   return {
     admission_date: dateValue(sheet.admission_date),
     discharge_date: dateValue(sheet.discharge_date),
-    ward: sheet.ward || '',
-    bed: sheet.bed || '',
+    discharge_time: timeValue(sheet.discharge_time),
+    discharge_received_by: sheet.discharge_received_by || '',
     chief_complaints: sheet.chief_complaints || '',
     history_present_illness: sheet.history_present_illness || '',
     past_history: sheet.past_history || '',
@@ -135,12 +138,14 @@ function Field({
   label,
   required,
   error,
+  hint,
   children,
 }: {
   id: string
   label: string
   required?: boolean
   error?: string
+  hint?: string
   children: React.ReactNode
 }) {
   return (
@@ -149,7 +154,11 @@ function Field({
         {label} {required && <span className="text-destructive">*</span>}
       </Label>
       {children}
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      {error ? (
+        <p className="text-xs text-destructive">{error}</p>
+      ) : hint ? (
+        <p className="text-xs text-muted">{hint}</p>
+      ) : null}
     </div>
   )
 }
@@ -316,21 +325,26 @@ export function CaseSheetEditorModal({
                 disabled={saving}
               />
             </Field>
-            <Field id="ward" label="Ward / Room">
+            <Field id="discharge_time" label="Discharge time" error={fieldErrors.discharge_time}>
               <Input
-                id="ward"
-                value={form.ward}
-                onChange={e => set({ ward: e.target.value })}
-                placeholder="General Ward"
+                id="discharge_time"
+                type="time"
+                value={form.discharge_time}
+                onChange={e => set({ discharge_time: e.target.value })}
                 disabled={saving}
               />
             </Field>
-            <Field id="bed" label="Bed">
+            <Field
+              id="discharge_received_by"
+              label="Received by"
+              error={fieldErrors.discharge_received_by}
+              hint="Leave blank if that was you."
+            >
               <Input
-                id="bed"
-                value={form.bed}
-                onChange={e => set({ bed: e.target.value })}
-                placeholder="12"
+                id="discharge_received_by"
+                value={form.discharge_received_by}
+                onChange={e => set({ discharge_received_by: e.target.value })}
+                placeholder="Who took the discharge sheet"
                 disabled={saving}
               />
             </Field>

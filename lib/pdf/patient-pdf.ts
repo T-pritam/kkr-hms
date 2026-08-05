@@ -187,10 +187,13 @@ export function generatePatientPDF(data: PatientPDFData) {
   sec(h, 'DOCTOR VISITS & SETTLEMENTS', C.purple)
 
   if (settlements.length > 0) {
+    // Purpose replaces Specialty: a doctor now has one row per purpose, and
+    // without it two rows of the same doctor read as a duplicate on the bill.
+    // The speciality is on the registry; what the visit was for is not.
     thead(h, [
       { label: '#',        x: M + 2 },
       { label: 'Doctor',   x: M + 11 },
-      { label: 'Specialty',x: M + 82 },
+      { label: 'Purpose',  x: M + 82 },
       { label: 'Visits',   x: M + 148, align: 'center' },
       { label: 'Per Visit',x: M + 170, align: 'right' },
       { label: 'Total',    x: M + 205, align: 'right' },
@@ -200,13 +203,13 @@ export function generatePatientPDF(data: PatientPDFData) {
     settlements.forEach((s: any, i: number) => {
       drTotal += Number(s.total_amount || 0)
       trow(h, [
-        { text: String(i + 1),                                   x: M + 2 },
-        { text: (s.doctor?.name || '—').substring(0, 30),        x: M + 11 },
-        { text: (s.doctor?.specialist || '—').substring(0, 26),  x: M + 82 },
-        { text: String(s.visit_count || 0),                      x: M + 148, align: 'center' },
-        { text: fmt(s.amount_per_visit),                         x: M + 170, align: 'right' },
-        { text: fmt(s.total_amount),                             x: M + 205, align: 'right' },
-        { text: s.settled ? 'Settled' : 'Pending',               x: M + 228 },
+        { text: String(i + 1),                                       x: M + 2 },
+        { text: (s.doctor?.name || '—').substring(0, 30),            x: M + 11 },
+        { text: (s.visit_purpose?.name || '—').substring(0, 26),     x: M + 82 },
+        { text: String(s.visit_count || 0),                          x: M + 148, align: 'center' },
+        { text: fmt(s.amount_per_visit),                             x: M + 170, align: 'right' },
+        { text: fmt(s.total_amount),                                 x: M + 205, align: 'right' },
+        { text: s.settled ? 'Settled' : 'Pending',                   x: M + 228 },
       ], i)
     })
     ttotal(h, [

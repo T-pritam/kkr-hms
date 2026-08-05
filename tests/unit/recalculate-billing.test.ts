@@ -127,3 +127,95 @@ describe('recalculatePatientBilling — intended totals', () => {
     expect(Number(billingRow().total_charges)).toBe(1000)
   })
 })
+
+/**
+ * The package flags describe what a base charge already covers. With no base
+ * charge there is no package, so neither flag can mean anything — and reading
+ * them literally would be actively wrong in both directions.
+ *
+ * All four combinations of (base charge?) x (commission ticked?), because the
+ * whole point is that the two axes interact.
+ */
+describe('recalculatePatientBilling — no base charge', () => {
+  it('excludes the referral commission from the bill when there is no package', async () => {
+    // The commission is still owed to the referrer and still settled through
+    // Finance; it is simply not something this patient is charged for.
+    aBilling({
+      id: 'b1',
+      base_charge: 0,
+      referral_commission_amount: 2000,
+      referral_commission_included_in_package: false,
+    })
+    aCharge({ patient_billing_id: 'b1', amount: 12000, qty: 1 })
+    aSettlement({ patient_billing_id: 'b1', total_amount: 1500 })
+
+    await recalculatePatientBilling(supabase(), 'b1')
+
+    expect(Number(billingRow().total_charges)).toBe(13500)
+  })
+
+  it('adds the commission on top when there is a package and the tick is off', async () => {
+    aBilling({
+      id: 'b1',
+      base_charge: 20000,
+      referral_commission_amount: 2000,
+      referral_commission_included_in_package: false,
+    })
+
+    await recalculatePatientBilling(supabase(), 'b1')
+
+    expect(Number(billingRow().total_charges)).toBe(22000)
+  })
+
+  it('leaves the commission out when the package already covers it', async () => {
+    aBilling({
+      id: 'b1',
+      base_charge: 20000,
+      referral_commission_amount: 2000,
+      referral_commission_included_in_package: true,
+    })
+
+    await recalculatePatientBilling(supabase(), 'b1')
+
+    expect(Number(billingRow().total_charges)).toBe(20000)
+  })
+
+  it('still bills doctor fees when the flag claims a package that does not exist', async () => {
+    // The dangerous direction: honouring this flag would drop the doctor's fees
+    // off the bill entirely, on the strength of a package worth zero.
+    aBilling({
+      id: 'b1',
+      base_charge: 0,
+      doctor_fees_included_in_package: true,
+    })
+    aSettlement({ patient_billing_id: 'b1', total_amount: 4500 })
+
+    await recalculatePatientBilling(supabase(), 'b1')
+
+    expect(Number(billingRow().total_charges)).toBe(4500)
+  })
+
+  it('honours the doctor-fees flag when there really is a package', async () => {
+    aBilling({
+      id: 'b1',
+      base_charge: 20000,
+      doctor_fees_included_in_package: true,
+    })
+    aSettlement({ patient_billing_id: 'b1', total_amount: 4500 })
+
+    await recalculatePatientBilling(supabase(), 'b1')
+
+    // total_doctor_fees is still recorded — it is only kept off the total.
+    expect(Number(billingRow().total_doctor_fees)).toBe(4500)
+    expect(Number(billingRow().total_charges)).toBe(20000)
+  })
+
+  it('bills nothing but the itemised charges when there is no package or referral', async () => {
+    aBilling({ id: 'b1', base_charge: 0, referral_commission_amount: 0 })
+    aCharge({ patient_billing_id: 'b1', amount: 500, qty: 3 })
+
+    await recalculatePatientBilling(supabase(), 'b1')
+
+    expect(Number(billingRow().total_charges)).toBe(1500)
+  })
+})

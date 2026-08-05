@@ -22,6 +22,7 @@ export async function GET(
       .select(`
         *,
         doctor:doctors(id, name, specialist),
+        visit_purpose:visit_purposes(id, code, name),
         created_by_user:users!created_by(id, username, email),
         updated_by_user:users!updated_by(id, username)
       `)
@@ -63,6 +64,32 @@ export async function POST(
     if (!body.doctor_id) {
       return NextResponse.json(
         { error: 'Select the doctor for this consultation' },
+        { status: 400 }
+      );
+    }
+
+    // What the visit was for. Settlement groups on this, so a visit without one
+    // would fall into an unpriced bucket alongside every other purposeless visit
+    // — which is precisely the "3 visits at one rate" problem this replaces.
+    if (!body.visit_purpose_id) {
+      return NextResponse.json(
+        {
+          error: 'Select what this visit was for',
+          fieldErrors: { visit_purpose_id: 'Required' },
+        },
+        { status: 400 }
+      );
+    }
+
+    const { data: purpose } = await supabase
+      .from('visit_purposes')
+      .select('id')
+      .eq('id', body.visit_purpose_id)
+      .maybeSingle();
+
+    if (!purpose) {
+      return NextResponse.json(
+        { error: 'That is not a known visit purpose', fieldErrors: { visit_purpose_id: 'Unknown' } },
         { status: 400 }
       );
     }
@@ -112,9 +139,13 @@ export async function POST(
       consultationDateUTC = localDate.toISOString();
     }
 
+    // No fee at visit entry — pricing happens at settle time, against the
+    // settlement sync creates for this doctor+purpose. price_per_visit is left
+    // at its column default.
     const consultationData = {
       patient_id: patientId,
       doctor_id: body.doctor_id || null,
+      visit_purpose_id: body.visit_purpose_id,
       consultation_date: consultationDateUTC,
       visit_number: visitNumber,
       notes: body.notes || null,
@@ -128,6 +159,7 @@ export async function POST(
       .select(`
         *,
         doctor:doctors(id, name, specialist),
+        visit_purpose:visit_purposes(id, code, name),
         created_by_user:users!created_by(id, username, email),
         updated_by_user:users!updated_by(id, username)
       `)

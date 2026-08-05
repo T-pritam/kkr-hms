@@ -88,6 +88,16 @@ export async function POST(request: NextRequest) {
 
     if (createError) throw createError;
 
+    // Point every visit that was billed under one of the merged-away rows at the
+    // new one instead — otherwise they'd be left referencing a row that is about
+    // to be soft-deleted, invisible to any future sync.
+    const { error: relinkError } = await supabase
+      .from('patient_consultations')
+      .update({ settlement_id: mergedSettlement.id })
+      .in('settlement_id', body.settlement_ids);
+
+    if (relinkError) throw relinkError;
+
     // Soft delete old settlements
     const { error: deleteError } = await supabase
       .from('doctor_visit_settlements')

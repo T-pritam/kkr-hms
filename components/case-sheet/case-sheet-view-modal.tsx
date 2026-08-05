@@ -96,8 +96,13 @@ export function CaseSheetViewModal({
             <p className="text-sm font-semibold text-foreground">{patientName || 'Patient'}</p>
             <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted">
               <span>Admitted: {date(caseSheet.admission_date)}</span>
-              <span>Discharged: {date(caseSheet.discharge_date)}</span>
-              {caseSheet.ward && <span>Ward: {caseSheet.ward}{caseSheet.bed ? ` / Bed ${caseSheet.bed}` : ''}</span>}
+              <span>
+                Discharged: {date(caseSheet.discharge_date)}
+                {caseSheet.discharge_time ? ` at ${caseSheet.discharge_time.slice(0, 5)}` : ''}
+              </span>
+              {caseSheet.discharge_received_by && (
+                <span>Received by: {caseSheet.discharge_received_by}</span>
+              )}
               {caseSheet.condition_on_discharge && <span>Condition: {caseSheet.condition_on_discharge}</span>}
             </div>
           </header>

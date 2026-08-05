@@ -165,7 +165,7 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate, billing, o
                                 <tr>
                                     <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Date & Time</th>
                                     <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Doctor</th>
-                                    <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Specialist</th>
+                                    <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Purpose</th>
                                     <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Notes</th>
                                     <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Created By</th>
                                     <th className="px-4 py-3 text-center text-sm font-medium text-foreground">Actions</th>
@@ -186,9 +186,14 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate, billing, o
                                             </td>
                                             <td className="px-4 py-3 text-sm text-foreground">
                                                 {consultation.doctor?.name || 'No Doctor'}
+                                                {consultation.doctor?.specialist && (
+                                                    <div className="text-xs text-muted">{consultation.doctor.specialist}</div>
+                                                )}
                                             </td>
-                                            <td className="px-4 py-3 text-sm text-muted">
-                                                {consultation.doctor?.specialist || 'N/A'}
+                                            <td className="px-4 py-3 text-sm text-foreground">
+                                                {consultation.visit_purpose?.name || (
+                                                    <span className="text-muted">—</span>
+                                                )}
                                             </td>
                                             <td className="px-4 py-3 text-sm text-muted">
                                                 {consultation.notes || '-'}
@@ -260,6 +265,9 @@ export default function DoctorVisitsTab({ patientId, patientJoinDate, billing, o
                                                 </button>
                                             </div>
                                         )}
+                                    </div>
+                                    <div className="text-sm text-foreground">
+                                        {consultation.visit_purpose?.name || '—'}
                                     </div>
                                     <div className="flex flex-wrap gap-2 text-xs">
                                         <span className="bg-surface-inset px-2 py-1 rounded text-muted">

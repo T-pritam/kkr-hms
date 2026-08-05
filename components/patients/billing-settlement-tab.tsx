@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Plus, Check, DollarSign, Edit2, Trash2, X, Download, RefreshCw } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Plus, Check, X, Download, RefreshCw } from 'lucide-react';
 import { useUser } from '@/hooks/use-user';
 import { fetchPatientPDFData, generatePatientPDF } from '@/lib/pdf/patient-pdf';
 import { SetChargesModal } from './set-charges-modal';
@@ -74,6 +74,116 @@ export default function BillingSettlementTab({
     settlement_notes: '',
     given_by: '',
   });
+  /** Which "Settled" summaries are expanded to show the individual payments behind them. */
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+
+  /**
+   * One card per (doctor, purpose). A doctor settled twice for the same purpose —
+   * say two visits paid, then two more recorded and paid again later — produces
+   * two settled rows for the same key; they combine into one "Settled" total here
+   * rather than reading as duplicates. At most one row can be unsettled for a
+   * given key (the database enforces it), so `pendingRow` is never ambiguous.
+   */
+  const settlementGroups = useMemo(() => {
+    const byKey = new Map<
+      string,
+      {
+        key: string;
+        doctor: any;
+        purpose: any;
+        settledRows: any[];
+        settledVisits: number;
+        settledAmount: number;
+        pendingRow: any | null;
+      }
+    >();
+
+    for (const s of settlements) {
+      const key = `${s.doctor_id}::${s.visit_purpose_id ?? ''}`;
+      let group = byKey.get(key);
+      if (!group) {
+        group = {
+          key,
+          doctor: s.doctor,
+          purpose: s.visit_purpose,
+          settledRows: [],
+          settledVisits: 0,
+          settledAmount: 0,
+          pendingRow: null,
+        };
+        byKey.set(key, group);
+      }
+
+      if (s.settled) {
+        group.settledRows.push(s);
+        group.settledVisits += Number(s.visit_count) || 0;
+        // What actually left the hospital, not the priced total — they can
+        // differ on a partial payment.
+        group.settledAmount += Number(s.settlement_amount ?? s.total_amount) || 0;
+      } else {
+        group.pendingRow = s;
+      }
+    }
+
+    return [...byKey.values()];
+  }, [settlements]);
+
+  const toggleGroup = (key: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  /**
+   * Opens the settle-pricing step for a pending row. A brand-new row starts at
+   * amount_per_visit 0 (visit-entry no longer collects a fee), so before showing
+   * the form, suggest a rate from the doctor's fee schedule for this purpose —
+   * still fully editable, just not a bare zero to start from.
+   */
+  const openSettleModal = async (settlement: any) => {
+    let amountPerVisit = parseInt(settlement.amount_per_visit || 0);
+    let totalAmount = parseInt(settlement.total_amount || 0);
+
+    if (amountPerVisit === 0 && settlement.doctor_id && settlement.visit_purpose_id) {
+      try {
+        const res = await fetch(`/api/doctors/${settlement.doctor_id}/fee-schedule`);
+        if (res.ok) {
+          const json = await res.json();
+          const entry = (json.schedule || []).find(
+            (r: any) => r.visit_purpose_id === settlement.visit_purpose_id
+          );
+          const suggested = entry ? entry.fee ?? (entry.default_fee > 0 ? entry.default_fee : null) : null;
+          if (suggested !== null) {
+            amountPerVisit = suggested;
+            totalAmount = suggested * (settlement.visit_count || 0);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load the fee schedule:', err);
+      }
+    }
+
+    setSettlePricingData({
+      pricing_mode: 'per_visit',
+      amount_per_visit: amountPerVisit,
+      total_amount: totalAmount,
+      visit_count: settlement.visit_count || 0,
+    });
+    setSettlePricingComplete(false);
+    setSettleData({
+      settlement_id: settlement.id,
+      settlement_amount: totalAmount,
+      payment_method: 'cash',
+      transaction_reference: '',
+      settlement_notes: '',
+      settlement_type: settlement.settlement_type || 'regular',
+      given_by: '',
+    });
+    setShowSettleModal(true);
+  };
 
   useEffect(() => {
     fetchDoctors();
@@ -203,6 +313,9 @@ export default function BillingSettlementTab({
 
     setLoading(true);
     try {
+      // No visit_count: it comes from the visits actually linked to this
+      // settlement, not from this form — the API derives it from the row's own
+      // stored count and rejects a submitted one for a purpose-linked settlement.
       const response = await fetch(`/api/doctor-settlements/${settleData.settlement_id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -210,7 +323,6 @@ export default function BillingSettlementTab({
           pricing_mode: settlePricingData.pricing_mode,
           amount_per_visit: settlePricingData.amount_per_visit,
           total_amount: settlePricingData.total_amount,
-          visit_count: settlePricingData.visit_count,
         }),
       });
 
@@ -236,6 +348,8 @@ export default function BillingSettlementTab({
     setLoading(true);
 
     try {
+      // Same reasoning as the settle-pricing call above: visit_count is not this
+      // form's to set.
       const response = await fetch(`/api/doctor-settlements/${editingSettlement.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -243,7 +357,6 @@ export default function BillingSettlementTab({
           pricing_mode: editFormData.pricing_mode,
           amount_per_visit: editFormData.amount_per_visit,
           total_amount: editFormData.total_amount,
-          visit_count: editFormData.visit_count,
           settlement_type: editFormData.settlement_type,
           settlement_notes: editFormData.notes,
         }),
@@ -461,6 +574,20 @@ export default function BillingSettlementTab({
             <p className="text-2xl font-bold text-foreground">
               ₹{parseInt(billing.referral_commission_amount || 0)}
             </p>
+            {/*
+              Say why the number is not in Total Charges. With no package the
+              commission is owed to the referrer, not by the patient, and an
+              unexplained figure that does not add up reads as a broken total.
+            */}
+            {Number(billing.referral_commission_amount || 0) > 0 && (
+              <p className="text-xs text-muted mt-1">
+                {Number(billing.base_charge || 0) > 0
+                  ? billing.referral_commission_included_in_package
+                    ? 'Included in the base charge'
+                    : 'Billed on top of the base charge'
+                  : 'Payable to referrer — not billed to the patient'}
+              </p>
+            )}
           </div>
           <div className="bg-surface-inset rounded-lg p-4">
             <p className="text-muted text-sm">Doctor Fees</p>
@@ -562,226 +689,137 @@ export default function BillingSettlementTab({
           </div>
         </div>
 
-        {/* Desktop Table */}
-        <div className="bg-surface-hover rounded-lg overflow-hidden hidden md:block">
-          <table className="w-full">
-            <thead className="bg-surface-inset">
-              <tr>
-                <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Patient</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Doctor</th>
-                <th className="px-4 py-3 text-center text-sm font-medium text-foreground">Visits</th>
-                <th className="px-4 py-3 text-right text-sm font-medium text-foreground">Per Visit</th>
-                <th className="px-4 py-3 text-right text-sm font-medium text-foreground">Total</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-foreground">Given By</th>
-                <th className="px-4 py-3 text-center text-sm font-medium text-foreground">Status</th>
-                <th className="px-4 py-3 text-center text-sm font-medium text-foreground">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-input-border">
-              {settlements.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-muted">
-                    No settlements created yet
-                  </td>
-                </tr>
-              ) : (
-                settlements.map((settlement) => (
-                  <tr key={settlement.id} className="hover:bg-table-row-hover">
-                    <td className="px-4 py-3 text-sm text-foreground">
-                      {settlement.patient?.name || 'N/A'}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-foreground">
-                      {settlement.doctor?.name}
-                      {settlement.doctor?.specialist && (
-                        <span className="text-muted text-xs block">
-                          {settlement.doctor.specialist}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-foreground text-center">
-                      {settlement.visit_count}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-foreground text-right">
-                      ₹{parseInt(settlement.amount_per_visit || 0)}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-foreground text-right font-medium">
-                      ₹{parseInt(settlement.total_amount || 0)}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-foreground">
-                      {settlement.given_by || '—'}
-                      <RecordedStamp record={settlement} />
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      {settlement.settled ? (
-                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-success-subtle text-success-text">
-                          <Check className="h-3 w-3" />
-                          Settled
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-warning-subtle text-warning-text">
-                          Pending
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        {isAdmin && (
-                          <>
-                            <button
-                              onClick={() => handleEditSettlement(settlement)}
-                              className="text-info hover:text-info text-sm font-medium"
-                              title="Edit"
-                            >
-                              Edit
-                            </button>
-                            {!settlement.settled && (
-                              <button
-                                onClick={() => {
-                                  setSettlePricingData({
-                                    pricing_mode: settlement.pricing_mode || 'per_visit',
-                                    amount_per_visit: parseInt(settlement.amount_per_visit || 0),
-                                    total_amount: parseInt(settlement.total_amount || 0),
-                                    visit_count: settlement.visit_count || 0,
-                                  });
-                                  setSettlePricingComplete(false);
-                                  setSettleData({
-                                    settlement_id: settlement.id,
-                                    settlement_amount: parseInt(settlement.total_amount || 0),
-                                    payment_method: 'cash',
-                                    transaction_reference: '',
-                                    settlement_notes: '',
-                                    settlement_type: settlement.settlement_type || 'regular',
-                                    given_by: '',
-                                  });
-                                  setShowSettleModal(true);
-                                }}
-                                className="text-success-text hover:text-success-text text-sm font-medium"
-                                title="Settle"
-                              >
-                                Settle
-                              </button>
-                            )}
-                            <button
-                              onClick={() => handleDeleteSettlement(settlement.id)}
-                              className="text-destructive hover:text-destructive text-sm font-medium"
-                              title="Delete"
-                            >
-                              Delete
-                            </button>
-                          </>
-                        )}
-                        {!isAdmin && settlement.settled && (
-                          <div className="text-xs text-muted">
-                            {new Date(settlement.settlement_date).toLocaleDateString()}
-                            <br />
-                            ₹{parseInt(settlement.settlement_amount || 0)}
+        {/*
+          One card per (doctor, purpose) rather than one row per settlement row.
+          A doctor settled more than once for the same purpose reads as one
+          combined "Settled" total plus at most one "Pending" line, instead of a
+          flat list where two payments for the same pair looked like a mistake.
+        */}
+        {settlementGroups.length === 0 ? (
+          <div className="bg-surface-hover rounded-lg p-6 text-center text-muted">
+            No settlements created yet
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {settlementGroups.map((group) => {
+              const isExpanded = expandedGroups.has(group.key);
+              const hasHistory = group.settledRows.length > 1;
+
+              return (
+                <div key={group.key} className="bg-surface-hover rounded-lg overflow-hidden border border-border">
+                  <div className="p-4 border-b border-input-border">
+                    <p className="font-medium text-foreground">{group.doctor?.name || 'Unknown doctor'}</p>
+                    <p className="text-xs text-muted">
+                      {group.purpose?.name || 'No purpose'}
+                      {group.doctor?.specialist && ` · ${group.doctor.specialist}`}
+                    </p>
+                  </div>
+
+                  <div className="divide-y divide-input-border">
+                    {group.settledVisits > 0 && (
+                      <div>
+                        <button
+                          onClick={() => hasHistory && toggleGroup(group.key)}
+                          className={`w-full flex items-center justify-between gap-3 px-4 py-3 text-left ${hasHistory ? 'hover:bg-table-row-hover' : 'cursor-default'}`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-success-subtle text-success-text">
+                              <Check className="h-3 w-3" />
+                              Settled
+                            </span>
+                            <span className="text-sm text-muted">
+                              {group.settledVisits} visit{group.settledVisits === 1 ? '' : 's'}
+                              {hasHistory && ` · ${group.settledRows.length} payments`}
+                            </span>
+                          </div>
+                          <span className="font-semibold text-foreground">
+                            ₹{group.settledAmount}
+                          </span>
+                        </button>
+
+                        {isExpanded && hasHistory && (
+                          <div className="divide-y divide-input-border border-t border-input-border">
+                            {group.settledRows.map((s) => (
+                              <div key={s.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 pl-8 text-sm">
+                                <span className="text-muted">
+                                  {s.settlement_date ? new Date(s.settlement_date).toLocaleDateString() : '—'}
+                                  {s.given_by ? ` · ${s.given_by}` : ''}
+                                </span>
+                                <div className="flex items-center gap-3">
+                                  <span className="text-foreground">
+                                    {s.visit_count} × ₹{parseInt(s.amount_per_visit || 0)} = ₹{parseInt(s.total_amount || 0)}
+                                  </span>
+                                  {isAdmin && (
+                                    <>
+                                      <button
+                                        onClick={() => handleEditSettlement(s)}
+                                        className="text-info hover:text-info text-xs font-medium"
+                                      >
+                                        Edit
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeleteSettlement(s.id)}
+                                        className="text-destructive hover:text-destructive text-xs font-medium"
+                                      >
+                                        Delete
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         )}
                       </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                    )}
 
-        {/* Mobile Cards */}
-        <div className="md:hidden space-y-3">
-          {settlements.length === 0 ? (
-            <div className="bg-surface-hover rounded-lg p-6 text-center text-muted">
-              No settlements created yet
-            </div>
-          ) : (
-            settlements.map((settlement) => (
-              <div key={settlement.id} className="bg-surface-hover rounded-lg p-4 space-y-3">
-                <div className="flex items-start justify-between">
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium text-foreground">{settlement.doctor?.name}</p>
-                    {settlement.doctor?.specialist && (
-                      <p className="text-xs text-muted">{settlement.doctor.specialist}</p>
+                    {group.pendingRow && (
+                      <div className="px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-warning-subtle text-warning-text">
+                            Pending
+                          </span>
+                          <span className="text-sm text-muted">
+                            {group.pendingRow.visit_count} visit{group.pendingRow.visit_count === 1 ? '' : 's'}
+                            {Number(group.pendingRow.amount_per_visit) > 0 &&
+                              ` · ₹${parseInt(group.pendingRow.amount_per_visit)}/visit`}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="font-semibold text-foreground">
+                            ₹{parseInt(group.pendingRow.total_amount || 0)}
+                          </span>
+                          {isAdmin && (
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleEditSettlement(group.pendingRow)}
+                                className="text-info hover:text-info text-sm font-medium"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => openSettleModal(group.pendingRow)}
+                                className="text-success-text hover:text-success-text text-sm font-medium"
+                              >
+                                Settle
+                              </button>
+                              <button
+                                onClick={() => handleDeleteSettlement(group.pendingRow.id)}
+                                className="text-destructive hover:text-destructive text-sm font-medium"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     )}
                   </div>
-                  {settlement.settled ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-success-subtle text-success-text ml-2">
-                      <Check className="h-3 w-3" />
-                      Settled
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-warning-subtle text-warning-text ml-2">
-                      Pending
-                    </span>
-                  )}
                 </div>
-                <div className="grid grid-cols-3 gap-2 text-xs">
-                  <div className="bg-surface-inset rounded p-2 text-center">
-                    <p className="text-muted">Visits</p>
-                    <p className="font-semibold text-foreground">{settlement.visit_count}</p>
-                  </div>
-                  <div className="bg-surface-inset rounded p-2 text-center">
-                    <p className="text-muted">Per Visit</p>
-                    <p className="font-semibold text-foreground">₹{parseInt(settlement.amount_per_visit || 0)}</p>
-                  </div>
-                  <div className="bg-surface-inset rounded p-2 text-center">
-                    <p className="text-muted">Total</p>
-                    <p className="font-semibold text-foreground">₹{parseInt(settlement.total_amount || 0)}</p>
-                  </div>
-                </div>
-                <div className="text-xs text-muted">
-                  Given by: <span className="text-foreground">{settlement.given_by || '—'}</span>
-                  <RecordedStamp record={settlement} />
-                </div>
-                {isAdmin && (
-                  <div className="flex gap-3 pt-2 border-t border-input-border">
-                    <button
-                      onClick={() => handleEditSettlement(settlement)}
-                      className="text-info text-sm font-medium min-h-[44px] flex items-center"
-                    >
-                      Edit
-                    </button>
-                    {!settlement.settled && (
-                      <button
-                        onClick={() => {
-                          setSettlePricingData({
-                            pricing_mode: settlement.pricing_mode || 'per_visit',
-                            amount_per_visit: parseInt(settlement.amount_per_visit || 0),
-                            total_amount: parseInt(settlement.total_amount || 0),
-                            visit_count: settlement.visit_count || 0,
-                          });
-                          setSettlePricingComplete(false);
-                          setSettleData({
-                            settlement_id: settlement.id,
-                            settlement_amount: parseInt(settlement.total_amount || 0),
-                            payment_method: 'cash',
-                            transaction_reference: '',
-                            settlement_notes: '',
-                            settlement_type: settlement.settlement_type || 'regular',
-                            given_by: '',
-                          });
-                          setShowSettleModal(true);
-                        }}
-                        className="text-success-text text-sm font-medium min-h-[44px] flex items-center"
-                      >
-                        Settle
-                      </button>
-                    )}
-                    <button
-                      onClick={() => handleDeleteSettlement(settlement.id)}
-                      className="text-destructive text-sm font-medium min-h-[44px] flex items-center"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                )}
-                {!isAdmin && settlement.settled && (
-                  <div className="text-xs text-muted pt-2 border-t border-input-border">
-                    Settled: {new Date(settlement.settlement_date).toLocaleDateString()} — ₹{parseInt(settlement.settlement_amount || 0)}
-                  </div>
-                )}
-              </div>
-            ))
-          )}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Mark as Settled Modal */}

@@ -52,6 +52,10 @@ export function SetChargesModal({ isOpen, onClose, patientId, billing, onSuccess
     })
   }, [isOpen, billing])
 
+  // Live, so clearing the base charge disables the ticks as you type rather than
+  // after a save.
+  const hasPackage = (parseInt(form.base_charge, 10) || 0) > 0
+
   const save = async (isDelete = false) => {
     setLoading(true)
     setError('')
@@ -65,8 +69,12 @@ export function SetChargesModal({ isOpen, onClose, patientId, billing, onSuccess
           base_charge: isDelete ? 0 : parseInt(form.base_charge, 10) || 0,
           referral_id: isDelete ? null : form.referral_id,
           referral_commission_amount: isDelete ? 0 : parseInt(form.referral_commission_amount, 10) || 0,
-          referral_commission_included_in_package: isDelete ? false : form.referral_commission_included_in_package,
-          doctor_fees_included_in_package: isDelete ? false : form.doctor_fees_included_in_package,
+          // A tick can only be sent when there is a package to be inside of. The
+          // server enforces this too; sending it honestly keeps the two agreeing.
+          referral_commission_included_in_package:
+            isDelete || !hasPackage ? false : form.referral_commission_included_in_package,
+          doctor_fees_included_in_package:
+            isDelete || !hasPackage ? false : form.doctor_fees_included_in_package,
         }),
       })
 
@@ -124,6 +132,9 @@ export function SetChargesModal({ isOpen, onClose, patientId, billing, onSuccess
 
         <div className="space-y-1.5">
           <Label htmlFor="charges-base">Base charge (₹)</Label>
+          <p className="text-xs text-muted">
+            Optional. Leave it at 0 to bill this patient purely from itemised charges.
+          </p>
           <Input
             id="charges-base"
             type="text"
@@ -144,6 +155,7 @@ export function SetChargesModal({ isOpen, onClose, patientId, billing, onSuccess
             value={form.referral_id}
             onChange={value => setForm({ ...form, referral_id: value })}
           />
+          <p className="text-xs text-muted">Optional.</p>
         </div>
 
         <div className="space-y-1.5">
@@ -163,22 +175,47 @@ export function SetChargesModal({ isOpen, onClose, patientId, billing, onSuccess
           />
         </div>
 
+        {/*
+          Both ticks describe what the base charge already covers, so with no base
+          charge there is no package for anything to be inside of. Disabled rather
+          than hidden: a tick that vanishes when a number is cleared reads as a
+          bug, whereas a disabled one with a reason explains itself. The server
+          forces them false in this state regardless.
+        */}
+        {!hasPackage && (
+          <div className="rounded-md bg-info-subtle border border-info/30 p-3 text-xs text-info-text">
+            No base charge, so there is no package. Charges, doctor fees and payments are
+            billed as they are entered, and the referral commission below is a payout to the
+            referrer — it is not billed to this patient.
+          </div>
+        )}
+
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <input
               type="checkbox"
               id="commission_included"
-              checked={form.referral_commission_included_in_package}
+              checked={hasPackage && form.referral_commission_included_in_package}
+              disabled={!hasPackage}
               onChange={e => setForm({ ...form, referral_commission_included_in_package: e.target.checked })}
-              className="h-4 w-4 rounded border-border text-primary focus:ring-ring"
+              className="h-4 w-4 rounded border-border text-primary focus:ring-ring disabled:opacity-50"
             />
-            <label htmlFor="commission_included" className="text-sm text-foreground">
+            <label
+              htmlFor="commission_included"
+              className={`text-sm ${hasPackage ? 'text-foreground' : 'text-muted'}`}
+            >
               Commission included in package
             </label>
           </div>
           <p className="text-xs text-muted pl-6">
-            On: this amount is already part of the base charge and won&apos;t be added again to the total.
-            Off: billed as a separate line item on top of the base charge.
+            {hasPackage ? (
+              <>
+                On: this amount is already part of the base charge and won&apos;t be added again to the total.
+                Off: billed as a separate line item on top of the base charge.
+              </>
+            ) : (
+              <>Needs a base charge. The commission is a payout only and is not billed to the patient.</>
+            )}
           </p>
         </div>
 
@@ -187,17 +224,27 @@ export function SetChargesModal({ isOpen, onClose, patientId, billing, onSuccess
             <input
               type="checkbox"
               id="doctor_fees_included"
-              checked={form.doctor_fees_included_in_package}
+              checked={hasPackage && form.doctor_fees_included_in_package}
+              disabled={!hasPackage}
               onChange={e => setForm({ ...form, doctor_fees_included_in_package: e.target.checked })}
-              className="h-4 w-4 rounded border-border text-primary focus:ring-ring"
+              className="h-4 w-4 rounded border-border text-primary focus:ring-ring disabled:opacity-50"
             />
-            <label htmlFor="doctor_fees_included" className="text-sm text-foreground">
+            <label
+              htmlFor="doctor_fees_included"
+              className={`text-sm ${hasPackage ? 'text-foreground' : 'text-muted'}`}
+            >
               Doctor fees included in package
             </label>
           </div>
           <p className="text-xs text-muted pl-6">
-            On: doctor visit fees are already part of the base charge and won&apos;t be added again to the total.
-            Off: billed as a separate line item on top of the base charge.
+            {hasPackage ? (
+              <>
+                On: doctor visit fees are already part of the base charge and won&apos;t be added again to the total.
+                Off: billed as a separate line item on top of the base charge.
+              </>
+            ) : (
+              <>Needs a base charge. Doctor fees are billed as they are recorded.</>
+            )}
           </p>
         </div>
       </form>

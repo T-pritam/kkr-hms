@@ -13,19 +13,24 @@ Status legend: 🔴 security · 🟠 correctness · 🟡 consistency
 
 ## Start here
 
-46 failing-by-design tests cover the defects below. If you fix nothing else, fix these three:
+35 failing-by-design tests cover the defects below. If you fix nothing else, fix this one:
 
 | # | What breaks | Where |
 |---|---|---|
-| **#16** | **Billing totals are never recalculated** — the function dies on a missing column, silently. Add a charge and the bill does not move. | `lib/recalculate-billing.ts:14` |
-| **#23** | The same missing columns 500 the billing editor and zero out the finance summary's commission, doctor fees and receivables. | `billing/route.ts:169`, `finances/summary/route.ts:100` |
 | **#49** | `/api/referrals` has **no authentication** on either verb. | `app/api/referrals/route.ts` |
 
-Three of these (#16, #23, #26) come from the same root cause: **the code and the live
-schema disagree**. `patient_billing` has no `*_included_in_package` columns, and
-`doctor_visit_settlements.total_amount` is a plain column nothing computes. The test
-suite validates every query against the real column list in `tests/helpers/schema.ts`,
-so this class of bug now fails loudly instead of silently.
+**#16 and #23 were already stale and have been corrected below** — both
+`*_included_in_package` columns exist (added by
+`supabase/migrations/20260805000001_patient_billing_package_flags.sql`) and were verified
+against the live database. The billing subsystem rebuild
+(`docs/BILLING_CHARGES_MODULE.md`) then resolved **#17, #18, #24, #25, #26, #28, #29, #30
+and #52**; those entries are marked resolved rather than deleted, because the tests that
+document them are now ordinary passing tests worth keeping.
+
+The class of bug #16 and #23 belonged to — **the code and the live schema disagreeing** —
+is what `tests/helpers/schema.ts` exists to catch. It is a dump of the real column list,
+and the fake client validates every query against it, so a route referencing a column the
+database does not have fails loudly instead of silently.
 
 ---
 
@@ -211,7 +216,13 @@ in the current one.
 
 ## ⚠️ Section 3 — Billing (the most serious findings)
 
-### 🔴 #16 — Billing totals are never recalculated. The function is dead.
+### ✅ #16 — RESOLVED (entry was stale) — billing totals recalculate
+**Resolved.** This entry was already stale when written: both columns exist, added by
+`supabase/migrations/20260805000001_patient_billing_package_flags.sql` and verified against
+the live database. The function's query succeeds and totals are written. The formula has
+since changed — see `docs/BILLING_CHARGES_MODULE.md`: the package flags are ignored when
+`base_charge` is 0, because there is then no package for anything to be included in.
+
 **Where:** `lib/recalculate-billing.ts:14`
 **Tests:** `tests/unit/recalculate-billing.test.ts` (7 cases), `tests/api/billing/charges.test.ts`, `tests/api/finances/finances.test.ts`
 
@@ -235,7 +246,11 @@ existing billing record to repair the drift already in the data.
 
 ---
 
-### 🔴 #23 — The same two missing columns break billing edits and the finance summary
+### ✅ #23 — RESOLVED (entry was stale) — both columns exist
+**Resolved.** Same root cause as #16, and same correction: the columns exist. The billing
+PATCH additionally now validates its input and checks that `billing_id` belongs to the
+patient in the URL (#24).
+
 **Where:** `app/api/patients/[id]/billing/route.ts:169-174`, `app/api/finances/summary/route.ts:100`
 **Tests:** `tests/api/billing/billing.test.ts`, `tests/api/finances/finances.test.ts`
 
@@ -251,7 +266,11 @@ existing billing record to repair the drift already in the data.
 
 ---
 
-### 🟠 #26 — `doctor_visit_settlements.total_amount` is nothing but a stale number
+### ✅ #26 — RESOLVED — `total_amount` is written on every path
+**Resolved.** `20260808000005_consultation_visit_purpose.sql` repairs the drift already in
+the data, and every write path now sets `total_amount = amount_per_visit * visit_count`.
+It is deliberately not a generated column: `merge` and `create-manual` set it directly.
+
 **Where:** `app/api/doctor-settlements/[settlementId]/route.ts` (PUT), `app/api/patients/[id]/settlements/route.ts` (POST)
 **Tests:** `tests/api/billing/patient-settlements.test.ts`, `tests/api/finances/doctor-settlements.test.ts`
 
@@ -268,7 +287,10 @@ explicitly everywhere pricing changes.
 
 ---
 
-### 🟠 #17 — Charge quantity is collected, multiplied by, and never saved
+### ✅ #17 — RESOLVED — charge quantity is persisted
+**Resolved.** `qty` is in the insert and the PATCH allowlist, with a `qty >= 1` CHECK
+behind it. The date-range generator depends on it.
+
 **Where:** `app/api/patients/[id]/charges/route.ts:63-71` (and the PATCH below it)
 **Test:** `tests/api/billing/charges.test.ts`
 
@@ -278,7 +300,11 @@ the route never includes `qty` in the insert. Every three-unit charge is billed 
 
 ---
 
-### 🟠 #18 — Charges are not validated at all
+### ✅ #18 — RESOLVED — charges are validated and role-checked
+**Resolved.** `lib/billing/validate.ts` requires a name, `amount > 0` and `qty >= 1`;
+`lib/billing/authz.ts` gates the route on `charge:write`; and the billing record is checked
+against the patient in the URL. CHECK constraints back the first two in the database.
+
 **Where:** `app/api/patients/[id]/charges/route.ts:63`
 **Tests:** `tests/api/billing/charges.test.ts` (3 cases)
 
@@ -318,7 +344,10 @@ records, and every consumer reads only `billings[0]`.
 
 ---
 
-### 🟠 #24 — Billing and settlement updates trust an id from the request body
+### ✅ #24 — RESOLVED — the billing id is checked against the patient
+**Resolved.** Both `PATCH /api/patients/[id]/billing` and the charge routes look the
+billing row up and refuse it with a 404 unless `patient_id` matches the URL.
+
 **Where:** `app/api/patients/[id]/billing/route.ts:179`, `app/api/patients/[id]/settlements/route.ts` (PATCH)
 **Tests:** `tests/api/billing/billing.test.ts`, `tests/api/billing/patient-settlements.test.ts` (#27)
 
@@ -328,7 +357,10 @@ different id.
 
 ---
 
-### 🟡 #25 — Soft-deleted settlements still appear in the patient's list
+### ✅ #25 — RESOLVED — soft-deleted settlements are filtered out
+**Resolved.** The listing applies `.is('deleted_at', null)`, matching sync and the billing
+roll-up.
+
 **Where:** `app/api/patients/[id]/settlements/route.ts` (GET)
 **Test:** `tests/api/billing/patient-settlements.test.ts`
 
@@ -347,7 +379,11 @@ all — a fee can be marked paid for nothing.
 
 ---
 
-### 🟠 #28 — Sync reopens settled fees
+### ✅ #28 — RESOLVED — sync leaves settled fees alone
+**Resolved.** Sync skips rows already marked `settled` and reports them back in a `skipped`
+array, so an admin is told the paid count and the real one have diverged rather than the
+amount changing underneath them.
+
 **Where:** `app/api/patients/[id]/settlements/sync/route.ts:87-96`
 **Test:** `tests/api/billing/patient-settlements.test.ts`
 
@@ -357,7 +393,11 @@ explicitly unsettles first (and correctly so).
 
 ---
 
-### 🟠 #29 — A second admission reuses the first admission's settlement
+### ✅ #29 — RESOLVED — settlements are scoped to the billing cycle
+**Resolved.** The lookup keys on `(patient_billing_id, doctor_id, visit_purpose_id)`, and a
+partial unique index on the same triple (`WHERE deleted_at IS NULL`) makes the old state
+unrepresentable.
+
 **Where:** `app/api/patients/[id]/settlements/sync/route.ts:78-84`
 **Test:** `tests/api/billing/patient-settlements.test.ts`
 
@@ -367,7 +407,11 @@ instead of opening its own. The earlier cycle's doctor fee is overwritten.
 
 ---
 
-### 🟡 #30 — Sync never clears a settlement that no longer has visits
+### ✅ #30 — RESOLVED — settlements with no visits are zeroed
+**Resolved.** Sync walks the existing settlements as well as the visits, and zeroes any
+unsettled row whose visits have all gone. Zeroed rather than deleted: an unsettled row at
+zero visibly owes nothing, whereas deleting it would erase that the visits existed.
+
 **Where:** `app/api/patients/[id]/settlements/sync/route.ts:73`
 **Test:** `tests/api/billing/patient-settlements.test.ts`
 
@@ -466,7 +510,11 @@ JWT cookies and never signs in to Supabase Auth, so this is always null.
 
 ---
 
-### 🟡 #52 — Every doctor payout is logged against "Unknown Doctor"
+### ✅ #52 — RESOLVED — the payout names the doctor
+**Resolved.** The route reads each settlement with its doctor embed *before* settling it —
+which it has to do anyway, to know each row's own total — so the ledger description is no
+longer built from a join-less update result.
+
 **Where:** `app/api/finances/doctor-settlements/route.ts:209`
 
 The ledger description reads `settlement.doctor?.name` from the result of an `.update()`

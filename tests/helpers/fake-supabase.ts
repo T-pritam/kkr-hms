@@ -88,6 +88,21 @@ const RELATIONSHIPS: Record<string, { localKey?: string; foreignKey?: string; ma
   // Patient registry
   'patients.referrals': { localKey: 'referred_by' },
 
+  // Charges. The `<singular>_id` fallback already covers the to-one directions
+  // (charge_items -> charge_item_id, visit_purposes -> visit_purpose_id,
+  // charge_sheets -> charge_sheet_id), so only the to-many ones are listed —
+  // plus doctor_fee_schedule, whose name does not pluralise and so would derive
+  // the nonsense key `doctor_fee_schedule_id`.
+  'charge_sheets.charge_sheet_items': { foreignKey: 'charge_sheet_id', many: true },
+  'doctors.doctor_fee_schedule': { foreignKey: 'doctor_id', many: true },
+  'visit_purposes.doctor_fee_schedule': { foreignKey: 'visit_purpose_id', many: true },
+
+  // 20260809000002 — which visits a settlement has billed. The plural table name
+  // doesn't singularise to the conventional key (`doctor_visit_settlement_id`),
+  // so both directions need registering by hand.
+  'patient_consultations.doctor_visit_settlements': { localKey: 'settlement_id' },
+  'doctor_visit_settlements.patient_consultations': { foreignKey: 'settlement_id', many: true },
+
   // Payroll
   'advances.employees': { localKey: 'employee_id' },
   'salary_payments.employees': { localKey: 'employee_id' },
@@ -101,10 +116,46 @@ const RELATIONSHIPS: Record<string, { localKey?: string; foreignKey?: string; ma
  * route no longer does a check-then-insert (which raced) and instead lets the
  * index reject the duplicate and maps 23505 to a 409. Without the constraint
  * here, that branch would be untestable.
+ *
+ * An entry may be a bare column list, or `{ columns, where }` for a partial
+ * index. The predicate matters: modelling a partial index as a total one is
+ * worse than not modelling it, because it rejects writes the database would
+ * accept — a soft-deleted settlement must not block a fresh one for the same
+ * cycle, doctor and purpose.
  */
-const UNIQUE_INDEXES: Record<string, string[][]> = {
+type UniqueIndex = string[] | { columns: string[]; where: (row: Row) => boolean }
+
+const liveRow = (row: Row) => row.deleted_at === null || row.deleted_at === undefined
+
+// A settlement is only "live and unsettled" — the state the partial index below
+// actually covers. A settled row for the same triple is history, not a candidate
+// for the uniqueness check; see 20260809000002.
+const liveUnsettledRow = (row: Row) => liveRow(row) && row.settled !== true
+
+const UNIQUE_INDEXES: Record<string, UniqueIndex[]> = {
   patients: [['patient_id']],
   employees: [['employee_code']],
+
+  // 20260808000001 — the catalogue rejects a duplicate service rather than
+  // check-then-insert, so the 409 branch needs the constraint modelled here.
+  // Both are lower(...) indexes in the database; looseEquals is case-sensitive,
+  // so this models the common case and the routes still normalise before write.
+  charge_items: [['name'], ['code']],
+  charge_sheets: [['sheet_no']],
+  visit_purposes: [['code']],
+
+  // 20260808000004 — one rate per doctor per purpose.
+  doctor_fee_schedule: [['doctor_id', 'visit_purpose_id']],
+
+  // 20260809000002 — one live *unsettled* settlement per cycle, doctor and
+  // purpose (superseding the 20260808000005 version, which covered every live row
+  // regardless of settled status). This is the structural half of BUGS.md #29,
+  // and it is what lets a settled row and a fresh pending row for the same triple
+  // coexist — they cover different visits, tracked via
+  // patient_consultations.settlement_id.
+  doctor_visit_settlements: [
+    { columns: ['patient_billing_id', 'doctor_id', 'visit_purpose_id'], where: liveUnsettledRow },
+  ],
 }
 
 /** Postgres's error for a duplicate key, which routes match on by code. */
@@ -114,12 +165,21 @@ function uniqueViolation(
   candidate: Row,
   ignore?: Row,
 ): PostgrestError | null {
-  for (const columns of UNIQUE_INDEXES[table] ?? []) {
+  for (const index of UNIQUE_INDEXES[table] ?? []) {
+    const columns = Array.isArray(index) ? index : index.columns
+    const where = Array.isArray(index) ? null : index.where
+
     // NULLs are distinct in a Postgres unique index.
     if (columns.some((c) => candidate[c] === null || candidate[c] === undefined)) continue
 
+    // A partial index only covers the rows its predicate admits — on both sides.
+    if (where && !where(candidate)) continue
+
     const clash = store.some(
-      (row) => row !== ignore && columns.every((c) => looseEquals(row[c], candidate[c])),
+      (row) =>
+        row !== ignore &&
+        (!where || where(row)) &&
+        columns.every((c) => looseEquals(row[c], candidate[c])),
     )
 
     if (clash) {
@@ -901,6 +961,19 @@ const RPCS: Record<string, (db: FakeDb, args: Record<string, unknown>) => unknow
   next_discharge_summary_no: (db) => {
     const year = new Date().getFullYear()
     return `DS/${year}/${String(bumpCounter(db, 'case_sheet_counters', year)).padStart(5, '0')}`
+  },
+
+  // CS-<6 digits>, one continuous series. Keyed on `scope` rather than a year,
+  // so bumpCounter (which is year-keyed) does not fit — a sheet is short-lived
+  // working paper and the series deliberately never resets.
+  next_charge_sheet_no: (db) => {
+    const row = db.find('charge_sheet_counters', (r) => r.scope === 'global')
+    const next = row ? (row.last_no as number) + 1 : 1
+
+    if (row) db.patchRow('charge_sheet_counters', (r) => r.scope === 'global', { last_no: next })
+    else db.seed('charge_sheet_counters', { scope: 'global', last_no: 1 })
+
+    return `CS-${String(next).padStart(6, '0')}`
   },
 
   // <serial>/<2-digit year>, restarting each year. This one *consumes* a number;

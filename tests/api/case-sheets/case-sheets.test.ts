@@ -254,6 +254,38 @@ describe('POST /api/patients/[id]/case-sheets', () => {
     expect(body.errors.discharge_date).toMatch(/before the admission date/i)
   })
 
+  /** BUGS.md-adjacent: ward/bed retired in favour of these two, per the same
+   * request. Neither is required — see the finalise tests below. */
+  it('stores discharge time and who received the sheet', async () => {
+    const { status, body } = await create({
+      discharge_date: TODAY,
+      discharge_time: '14:30',
+      discharge_received_by: 'Sunita Kumar (attendant)',
+    })
+
+    expect(status).toBe(201)
+    expect(db.find('patient_case_sheets', r => r.id === body.data.id)).toMatchObject({
+      discharge_time: '14:30',
+      discharge_received_by: 'Sunita Kumar (attendant)',
+    })
+  })
+
+  it('no longer accepts ward or bed — retired, not just unused', async () => {
+    const { body } = await create({ discharge_date: TODAY, ward: 'ICU', bed: '4' })
+
+    expect(db.find('patient_case_sheets', r => r.id === body.data.id)!.ward).toBeUndefined()
+  })
+
+  it('rejects a received-by name over 120 characters', async () => {
+    const { status, body } = await create({
+      discharge_date: TODAY,
+      discharge_received_by: 'x'.repeat(121),
+    })
+
+    expect(status).toBe(400)
+    expect(body.errors.discharge_received_by).toBeTruthy()
+  })
+
   it('404s for a patient that does not exist', async () => {
     const { status } = await call(createCaseSheet, 'POST', '/api/patients/nope/case-sheets', {
       params: { id: 'nope' }, body: {},
@@ -301,11 +333,11 @@ describe('PATCH /api/patients/[id]/case-sheets/[caseSheetId]', () => {
   })
 
   it('leaves fields the payload does not mention alone', async () => {
-    aCaseSheet({ id: 'cs1', patient_id: 'p1', diagnosis: 'Fever', ward: 'ICU' })
+    aCaseSheet({ id: 'cs1', patient_id: 'p1', diagnosis: 'Fever', vitals_bp: '120/80' })
 
     await update({ diagnosis: 'Dengue' })
 
-    expect(db.find('patient_case_sheets', r => r.id === 'cs1')!.ward).toBe('ICU')
+    expect(db.find('patient_case_sheets', r => r.id === 'cs1')!.vitals_bp).toBe('120/80')
   })
 
   it('replaces the doctor list wholesale', async () => {
@@ -376,6 +408,19 @@ describe('finalise / reopen', () => {
     expect(body.errors[field]).toBeTruthy()
     expect(db.find('patient_case_sheets', r => r.id === 'cs1')!.status).toBe('draft')
     expect(db.find('patients', r => r.id === 'p1')!.status).toBe('Active')
+  })
+
+  /**
+   * Receiving the sheet is something that happens after it exists — often at
+   * handover to an attendant — so it can't reasonably gate finalising, the same
+   * as given_by is filled in at settle time elsewhere in the app, not upfront.
+   */
+  it('finalises without a discharge time or a received-by name', async () => {
+    completeDraft({ discharge_time: null, discharge_received_by: null })
+
+    const { status } = await finalise()
+
+    expect(status).toBe(200)
   })
 
   it('refuses to finalise with no consulting doctor', async () => {

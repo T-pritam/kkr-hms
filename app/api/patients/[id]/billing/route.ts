@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { verifyAuth } from '@/lib/auth/verify';
 import { recalculatePatientBilling } from '@/lib/recalculate-billing';
+import { validateBillingHeader } from '@/lib/billing/validate';
+import { firstError } from '@/lib/patients/validate';
 
 export async function GET(
   request: NextRequest,
@@ -145,6 +147,34 @@ export async function PATCH(
     const patientId = id;
     const body = await request.json();
 
+    // The billing row named in the body must be this patient's. Without this,
+    // any admin could edit any patient's billing by supplying a different id
+    // (BUGS.md #24).
+    if (!body.billing_id) {
+      return NextResponse.json({ error: 'billing_id is required' }, { status: 400 });
+    }
+
+    const { data: target } = await supabase
+      .from('patient_billing')
+      .select('id, patient_id, base_charge')
+      .eq('id', body.billing_id)
+      .maybeSingle();
+
+    if (!target || target.patient_id !== patientId) {
+      return NextResponse.json(
+        { error: 'That billing record does not belong to this patient' },
+        { status: 404 }
+      );
+    }
+
+    const check = validateBillingHeader(body);
+    if (!check.ok) {
+      return NextResponse.json(
+        { error: firstError(check.errors), fieldErrors: check.errors },
+        { status: 400 }
+      );
+    }
+
     const updateData: any = {
       updated_by: authResult.user.id,
     };
@@ -178,6 +208,21 @@ export async function PATCH(
     }
     if (body.doctor_fees_included_in_package !== undefined) {
       updateData.doctor_fees_included_in_package = body.doctor_fees_included_in_package;
+    }
+
+    // A base charge is no longer required, and neither is a referral. But the two
+    // "included in package" flags only mean something when there *is* a package —
+    // with no base charge there is nothing for anything to be included in. Force
+    // them off rather than storing a row that contradicts the formula in
+    // lib/recalculate-billing.ts, which ignores them in that state anyway.
+    const effectiveBaseCharge =
+      updateData.base_charge !== undefined
+        ? Number(updateData.base_charge) || 0
+        : Number(target.base_charge) || 0;
+
+    if (effectiveBaseCharge <= 0) {
+      updateData.referral_commission_included_in_package = false;
+      updateData.doctor_fees_included_in_package = false;
     }
 
     const { data, error } = await supabase

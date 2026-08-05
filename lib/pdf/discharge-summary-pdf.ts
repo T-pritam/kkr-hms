@@ -74,8 +74,8 @@ export interface DischargeSummaryData {
 
   admission_date: string | null
   discharge_date: string | null
-  ward: string | null
-  bed: string | null
+  discharge_time: string | null
+  discharge_received_by: string | null
 
   chief_complaints: string | null
   history_present_illness: string | null
@@ -293,10 +293,13 @@ function coverDetails(h: H, data: DischargeSummaryData): void {
   fields.push(['Address', patient.address || '—'])
 
   fields.push(['Admitted', fmtDate(data.admission_date)])
-  fields.push(['Discharged', fmtDate(data.discharge_date)])
+  fields.push([
+    'Discharged',
+    [fmtDate(data.discharge_date), data.discharge_time && data.discharge_time.slice(0, 5)]
+      .filter(Boolean)
+      .join(' at '),
+  ])
 
-  const place = [data.ward, data.bed && `Bed ${data.bed}`].filter(Boolean).join(' / ')
-  if (place) fields.push(['Ward / Bed', place])
   if (has(data.condition_on_discharge)) fields.push(['Condition', data.condition_on_discharge])
 
   const doctors = data.doctors || []
@@ -466,6 +469,7 @@ function signOff(h: H, data: DischargeSummaryData): void {
     data.created_by_name && `Prepared by: ${data.created_by_name}`,
     data.finalised_by_name && `Finalised by: ${data.finalised_by_name}`,
     data.finalised_at && `on ${fmtDateTime(data.finalised_at)}`,
+    data.discharge_received_by && `Received by: ${data.discharge_received_by}`,
   ].filter(Boolean).join('        ')
 
   if (attribution) {

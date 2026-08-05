@@ -11,7 +11,7 @@ import { POST as createManual } from '@/app/api/doctor-settlements/create-manual
 import { call } from '../../helpers/request'
 import { signInAs, signOut } from '../../helpers/auth'
 import { db } from '../../helpers/fake-supabase'
-import { aSettlement, aDoctor, aPatient, aBilling } from '../../helpers/seed'
+import { aSettlement, aDoctor, aPatient, aBilling, aConsultation, aVisitPurpose } from '../../helpers/seed'
 import { NOW } from '../../setup'
 
 const price = (id: string, body: unknown) =>
@@ -81,7 +81,7 @@ describe('PUT /api/doctor-settlements/[settlementId] — pricing', () => {
 
     const { status, body } = await price('s1', { pricing_mode: 'total', total_amount: 'abc', visit_count: 3 })
     expect(status).toBe(400)
-    expect(body.error).toBe('Invalid total_amount or visit_count values')
+    expect(body.error).toBe('The amount must be a number, zero or more')
   })
 
   it('rejects a total spread over zero visits', async () => {
@@ -90,7 +90,7 @@ describe('PUT /api/doctor-settlements/[settlementId] — pricing', () => {
 
     const { status, body } = await price('s1', { pricing_mode: 'total', total_amount: 4500, visit_count: 0 })
     expect(status).toBe(400)
-    expect(body.error).toBe('visit_count must be greater than 0')
+    expect(body.error).toBe('This settlement has no visits to price a total against. Set a per-visit rate instead.')
   })
 
   it('rejects a request that would change nothing', async () => {
@@ -186,6 +186,93 @@ describe('PUT /api/doctor-settlements/[settlementId] — pricing', () => {
     await price('s1', { pricing_mode: 'per_visit', amount_per_visit: 2000 })
 
     expect(Number(row('s1').total_amount)).toBe(6000)
+  })
+})
+
+/**
+ * A purpose-linked settlement (one sync created) has its count derived from the
+ * visits actually billed under it — see 20260809000002_settlement_visit_linking.sql.
+ * A manual/merged row (visit_purpose_id null) was never part of that tracking and
+ * keeps the old freely-typed count.
+ */
+describe('PUT /api/doctor-settlements/[settlementId] — visit_count is a fact, not an input', () => {
+  it('rejects a submitted visit_count for a purpose-linked settlement', async () => {
+    await signInAs('ADMIN')
+    const purpose = aVisitPurpose({ code: 'consultation' })
+    aSettlement({ id: 's1', visit_purpose_id: purpose.id, visit_count: 2 })
+
+    const { status, body } = await price('s1', { visit_count: 5 })
+
+    expect(status).toBe(400)
+    expect(body.error).toMatch(/cannot be edited directly/)
+    expect(row('s1').visit_count).toBe(2)
+  })
+
+  it('still allows amount_per_visit and total_amount on a purpose-linked row', async () => {
+    await signInAs('ADMIN')
+    const purpose = aVisitPurpose({ code: 'consultation' })
+    aSettlement({ id: 's1', visit_purpose_id: purpose.id, visit_count: 2, amount_per_visit: 0 })
+
+    const { status } = await price('s1', { amount_per_visit: 300 })
+
+    expect(status).toBe(200)
+    expect(row('s1')).toMatchObject({ amount_per_visit: 300, visit_count: 2, total_amount: 600 })
+  })
+
+  it('allows a freely-typed visit_count on a manual row (no visit_purpose_id)', async () => {
+    await signInAs('ADMIN')
+    aSettlement({ id: 's1', visit_purpose_id: null, visit_count: 2, amount_per_visit: 500 })
+
+    const { status } = await price('s1', { pricing_mode: 'per_visit', visit_count: 4, amount_per_visit: 500 })
+
+    expect(status).toBe(200)
+    expect(row('s1')).toMatchObject({ visit_count: 4, total_amount: 2000 })
+  })
+})
+
+/**
+ * Reopening a settled row conflicts with the database the moment a newer
+ * pending row already exists for the same (cycle, doctor, purpose) — the
+ * partial unique index (20260809000002) only allows one live *unsettled* row
+ * per key. The route has to turn that 23505 into something a human can act on.
+ */
+describe('PUT /api/doctor-settlements/[settlementId] — reopening a settled row', () => {
+  it('returns 409 when a newer pending row already exists for the same key', async () => {
+    await signInAs('ADMIN')
+    const purpose = aVisitPurpose({ code: 'consultation' })
+    aSettlement({
+      id: 's-old',
+      patient_billing_id: 'b1',
+      doctor_id: 'd1',
+      visit_purpose_id: purpose.id,
+      settled: true,
+      visit_count: 1,
+    })
+    aSettlement({
+      id: 's-new',
+      patient_billing_id: 'b1',
+      doctor_id: 'd1',
+      visit_purpose_id: purpose.id,
+      settled: false,
+      visit_count: 2,
+    })
+
+    const { status, body } = await price('s-old', { amount_per_visit: 999 })
+
+    expect(status).toBe(409)
+    expect(body.error).toMatch(/newer pending settlement/)
+    // The attempt must not have left the old row half-unsettled or repriced.
+    expect(row('s-old')).toMatchObject({ settled: true, amount_per_visit: 0 })
+  })
+
+  it('unsettles cleanly when nothing conflicts', async () => {
+    await signInAs('ADMIN')
+    aSettlement({ id: 's1', settled: true, amount_per_visit: 500, visit_count: 2 })
+
+    const { status } = await price('s1', { amount_per_visit: 700 })
+
+    expect(status).toBe(200)
+    expect(row('s1')).toMatchObject({ settled: false, amount_per_visit: 700 })
   })
 })
 
@@ -356,6 +443,30 @@ describe('POST /api/doctor-settlements/merge', () => {
     expect(row('s2').deleted_at).toBe(NOW.toISOString())
   })
 
+  /**
+   * Every visit billed under one of the merged-away rows must follow to the new
+   * one — otherwise it's left pointing at a row about to be soft-deleted,
+   * invisible to the next sync and to the DELETE route's own release step.
+   */
+  it('re-links visits from the merged-away settlements onto the new one', async () => {
+    await signInAs('ADMIN')
+    aDoctor({ id: 'd1' })
+    aPatient({ id: 'p1' })
+    aSettlement({ id: 's1', patient_id: 'p1', doctor_id: 'd1', visit_count: 2, total_amount: 3000 })
+    aSettlement({ id: 's2', patient_id: 'p1', doctor_id: 'd1', visit_count: 1, total_amount: 1500 })
+    aConsultation({ id: 'c1', patient_id: 'p1', doctor_id: 'd1', settlement_id: 's1' })
+    aConsultation({ id: 'c2', patient_id: 'p1', doctor_id: 'd1', settlement_id: 's1' })
+    aConsultation({ id: 'c3', patient_id: 'p1', doctor_id: 'd1', settlement_id: 's2' })
+
+    const { body } = await merge({ settlement_ids: ['s1', 's2'] })
+
+    for (const id of ['c1', 'c2', 'c3']) {
+      expect(db.find('patient_consultations', (r) => r.id === id)!.settlement_id).toBe(
+        body.merged_settlement_id
+      )
+    }
+  })
+
   it('honours explicit overrides for the merged row', async () => {
     await signInAs('ADMIN')
     aSettlement({ id: 's1', patient_id: 'p1', visit_count: 2, total_amount: 3000 })
@@ -412,6 +523,33 @@ describe('DELETE /api/doctor-settlements/[settlementId]', () => {
 
     expect(status).toBe(200)
     expect(row('s1').deleted_at).toBe(NOW.toISOString())
+  })
+
+  /**
+   * Otherwise a visit billed under a deleted settlement is stuck: sync only ever
+   * regathers visits with `settlement_id IS NULL`, so it would never be
+   * reconsidered by anything again.
+   */
+  it('releases the visits it billed back into the unbilled pool', async () => {
+    await signInAs('ADMIN')
+    aSettlement({ id: 's1' })
+    aConsultation({ id: 'c1', settlement_id: 's1' })
+    aConsultation({ id: 'c2', settlement_id: 's1' })
+
+    await remove('s1', {})
+
+    expect(db.find('patient_consultations', (r) => r.id === 'c1')!.settlement_id).toBeNull()
+    expect(db.find('patient_consultations', (r) => r.id === 'c2')!.settlement_id).toBeNull()
+  })
+
+  it('releases linked visits on a hard delete too', async () => {
+    await signInAs('ADMIN')
+    aSettlement({ id: 's1' })
+    aConsultation({ id: 'c1', settlement_id: 's1' })
+
+    await remove('s1', { soft_delete: false })
+
+    expect(db.find('patient_consultations', (r) => r.id === 'c1')!.settlement_id).toBeNull()
   })
 
   it('hard-deletes when explicitly asked', async () => {

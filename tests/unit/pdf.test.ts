@@ -65,6 +65,16 @@ function expectValidPdf(doc: any) {
   expect(text).toContain('%%EOF')
 }
 
+/**
+ * Raw PDF bytes decoded as latin1. `mkDoc` never sets `compress`, which jsPDF
+ * defaults to off, so plain ASCII text drawn with `doc.text()` shows up literally
+ * in the content stream — good enough to assert a specific line was drawn at all.
+ */
+function textOf(doc: any): string {
+  const bytes = new Uint8Array(doc.output('arraybuffer') as ArrayBuffer)
+  return Buffer.from(bytes).toString('latin1')
+}
+
 const patientData = (overrides: Partial<PatientPDFData> = {}): PatientPDFData => ({
   patient: {
     id: 'p1',
@@ -377,8 +387,8 @@ const dischargeData = (overrides: Partial<DischargeSummaryData> = {}): Discharge
   },
   admission_date: '2026-03-10',
   discharge_date: '2026-03-15',
-  ward: 'General Ward',
-  bed: '12',
+  discharge_time: '14:30:00',
+  discharge_received_by: 'Sunita Kumar (attendant)',
   chief_complaints: 'Fever with chills for 4 days, generalised weakness',
   history_present_illness: 'Gradual onset, no vomiting, no urinary symptoms.',
   past_history: 'Known diabetic since 2018, on metformin.',
@@ -443,11 +453,19 @@ describe('generateDischargeSummaryPDF', () => {
     const doc = renderDischargeSummary(dischargeData({
       summary_no: null,
       patient: { name: 'Walk-in', patient_id: null, age: null, gender: null, phone: null, address: null },
-      admission_date: null, discharge_date: null, ward: null, bed: null,
+      admission_date: null, discharge_date: null, discharge_time: null, discharge_received_by: null,
       created_by_name: null, finalised_by_name: null, finalised_at: null,
     }))
 
     expectValidPdf(doc)
+  })
+
+  it('renders "Received by" only when it is set', () => {
+    const withIt = renderDischargeSummary(dischargeData({ discharge_received_by: 'Sunita Kumar' }))
+    const withoutIt = renderDischargeSummary(dischargeData({ discharge_received_by: null }))
+
+    expect(textOf(withIt)).toContain('Received by: Sunita Kumar')
+    expect(textOf(withoutIt)).not.toContain('Received by')
   })
 
   it('renders a draft without throwing — the watermark walks every page', () => {

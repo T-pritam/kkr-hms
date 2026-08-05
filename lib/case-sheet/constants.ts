@@ -74,8 +74,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
 export const FIELD_LABELS: Record<string, string> = {
   admission_date:          'Admission date',
   discharge_date:          'Discharge date',
-  ward:                    'Ward',
-  bed:                     'Bed',
+  discharge_time:          'Discharge time',
+  discharge_received_by:   'Received by',
   chief_complaints:        'Chief complaints',
   history_present_illness: 'History of present illness',
   past_history:            'Past history',

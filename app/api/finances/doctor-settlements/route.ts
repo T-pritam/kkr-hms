@@ -71,6 +71,7 @@ export async function GET(request: NextRequest) {
       .select(`
         *,
         doctor:doctors(*),
+        visit_purpose:visit_purposes(id, code, name),
         patient:patients(*)
       `)
       .is('deleted_at', null)
@@ -178,6 +179,21 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // One amount cannot describe several settlements. The old code applied
+    // `settlement_amount` to every selected row and booked a ledger debit of that
+    // size for each — select three fees and pay one figure, and the hospital
+    // records paying it three times. Each row settles at its own total unless a
+    // single settlement is named.
+    if (settlement_amount !== undefined && settlement_amount !== null && settlement_ids.length > 1) {
+      return NextResponse.json(
+        {
+          error:
+            'A settlement amount can only be given when settling one fee at a time. Settle them individually, or omit the amount to pay each at its own total.',
+        },
+        { status: 400 }
+      )
+    }
+
     const supabase = await createClient()
 
     const ledgerDate = new Date().toISOString().split('T')[0]
@@ -188,35 +204,56 @@ export async function POST(request: NextRequest) {
     const locked = await assertLedgerDateOpen(supabase, ledgerDate, 'settle')
     if (locked) return locked
 
-    // Update settlements
-    const { data: updated, error: updateError } = await supabase
+    // Read first, so each row's own total is known before it is overwritten, and
+    // so already-settled ids are excluded exactly once.
+    const { data: pending, error: readError } = await supabase
       .from('doctor_visit_settlements')
-      .update({
-        settled: true,
-        settlement_date: new Date().toISOString(),
-        settlement_amount: settlement_amount,
-        payment_method,
-        transaction_reference,
-        settlement_notes,
-        updated_by: payload.userId,
-        updated_at: new Date().toISOString(),
-      })
+      .select('*, doctor:doctors(id, name)')
       .in('id', settlement_ids)
       .eq('settled', false)
-      .select()
+      .is('deleted_at', null)
 
-    if (updateError) throw updateError
+    if (readError) throw readError
+
+    const amountFor = (settlement: any) =>
+      settlement_amount !== undefined && settlement_amount !== null
+        ? Number(settlement_amount)
+        : Number(settlement.total_amount) || 0
+
+    const settledAt = new Date().toISOString()
+    const updated: any[] = []
+
+    for (const settlement of pending ?? []) {
+      const { data, error } = await supabase
+        .from('doctor_visit_settlements')
+        .update({
+          settled: true,
+          settlement_date: settledAt,
+          settlement_amount: amountFor(settlement),
+          payment_method,
+          transaction_reference,
+          settlement_notes,
+          updated_by: payload.userId,
+          updated_at: settledAt,
+        })
+        .eq('id', settlement.id)
+        .eq('settled', false)
+        .select()
+
+      if (error) throw error
+      if (data && data.length > 0) updated.push({ ...data[0], doctor: settlement.doctor })
+    }
 
     // Create ledger entries for each settlement, through the shared write path so
     // they are validated and closure-checked like every other ledger entry.
-    if (updated && updated.length > 0) {
+    if (updated.length > 0) {
       const result = await createLedgerTransactions(
         supabase,
         updated.map((settlement: any) => ({
           transaction_date: ledgerDate,
           transaction_type: 'debit' as const,
           source: 'doctor_settlement' as const,
-          amount: settlement_amount || settlement.total_amount,
+          amount: amountFor(settlement),
           payment_mode: payment_method,
           reference_number: transaction_reference,
           description: `Doctor settlement - ${settlement.doctor?.name || 'Unknown Doctor'}`,

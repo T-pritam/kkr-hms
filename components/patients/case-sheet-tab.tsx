@@ -201,7 +201,6 @@ export default function CaseSheetTab({
                 </div>
                 <p className="text-sm text-muted mt-1">
                   {date(sheet.admission_date)} — {date(sheet.discharge_date)}
-                  {sheet.ward && <span className="ml-2">· {sheet.ward}{sheet.bed ? ` / Bed ${sheet.bed}` : ''}</span>}
                 </p>
               </div>
 

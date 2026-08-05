@@ -15,6 +15,11 @@ interface DoctorSettlement {
     name: string
     specialist: string
   }
+  /** Null on rows created by merge or create-manual, which span purposes. */
+  visit_purpose: {
+    id: string
+    name: string
+  } | null
   patient: {
     patient_id: string
     name: string
@@ -35,6 +40,8 @@ export function SettleDoctorFeesModal({ isOpen, onClose }: SettleDoctorFeesModal
   const [transactionRef, setTransactionRef] = useState('')
   const [notes, setNotes] = useState('')
   const [settling, setSettling] = useState(false)
+  /** Only meaningful — and only sent — when exactly one fee is selected. */
+  const [customAmount, setCustomAmount] = useState('')
 
   useEffect(() => {
     if (isOpen) {
@@ -69,6 +76,12 @@ export function SettleDoctorFeesModal({ isOpen, onClose }: SettleDoctorFeesModal
       return
     }
 
+    // The API only accepts an explicit amount for a single fee — settling
+    // several at once always pays each at its own total, or the hospital's
+    // records would show one payment where several actually happened.
+    const amountOverride =
+      selectedIds.length === 1 && customAmount !== '' ? Number(customAmount) : null
+
     try {
       setSettling(true)
       const response = await fetch('/api/finances/doctor-settlements', {
@@ -76,7 +89,7 @@ export function SettleDoctorFeesModal({ isOpen, onClose }: SettleDoctorFeesModal
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           settlement_ids: selectedIds,
-          settlement_amount: null, // Use calculated amount
+          settlement_amount: amountOverride,
           payment_method: paymentMethod,
           transaction_reference: transactionRef || undefined,
           settlement_notes: notes || undefined,
@@ -88,6 +101,7 @@ export function SettleDoctorFeesModal({ isOpen, onClose }: SettleDoctorFeesModal
       if (result.success) {
         alert(`Successfully settled ${result.data.length} doctor fee(s)`)
         setSelectedIds([])
+        setCustomAmount('')
         setTransactionRef('')
         setNotes('')
         fetchSettlements()
@@ -102,30 +116,60 @@ export function SettleDoctorFeesModal({ isOpen, onClose }: SettleDoctorFeesModal
     }
   }
 
+  /** Prefills the override with the newly-single selection's total; clears it otherwise. */
+  const syncCustomAmount = (ids: string[]) => {
+    if (ids.length !== 1) {
+      setCustomAmount('')
+      return
+    }
+    const only = settlements.find((s) => s.id === ids[0])
+    setCustomAmount(only ? String(Math.round(Number(only.total_amount) || 0)) : '')
+  }
+
   const toggleSelection = (id: string) => {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
-    )
+    setSelectedIds((prev) => {
+      const next = prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+      syncCustomAmount(next)
+      return next
+    })
   }
 
   const toggleSelectAll = () => {
-    if (selectedIds.length === filteredSettlements.length) {
-      setSelectedIds([])
-    } else {
-      setSelectedIds(filteredSettlements.map((s) => s.id))
-    }
+    const next = selectedIds.length === filteredSettlements.length ? [] : filteredSettlements.map((s) => s.id)
+    setSelectedIds(next)
+    syncCustomAmount(next)
   }
 
-  const filteredSettlements = settlements.filter(
-    (s) =>
-      s.doctor.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.patient.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.patient.patient_id.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+  // A doctor now has one row per purpose, so the purpose has to be searchable —
+  // otherwise "operation" finds nothing and the operator scrolls.
+  const filteredSettlements = settlements.filter((s) => {
+    const q = searchQuery.toLowerCase()
+    return (
+      s.doctor.name.toLowerCase().includes(q) ||
+      s.patient.name.toLowerCase().includes(q) ||
+      s.patient.patient_id.toLowerCase().includes(q) ||
+      (s.visit_purpose?.name || '').toLowerCase().includes(q)
+    )
+  })
 
   const totalSelectedAmount = settlements
     .filter((s) => selectedIds.includes(s.id))
     .reduce((sum, s) => sum + Number(s.total_amount || 0), 0)
+
+  // The figure actually about to be paid — the typed override for a single
+  // selection, or the sum of each row's own total otherwise.
+  const displayTotal =
+    selectedIds.length === 1 && customAmount !== '' ? Number(customAmount) || 0 : totalSelectedAmount
+
+  // A doctor with several pending purposes (or several patients) reads as one
+  // doctor's business rather than a flat, easy-to-miss list.
+  const groupedByDoctor = filteredSettlements.reduce<
+    Record<string, { doctor: DoctorSettlement['doctor']; rows: DoctorSettlement[] }>
+  >((acc, s) => {
+    if (!acc[s.doctor_id]) acc[s.doctor_id] = { doctor: s.doctor, rows: [] }
+    acc[s.doctor_id].rows.push(s)
+    return acc
+  }, {})
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -198,51 +242,61 @@ export function SettleDoctorFeesModal({ isOpen, onClose }: SettleDoctorFeesModal
                 </label>
               </div>
 
-              {/* List */}
-              <div className="space-y-3">
-                {filteredSettlements.map((settlement) => (
-                  <div
-                    key={settlement.id}
-                    className={`p-4 rounded-lg border cursor-pointer transition-colors ${
-                      selectedIds.includes(settlement.id)
-                        ? 'bg-info-subtle border-info/20'
-                        : 'bg-surface-hover border-input-border hover:border-border'
-                    }`}
-                    onClick={() => toggleSelection(settlement.id)}
-                  >
-                    <div className="flex items-start gap-3">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.includes(settlement.id)}
-                        onChange={() => toggleSelection(settlement.id)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="mt-1 w-4 h-4 rounded border-border text-info focus:ring-ring"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                          <div>
-                            <h3 className="font-semibold text-foreground">
-                              {settlement.doctor.name}
-                            </h3>
-                            <p className="text-sm text-muted">
-                              {settlement.doctor.specialist}
-                            </p>
-                          </div>
-                          <div className="text-xl font-bold text-info">
-                            {formatCurrency(settlement.total_amount)}
+              {/* List, grouped by doctor */}
+              <div className="space-y-5">
+                {Object.entries(groupedByDoctor).map(([doctorId, group]) => (
+                  <div key={doctorId}>
+                    <h4 className="text-sm font-semibold text-foreground mb-2">
+                      {group.doctor.name}
+                      {group.doctor.specialist && (
+                        <span className="ml-2 font-normal text-muted">{group.doctor.specialist}</span>
+                      )}
+                    </h4>
+                    <div className="space-y-3">
+                      {group.rows.map((settlement) => (
+                        <div
+                          key={settlement.id}
+                          className={`p-4 rounded-lg border cursor-pointer transition-colors ${
+                            selectedIds.includes(settlement.id)
+                              ? 'bg-info-subtle border-info/20'
+                              : 'bg-surface-hover border-input-border hover:border-border'
+                          }`}
+                          onClick={() => toggleSelection(settlement.id)}
+                        >
+                          <div className="flex items-start gap-3">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.includes(settlement.id)}
+                              onChange={() => toggleSelection(settlement.id)}
+                              onClick={(e) => e.stopPropagation()}
+                              className="mt-1 w-4 h-4 rounded border-border text-info focus:ring-ring"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                                {/* Without the purpose, two rows for the same
+                                    doctor are indistinguishable and the wrong
+                                    one gets paid. */}
+                                <h3 className="font-semibold text-foreground">
+                                  {settlement.visit_purpose?.name || 'No purpose'}
+                                </h3>
+                                <div className="text-xl font-bold text-info">
+                                  {formatCurrency(settlement.total_amount)}
+                                </div>
+                              </div>
+                              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted">
+                                <span>
+                                  Patient: {settlement.patient.name} (
+                                  {settlement.patient.patient_id})
+                                </span>
+                                <span>Visits: {settlement.visit_count}</span>
+                                <span>
+                                  Rate: {formatCurrency(settlement.amount_per_visit)}
+                                </span>
+                              </div>
+                            </div>
                           </div>
                         </div>
-                        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted">
-                          <span>
-                            Patient: {settlement.patient.name} (
-                            {settlement.patient.patient_id})
-                          </span>
-                          <span>Visits: {settlement.visit_count}</span>
-                          <span>
-                            Rate: {formatCurrency(settlement.amount_per_visit)}
-                          </span>
-                        </div>
-                      </div>
+                      ))}
                     </div>
                   </div>
                 ))}
@@ -286,6 +340,29 @@ export function SettleDoctorFeesModal({ isOpen, onClose }: SettleDoctorFeesModal
               </div>
             </div>
 
+            {/* Only meaningful for one fee at a time — the API refuses an explicit
+                amount across several, since one figure cannot describe several
+                payments. Selecting more than one pays each at its own total. */}
+            {selectedIds.length === 1 && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-muted mb-2">
+                  Amount to settle (₹)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={customAmount}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => setCustomAmount(e.target.value)}
+                  className="w-full px-4 py-2 bg-input border border-input-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+                <p className="text-xs text-muted mt-1">
+                  Prefilled from the calculated total — change it for a partial payment.
+                </p>
+              </div>
+            )}
+
             <div className="mb-4">
               <label className="block text-sm font-medium text-muted mb-2">
                 Settlement Notes
@@ -305,7 +382,7 @@ export function SettleDoctorFeesModal({ isOpen, onClose }: SettleDoctorFeesModal
                   Selected: {selectedIds.length} settlement(s)
                 </p>
                 <p className="text-lg font-bold text-foreground">
-                  Total: {formatCurrency(totalSelectedAmount)}
+                  Total: {formatCurrency(displayTotal)}
                 </p>
               </div>
 

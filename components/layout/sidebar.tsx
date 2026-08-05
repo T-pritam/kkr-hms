@@ -16,6 +16,7 @@ import {
   Menu,
   X,
   FlaskConical,
+  ReceiptText,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
@@ -31,6 +32,7 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
   const [employeeOpen, setEmployeeOpen] = useState(false)
   const [ledgerOpen, setLedgerOpen] = useState(false)
   const [labOpen, setLabOpen] = useState(false)
+  const [chargesOpen, setChargesOpen] = useState(false)
 
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' })
@@ -55,6 +57,17 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
       href: '/doctors',
       icon: Stethoscope,
       roles: ['ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST'],
+    },
+    {
+      name: 'Charges',
+      icon: ReceiptText,
+      roles: ['ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST'],
+      submenu: [
+        // Estimates, including for walk-ins who are not in the registry.
+        { name: 'Charge Sheets', href: '/charges/sheets', roles: ['ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST'] },
+        // Readable by all of them; the page hides the write controls from non-admins.
+        { name: 'Charge Catalogue', href: '/charges/catalogue', roles: ['ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST'] },
+      ],
     },
     {
       name: 'Lab/Pathology',
@@ -155,12 +168,14 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
 
                 if (hasSubmenu) {
                   const isOpen =
-                    item.name === 'Employees' ? employeeOpen : 
+                    item.name === 'Employees' ? employeeOpen :
                     item.name === 'Lab/Pathology' ? labOpen :
+                    item.name === 'Charges' ? chargesOpen :
                     ledgerOpen
                   const setIsOpen =
-                    item.name === 'Employees' ? setEmployeeOpen : 
+                    item.name === 'Employees' ? setEmployeeOpen :
                     item.name === 'Lab/Pathology' ? setLabOpen :
+                    item.name === 'Charges' ? setChargesOpen :
                     setLedgerOpen
 
                   const filteredSubmenu = item.submenu.filter((sub) =>

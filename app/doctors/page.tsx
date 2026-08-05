@@ -14,7 +14,8 @@ import { DEPARTMENTS } from '@/lib/doctors/constants'
 import { hasDoctorCapability } from '@/lib/doctors/authz'
 import { useUser } from '@/hooks/use-user'
 import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch'
-import { AlertTriangle, Edit, Plus, Power, Search, Trash2 } from 'lucide-react'
+import { AlertTriangle, Edit, IndianRupee, Plus, Power, Search, Trash2 } from 'lucide-react'
+import { FeeScheduleModal } from '@/components/doctors/fee-schedule-modal'
 
 /**
  * The doctor registry.
@@ -51,6 +52,8 @@ export default function DoctorsPage() {
   const { user } = useUser()
   const canWrite = hasDoctorCapability(user?.role, 'doctor:write')
   const canDelete = hasDoctorCapability(user?.role, 'doctor:delete')
+  // Reception may add and edit a doctor, but only an admin sets what one is paid.
+  const isAdmin = user?.role === 'ADMIN'
 
   const [doctors, setDoctors] = useState<Doctor[]>([])
   const [loading, setLoading] = useState(true)
@@ -69,6 +72,7 @@ export default function DoctorsPage() {
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Doctor | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
+  const [feeScheduleFor, setFeeScheduleFor] = useState<Doctor | null>(null)
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
@@ -181,6 +185,17 @@ export default function DoctorsPage() {
             <Power size={16} />
           </Button>
         </>
+      )}
+      {/* Admin only — a doctor must not be able to set their own rate. */}
+      {isAdmin && (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setFeeScheduleFor(doctor)}
+          title="Fee schedule"
+        >
+          <IndianRupee size={16} />
+        </Button>
       )}
       {canDelete && (
         <Button
@@ -392,6 +407,12 @@ export default function DoctorsPage() {
         }}
         onSuccess={fetchDoctors}
         doctor={editing}
+      />
+
+      <FeeScheduleModal
+        isOpen={!!feeScheduleFor}
+        onClose={() => setFeeScheduleFor(null)}
+        doctor={feeScheduleFor}
       />
 
       <Modal

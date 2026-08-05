@@ -50,8 +50,8 @@ export interface CaseSheet {
   // Admission & stay
   admission_date: string | null
   discharge_date: string | null
-  ward: string | null
-  bed: string | null
+  discharge_time: string | null
+  discharge_received_by: string | null
 
   // Presenting details
   chief_complaints: string | null

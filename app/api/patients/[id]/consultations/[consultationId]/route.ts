@@ -59,9 +59,20 @@ export async function PATCH(
       );
     }
 
+    // Same reasoning as the doctor: an edit must not be able to clear the purpose
+    // and drop the visit back into the unpriced bucket.
+    if ('visit_purpose_id' in body && !body.visit_purpose_id) {
+      return NextResponse.json(
+        { error: 'Select what this visit was for' },
+        { status: 400 }
+      );
+    }
+
     // Update consultation
     const updateData: any = {
       doctor_id: body.doctor_id !== undefined ? body.doctor_id : consultation.doctor_id,
+      visit_purpose_id:
+        body.visit_purpose_id !== undefined ? body.visit_purpose_id : consultation.visit_purpose_id,
       notes: body.notes !== undefined ? body.notes : consultation.notes,
       billing_id: body.billing_id !== undefined ? body.billing_id : consultation.billing_id,
       updated_by: authResult.user.id,
@@ -145,21 +156,25 @@ export async function DELETE(
       );
     }
 
-    // Check if this consultation has related settled settlements
-    if (consultation.doctor_id) {
-      const { data: settlements } = await supabase
+    // Refuse only if *this visit's own* settlement has been settled — not merely
+    // because some settlement exists for this doctor and patient. The old check
+    // was scoped to (doctor, patient), so settling one visit's fee blocked
+    // deleting every other visit with that doctor, settled or not, in any
+    // billing cycle. Now that a visit knows which settlement (if any) actually
+    // billed it, the guard can be exact.
+    if (consultation.settlement_id) {
+      const { data: settlement } = await supabase
         .from('doctor_visit_settlements')
         .select('id, settled')
-        .eq('doctor_id', consultation.doctor_id)
-        .eq('patient_id', patientId)
-        .eq('settled', true)
-        .is('deleted_at', null);
+        .eq('id', consultation.settlement_id)
+        .is('deleted_at', null)
+        .maybeSingle();
 
-      if (settlements && settlements.length > 0) {
+      if (settlement?.settled) {
         return NextResponse.json(
           {
-            error: 'Cannot delete consultation with settled fees',
-            message: 'This consultation has been settled. Please unsettled or delete it first or contact an administrator.',
+            error: 'Cannot delete a visit that has already been billed and paid',
+            message: 'This visit has been settled. Unsettle its settlement first, or contact an administrator.',
             settlementFound: true,
           },
           { status: 409 }

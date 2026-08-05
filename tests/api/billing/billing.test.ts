@@ -11,7 +11,7 @@ import {
 import { call } from '../../helpers/request'
 import { signInAs, signOut } from '../../helpers/auth'
 import { db, createFakeClient } from '../../helpers/fake-supabase'
-import { aPatient, aBilling, aReferral } from '../../helpers/seed'
+import { aPatient, aBilling, aCharge, aReferral } from '../../helpers/seed'
 import { TODAY, THIS_MONTH } from '../../setup'
 import { recalculatePatientBilling } from '@/lib/recalculate-billing'
 
@@ -242,10 +242,21 @@ describe('PATCH /api/patients/[id]/billing', () => {
     expect(db.find('patients', (r) => r.id === 'p1')!.referred_by).toBeNull()
   })
 
-  it('returns 500 when the billing id does not exist', async () => {
+  /**
+   * A 404 rather than the 500 this used to return: the route now looks the
+   * billing row up before writing (to check it belongs to the patient), so a
+   * missing id is a missing record, not a database error.
+   */
+  it('returns 404 when the billing id does not exist', async () => {
     await signInAs('ADMIN')
 
-    expect((await update('p1', { billing_id: 'missing', base_charge: 1 })).status).toBe(500)
+    expect((await update('p1', { billing_id: 'missing', base_charge: 1 })).status).toBe(404)
+  })
+
+  it('requires a billing id at all', async () => {
+    await signInAs('ADMIN')
+
+    expect((await update('p1', { base_charge: 1 })).status).toBe(400)
   })
 
   /**
@@ -286,16 +297,99 @@ describe('PATCH /api/patients/[id]/billing', () => {
     expect(Number(db.find('patient_billing', (r) => r.id === 'b1')!.total_charges)).toBe(20000)
   })
 
-  /**
-   * Known defect — see BUGS.md #24. The billing record is looked up by an id taken from
-   * the request body; nothing checks that it belongs to the patient named in the URL.
-   */
-  it.fails('should refuse to update a billing record belonging to another patient', async () => {
+  /** BUGS.md #24, resolved — the billing row must belong to the patient in the URL. */
+  it('refuses to update a billing record belonging to another patient', async () => {
     await signInAs('ADMIN')
     aBilling({ id: 'b-other', patient_id: 'p2', base_charge: 0 })
 
-    await update('p1', { billing_id: 'b-other', base_charge: 99999 })
+    const { status } = await update('p1', { billing_id: 'b-other', base_charge: 99999 })
 
+    expect(status).toBe(404)
     expect(Number(db.find('patient_billing', (r) => r.id === 'b-other')!.base_charge)).toBe(0)
+  })
+})
+
+/**
+ * Neither a base charge nor a referral is required. What the route has to stop is
+ * a package flag set with no package behind it — stored literally, that would tell
+ * lib/recalculate-billing.ts the doctor's fees were covered by a base charge of
+ * zero, and drop them off the bill.
+ */
+describe('PATCH /api/patients/[id]/billing — optional base charge', () => {
+  it('accepts a billing record with no base charge and no referral', async () => {
+    await signInAs('ADMIN')
+    aBilling({ id: 'b1', patient_id: 'p1' })
+
+    const { status } = await update('p1', { billing_id: 'b1', base_charge: 0 })
+
+    expect(status).toBe(200)
+  })
+
+  it('forces both package flags off when there is no base charge', async () => {
+    await signInAs('ADMIN')
+    aBilling({ id: 'b1', patient_id: 'p1' })
+
+    await update('p1', {
+      billing_id: 'b1',
+      base_charge: 0,
+      referral_commission_included_in_package: true,
+      doctor_fees_included_in_package: true,
+    })
+
+    expect(db.find('patient_billing', (r) => r.id === 'b1')).toMatchObject({
+      referral_commission_included_in_package: false,
+      doctor_fees_included_in_package: false,
+    })
+  })
+
+  it('clears the flags when an existing base charge is removed', async () => {
+    await signInAs('ADMIN')
+    aBilling({
+      id: 'b1',
+      patient_id: 'p1',
+      base_charge: 20000,
+      doctor_fees_included_in_package: true,
+    })
+
+    await update('p1', { billing_id: 'b1', base_charge: 0 })
+
+    expect(db.find('patient_billing', (r) => r.id === 'b1')!.doctor_fees_included_in_package).toBe(false)
+  })
+
+  it('keeps the flags when a base charge is present but not being changed', async () => {
+    await signInAs('ADMIN')
+    aBilling({ id: 'b1', patient_id: 'p1', base_charge: 20000 })
+
+    await update('p1', { billing_id: 'b1', doctor_fees_included_in_package: true })
+
+    expect(db.find('patient_billing', (r) => r.id === 'b1')!.doctor_fees_included_in_package).toBe(true)
+  })
+
+  it('rejects a negative base charge or commission', async () => {
+    await signInAs('ADMIN')
+    aBilling({ id: 'b1', patient_id: 'p1' })
+
+    expect((await update('p1', { billing_id: 'b1', base_charge: -1 })).status).toBe(400)
+    expect(
+      (await update('p1', { billing_id: 'b1', referral_commission_amount: -500 })).status,
+    ).toBe(400)
+  })
+
+  it('keeps a commission off the bill when there is no package', async () => {
+    await signInAs('ADMIN')
+    aBilling({ id: 'b1', patient_id: 'p1' })
+    aCharge({ patient_billing_id: 'b1', amount: 12000, qty: 1 })
+
+    await update('p1', {
+      billing_id: 'b1',
+      base_charge: 0,
+      referral_commission_amount: 2000,
+    })
+
+    const billing = db.find('patient_billing', (r) => r.id === 'b1')!
+    // The commission is recorded and still settled through Finance...
+    expect(Number(billing.referral_commission_amount)).toBe(2000)
+    // ...but the patient owes only the itemised charges.
+    expect(Number(billing.total_charges)).toBe(12000)
   })
 })

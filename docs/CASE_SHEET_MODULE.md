@@ -44,7 +44,7 @@ code discharged the patient the moment a case sheet was first saved.
 
 | Section | Fields |
 |---|---|
-| Admission & stay | Admission date, **discharge date**, ward/room, bed |
+| Admission & stay | Admission date, **discharge date**, discharge time, received by |
 | **Consulting doctors** | Any number. Picked from the doctors list, or created inline without leaving the form |
 | Presenting details | Chief complaints, history of present illness, past history |
 | **Diagnosis** | Free text |
@@ -103,8 +103,10 @@ patient goes home with match.
 
 **Page 1 — the cover.** Logo, hospital name, address, phone, email; then
 `DISCHARGE SUMMARY` with its number and date; then the patient block — name,
-ID, age/sex, phone, address, admitted, discharged, ward/bed, consulting
-doctors, condition on discharge. Nothing clinical on this page.
+ID, age/sex, phone, address, admitted, discharged (with time, when recorded),
+consulting doctors, condition on discharge. Nothing clinical on this page.
+"Received by" prints in the sign-off block alongside prepared-by/finalised-by,
+since it's who took the sheet at handover, not part of the clinical cover.
 
 **Page 2 onwards — plain content.** Chief complaints → history → diagnosis →
 investigations → summary → condition & vitals → medication → advice →
@@ -195,10 +197,12 @@ still present**, backfilled into `clinical_summary` and
 
 ## Known gaps
 
-- **No admissions / IPD entity.** Admission date, ward and bed live on the case
-  sheet, not on a real admission record. There is no bed occupancy, no transfer
-  history and no daily notes. Correct for what is needed now; a true IPD module
-  is its own project.
+- **No admissions / IPD entity.** Admission date lives on the case sheet, not on a
+  real admission record. There is no bed occupancy, no transfer history and no
+  daily notes — ward and bed were tried here as a stand-in and then removed
+  (the app no longer asks for them; the database columns are left in place with
+  whatever was recorded before, just unreachable from the app). Correct for
+  what is needed now; a true IPD module is its own project.
 - **Billing is not wired up.** Finalising a summary triggers no final bill and
   reaches no invoice or ledger — the same deliberate gap as the lab module.
 - **Branding is placeholder text** in `lib/pdf/branding.ts`. The cover page

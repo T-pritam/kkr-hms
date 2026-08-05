@@ -555,6 +555,67 @@ describe('POST /api/finances/doctor-settlements — pay out', () => {
   })
 
   /**
+   * One amount cannot describe several settlements. The route used to write
+   * `settlement_amount` onto every selected row and book a debit of that size for
+   * each, so paying "5000" against three selected fees recorded 15,000 leaving the
+   * hospital and stamped each doctor as paid 5,000 regardless of what they were
+   * owed.
+   */
+  it('pays each selected fee at its own total, not one figure for all of them', async () => {
+    await signInAs('ADMIN')
+    aDoctor({ id: 'd1', name: 'Dr. Ramesh' })
+    aDoctor({ id: 'd2', name: 'Dr. Iyer' })
+    aSettlement({ id: 's1', doctor_id: 'd1', settled: false, total_amount: 600, patient_id: 'p1' })
+    aSettlement({ id: 's2', doctor_id: 'd2', settled: false, total_amount: 5000, patient_id: 'p1' })
+
+    const { status } = await paySettlements({
+      settlement_ids: ['s1', 's2'],
+      payment_method: 'cash',
+    })
+
+    expect(status).toBe(200)
+
+    const amounts = db.rows('daily_ledger_transactions').map((t) => Number(t.amount)).sort((a, b) => a - b)
+    expect(amounts).toEqual([600, 5000])
+
+    // ...and each row records what it was actually paid.
+    expect(Number(db.find('doctor_visit_settlements', (r) => r.id === 's1')!.settlement_amount)).toBe(600)
+    expect(Number(db.find('doctor_visit_settlements', (r) => r.id === 's2')!.settlement_amount)).toBe(5000)
+  })
+
+  it('refuses an explicit amount when more than one fee is selected', async () => {
+    await signInAs('ADMIN')
+    aSettlement({ id: 's1', settled: false, total_amount: 600 })
+    aSettlement({ id: 's2', settled: false, total_amount: 5000 })
+
+    const { status } = await paySettlements({
+      settlement_ids: ['s1', 's2'],
+      settlement_amount: 5000,
+      payment_method: 'cash',
+    })
+
+    expect(status).toBe(400)
+    expect(db.count('daily_ledger_transactions')).toBe(0)
+    expect(db.find('doctor_visit_settlements', (r) => r.id === 's1')!.settled).toBe(false)
+  })
+
+  it('still accepts an explicit amount for a single fee', async () => {
+    await signInAs('ADMIN')
+    aDoctor({ id: 'd1', name: 'Dr. Ramesh' })
+    aSettlement({ id: 's1', doctor_id: 'd1', settled: false, total_amount: 5000, patient_id: 'p1' })
+
+    // Part payment, deliberately less than the total.
+    const { status } = await paySettlements({
+      settlement_ids: ['s1'],
+      settlement_amount: 3000,
+      payment_method: 'cash',
+    })
+
+    expect(status).toBe(200)
+    expect(Number(db.rows('daily_ledger_transactions')[0].amount)).toBe(3000)
+  })
+
+  /**
    * The ledger write used to happen after the settlements were marked paid, and with no
    * closed-day check at all. Guard ordering is the whole point of this test: a refusal
    * must leave nothing behind, or doctors end up flagged as settled with no debit against
@@ -574,11 +635,13 @@ describe('POST /api/finances/doctor-settlements — pay out', () => {
   })
 
   /**
-   * Known defect — see BUGS.md #52. The ledger description is built from a row returned by
-   * an update that carries no joins, so `settlement.doctor?.name` is always undefined and
-   * every payout is recorded against "Unknown Doctor".
+   * BUGS.md #52, resolved. The description was built from the row returned by the
+   * update, which carries no joins, so `settlement.doctor?.name` was always
+   * undefined and every payout read "Unknown Doctor". The route now reads each
+   * settlement (with its doctor) before settling it — which it has to do anyway,
+   * to know each row's own total.
    */
-  it.fails('should name the doctor in the ledger entry', async () => {
+  it('names the doctor in the ledger entry', async () => {
     await signInAs('ADMIN')
     aDoctor({ id: 'd1', name: 'Dr. Ramesh' })
     aSettlement({ id: 's1', doctor_id: 'd1', settled: false, total_amount: 4500 })
