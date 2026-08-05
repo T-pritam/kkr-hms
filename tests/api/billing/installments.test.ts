@@ -11,7 +11,7 @@ import {
 import { call } from '../../helpers/request'
 import { signInAs, signOut } from '../../helpers/auth'
 import { db } from '../../helpers/fake-supabase'
-import { aBilling, anInstallment, aTransaction, aUser } from '../../helpers/seed'
+import { aBilling, anInstallment, aTransaction, aClosure, aUser } from '../../helpers/seed'
 import { TODAY } from '../../setup'
 
 const list = (patientId: string, query = {}) =>
@@ -248,27 +248,30 @@ describe('POST /api/patients/[id]/installments — ledger side effect', () => {
   })
 
   /**
-   * Known defect — see BUGS.md #20. This insert bypasses every rule the ledger's own
-   * POST enforces, including the day-closed guard, so a payment can be booked into a
-   * date that has already been closed and reconciled.
+   * Was BUGS.md #20. This path now goes through lib/ledger, so it is subject to the same
+   * closed-day rule as every other ledger write.
    */
-  it.fails('should refuse to write into a day that has already been closed', async () => {
+  it('should refuse to write into a day that has already been closed', async () => {
     await signInAs('RECEPTIONIST')
     aBilling({ id: 'b1', patient_id: 'p1' })
-    aTransaction({ transaction_date: '2026-03-12', status: 'day_closed' })
+    aClosure({ closure_date: '2026-03-12' })
 
-    await create('p1', {
+    const { status, body } = await create('p1', {
       patient_billing_id: 'b1',
       amount: 5000,
       payment_date: '2026-03-12',
       create_ledger_entry: true,
     })
 
+    expect(status).toBe(409)
+    expect(body.code).toBe('LEDGER_DAY_CLOSED')
     expect(db.rows('daily_ledger_transactions').filter((t) => t.source === 'patient')).toHaveLength(0)
+    // Guarded before the installment is written, so nothing is left half-recorded.
+    expect(db.count('patient_billing_installments')).toBe(0)
   })
 
-  /** Known defect — see BUGS.md #20. The ledger's own POST requires a reference for UPI; this path does not. */
-  it.fails('should require a reference number for a UPI payment', async () => {
+  /** Was BUGS.md #20 — this path skipped the UPI reference rule the ledger's own POST enforces. */
+  it('should require a reference number for a UPI payment', async () => {
     await signInAs('RECEPTIONIST')
     aBilling({ id: 'b1' })
 

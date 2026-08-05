@@ -155,27 +155,21 @@ export function EditTransactionModal({ isOpen, onClose, onSuccess, transaction }
                 </select>
               </div>
 
-              <div>
-                <Label htmlFor="edit_expense_category_detail">
-                  {formData.expense_category === OTHER_LEDGER_CATEGORY
-                    ? 'What was it for? *'
-                    : 'Description (Other only)'}
-                </Label>
-                <Input
-                  id="edit_expense_category_detail"
-                  type="text"
-                  value={formData.expense_category_detail}
-                  onChange={(e) => setFormData({ ...formData, expense_category_detail: e.target.value })}
-                  disabled={formData.expense_category !== OTHER_LEDGER_CATEGORY}
-                  required={formData.expense_category === OTHER_LEDGER_CATEGORY}
-                  maxLength={EXPENSE_DETAIL_MAX}
-                  placeholder={
-                    formData.expense_category === OTHER_LEDGER_CATEGORY
-                      ? 'e.g. Courier charges'
-                      : 'Only needed when the category is Other'
-                  }
-                />
-              </div>
+              {/* Only appears for the catch-all category. */}
+              {formData.expense_category === OTHER_LEDGER_CATEGORY && (
+                <div>
+                  <Label htmlFor="edit_expense_category_detail">What was it for? *</Label>
+                  <Input
+                    id="edit_expense_category_detail"
+                    type="text"
+                    value={formData.expense_category_detail}
+                    onChange={(e) => setFormData({ ...formData, expense_category_detail: e.target.value })}
+                    required
+                    maxLength={EXPENSE_DETAIL_MAX}
+                    placeholder="e.g. Courier charges"
+                  />
+                </div>
+              )}
             </>
           )}
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { getActiveClosure } from '@/lib/ledger/closure'
 import { verifyToken, getAccessToken, getRefreshToken, setAuthCookies, generateAccessToken, generateRefreshToken } from '@/lib/auth/jwt'
 
 /**
@@ -70,12 +71,29 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
+    // Who has already settled comes from the settlements table, not from a status
+    // on the transactions. Those are different facts and were being read as one.
+    const { data: settlements } = await supabase
+      .from('daily_ledger_shift_settlements')
+      .select('*')
+      .eq('settlement_date', date)
+      .eq('status', 'active')
+
+    const settlementByEmployee = new Map<string, any>(
+      (settlements ?? []).map((s: any) => [s.employee_id, s])
+    )
+
+    // Whether the date itself is closed is a separate fact again, and the screen
+    // needs both: an operator can be settled on a day that is still open, and a
+    // closed day can still contain operators who never settled.
+    const closure = await getActiveClosure(supabase, date)
+
     // Group by employee
     const employeeMap = new Map<string, any>()
 
     transactions?.forEach((txn: any) => {
       const employeeId = txn.created_by
-      
+
       if (!employeeMap.has(employeeId)) {
         employeeMap.set(employeeId, {
           employeeId,
@@ -86,39 +104,66 @@ export async function GET(request: NextRequest) {
           creditCount: 0,
           debitCount: 0,
           transactionCount: 0,
-          isClosed: false,
+          // Per-mode split, so the modal can say how much *physical cash* is owed
+          // rather than a single figure that silently includes UPI and card.
+          creditsCash: 0,
+          creditsUpi: 0,
+          creditsCard: 0,
+          creditsBankTransfer: 0,
+          creditsCheque: 0,
+          debitsCash: 0,
+          cashExpected: 0,
+          isSettled: false,
+          settlement: null,
           transactions: []
         })
       }
 
       const empData = employeeMap.get(employeeId)
-      
+      const amount = parseFloat(txn.amount)
+
       if (txn.transaction_type === 'credit') {
-        empData.totalCredits += parseFloat(txn.amount)
+        empData.totalCredits += amount
         empData.creditCount++
+
+        switch (txn.payment_mode) {
+          case 'cash': empData.creditsCash += amount; break
+          case 'upi': empData.creditsUpi += amount; break
+          case 'card': empData.creditsCard += amount; break
+          case 'bank_transfer': empData.creditsBankTransfer += amount; break
+          case 'cheque': empData.creditsCheque += amount; break
+        }
       } else if (txn.transaction_type === 'debit') {
-        empData.totalDebits += parseFloat(txn.amount)
+        empData.totalDebits += amount
         empData.debitCount++
+
+        if (txn.payment_mode === 'cash') {
+          empData.debitsCash += amount
+        }
       }
 
       empData.transactionCount++
       empData.transactions.push(txn)
+    })
 
-      if (txn.status === 'day_closed') {
-        empData.isClosed = true
+    const employeeSummaries = Array.from(employeeMap.values()).map(emp => {
+      const settlement = settlementByEmployee.get(emp.employeeId) ?? null
+      return {
+        ...emp,
+        netBalance: emp.totalCredits - emp.totalDebits,
+        // Only cash leaves the drawer.
+        cashExpected: emp.creditsCash - emp.debitsCash,
+        isSettled: settlement !== null,
+        settlement
       }
     })
 
-    // Calculate net balance for each employee
-    const employeeSummaries = Array.from(employeeMap.values()).map(emp => ({
-      ...emp,
-      netBalance: emp.totalCredits - emp.totalDebits
-    }))
-
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       data: {
         settlementDate: date,
+        dayClosed: closure !== null,
+        closure,
         employeeSummaries
       }
     })

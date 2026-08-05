@@ -9,7 +9,7 @@ import { PUT as setStatus } from '@/app/api/ledger/transactions/[id]/status/rout
 import { call } from '../../helpers/request'
 import { signInAs, signOut, signInWithRefreshTokenOnly } from '../../helpers/auth'
 import { db } from '../../helpers/fake-supabase'
-import { aTransaction, aPatient, aUser } from '../../helpers/seed'
+import { aTransaction, aClosure, aShiftSettlement, aPatient, aUser } from '../../helpers/seed'
 import { NOW, TODAY } from '../../setup'
 
 const list = (query = {}) => call(listTransactions, 'GET', '/api/ledger/transactions', { query })
@@ -272,30 +272,42 @@ describe('POST /api/ledger/transactions — creation', () => {
 
   it('refuses to book into a day that has been closed', async () => {
     await signInAs('RECEPTIONIST')
-    aTransaction({ transaction_date: '2026-03-12', status: 'day_closed' })
+    aClosure({ closure_date: '2026-03-12' })
 
     const { status, body } = await create({ ...validTransaction, transaction_date: '2026-03-12' })
 
-    expect(status).toBe(400)
-    expect(body.error).toBe('Cannot create transaction for 2026-03-12. The day has been closed.')
-    expect(db.count('daily_ledger_transactions')).toBe(1)
+    expect(status).toBe(409)
+    expect(body.code).toBe('LEDGER_DAY_CLOSED')
+    expect(body.error).toContain('2026-03-12')
+    expect(db.count('daily_ledger_transactions')).toBe(0)
+  })
+
+  it('ignores a superseded closure — a reopened day is open', async () => {
+    await signInAs('RECEPTIONIST')
+    aClosure({
+      closure_date: '2026-03-12',
+      status: 'superseded',
+      reopened_at: NOW.toISOString(),
+      reopen_reason: 'missed a UPI receipt',
+    })
+
+    expect((await create({ ...validTransaction, transaction_date: '2026-03-12' })).status).toBe(201)
   })
 
   it('still allows other dates once one day is closed', async () => {
     await signInAs('RECEPTIONIST')
-    aTransaction({ transaction_date: '2026-03-12', status: 'day_closed' })
+    aClosure({ closure_date: '2026-03-12' })
 
     expect((await create({ ...validTransaction, transaction_date: '2026-03-13' })).status).toBe(201)
   })
 
   /**
-   * Known defect — see BUGS.md #31. The closed-day guard looks at transaction rows rather
-   * than the closure record, and it is not scoped to the user, so closing one employee's
-   * shift (close-employee-day) locks the whole date for every other employee.
+   * Was BUGS.md #31. Settling a shift writes to its own table and locks nothing, so a
+   * colleague can still record an entry on the same date.
    */
-  it.fails('should not let one employee’s shift close block another employee’s entries', async () => {
+  it('should not let one employee’s shift settlement block another employee’s entries', async () => {
     await signInAs('RECEPTIONIST', { userId: 'u-me' })
-    aTransaction({ transaction_date: '2026-03-12', status: 'day_closed', created_by: 'u-someone-else' })
+    aShiftSettlement({ settlement_date: '2026-03-12', employee_id: 'u-someone-else' })
 
     const { status } = await create({ ...validTransaction, transaction_date: '2026-03-12' })
     expect(status).toBe(201)
@@ -332,14 +344,15 @@ describe('PUT /api/ledger/transactions/[id]', () => {
     expect(transactionRow('t1').amount).toBe(500)
   })
 
-  it('refuses to touch a closed entry', async () => {
+  it('refuses to touch an entry inside a closed day', async () => {
     await signInAs('ADMIN', { userId: 'u-me' })
-    aTransaction({ id: 't1', created_by: 'u-me', status: 'day_closed', amount: 500 })
+    aTransaction({ id: 't1', created_by: 'u-me', transaction_date: '2026-03-12', amount: 500 })
+    aClosure({ closure_date: '2026-03-12' })
 
     const { status, body } = await update('t1', { amount: 999 })
 
-    expect(status).toBe(400)
-    expect(body.error).toBe('Cannot update closed transaction')
+    expect(status).toBe(409)
+    expect(body.code).toBe('LEDGER_DAY_CLOSED')
     expect(transactionRow('t1').amount).toBe(500)
   })
 
@@ -383,7 +396,7 @@ describe('PUT /api/ledger/transactions/[id]', () => {
    * 'admin' while tokens carry 'ADMIN', so an administrator is treated as a stranger and
    * cannot correct anyone else's entry.
    */
-  it.fails('should let an admin amend another user’s entry', async () => {
+  it('should let an admin amend another user’s entry', async () => {
     await signInAs('ADMIN', { userId: 'u-admin' })
     aTransaction({ id: 't1', created_by: 'u-other', amount: 500 })
 
@@ -406,14 +419,15 @@ describe('DELETE /api/ledger/transactions/[id]', () => {
     expect(db.count('daily_ledger_transactions')).toBe(0)
   })
 
-  it('refuses to delete a closed entry', async () => {
+  it('refuses to delete an entry inside a closed day', async () => {
     await signInAs('RECEPTIONIST', { userId: 'u-me' })
-    aTransaction({ id: 't1', created_by: 'u-me', status: 'day_closed' })
+    aTransaction({ id: 't1', created_by: 'u-me', transaction_date: '2026-03-12' })
+    aClosure({ closure_date: '2026-03-12' })
 
     const { status, body } = await remove('t1')
 
-    expect(status).toBe(400)
-    expect(body.error).toBe('Cannot delete closed transaction')
+    expect(status).toBe(409)
+    expect(body.code).toBe('LEDGER_DAY_CLOSED')
     expect(db.count('daily_ledger_transactions')).toBe(1)
   })
 
@@ -426,7 +440,7 @@ describe('DELETE /api/ledger/transactions/[id]', () => {
   })
 
   /** Known defect — see BUGS.md #32. The same lowercase 'admin' comparison. */
-  it.fails('should let an admin delete another user’s entry', async () => {
+  it('should let an admin delete another user’s entry', async () => {
     await signInAs('ADMIN', { userId: 'u-admin' })
     aTransaction({ id: 't1', created_by: 'u-other' })
 
@@ -489,14 +503,15 @@ describe('PUT /api/ledger/transactions/[id]/status', () => {
     expect((await changeStatus('missing', { status: 'verified' })).status).toBe(404)
   })
 
-  it('refuses to change the status of a closed entry', async () => {
+  it('refuses to change the status of an entry inside a closed day', async () => {
     await signInAs('ADMIN')
-    aTransaction({ id: 't1', status: 'day_closed' })
+    aTransaction({ id: 't1', transaction_date: '2026-03-12' })
+    aClosure({ closure_date: '2026-03-12' })
 
     const { status, body } = await changeStatus('t1', { status: 'verified' })
 
-    expect(status).toBe(400)
-    expect(body.error).toBe('Cannot update status of closed transaction')
+    expect(status).toBe(409)
+    expect(body.code).toBe('LEDGER_DAY_CLOSED')
   })
 
   /**

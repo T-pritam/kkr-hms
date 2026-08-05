@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { verifyToken, getAccessToken, getRefreshToken, setAuthCookies, generateAccessToken, generateRefreshToken } from '@/lib/auth/jwt'
-import { normaliseLedgerCategoryDetail, validateLedgerExpenseCategory } from '@/lib/finances/validate'
+import { createLedgerTransaction } from '@/lib/ledger/transactions'
+import { getActiveClosures } from '@/lib/ledger/closure'
 
 /**
  * GET /api/ledger/transactions
@@ -104,7 +105,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true, data })
+    // Whether an entry sits inside a closed day is a property of its date, so it
+    // cannot be read off the row. One range query decorates the whole result set,
+    // which is what lets the Finances table show a lock without a second endpoint.
+    const rows = data ?? []
+    let decorated = rows
+    if (rows.length > 0) {
+      const dates = rows.map((r: any) => r.transaction_date).sort()
+      const closures = await getActiveClosures(supabase, dates[0], dates[dates.length - 1])
+      decorated = rows.map((r: any) => ({ ...r, day_closed: closures.has(r.transaction_date) }))
+    }
+
+    return NextResponse.json({ success: true, data: decorated })
   } catch (error: any) {
     console.error('Get transactions error:', error)
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 })
@@ -151,118 +163,37 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const {
-      transaction_date,
-      transaction_type,
-      source,
-      amount,
-      payment_mode,
-      reference_number,
-      patient_id,
-      description,
-      notes,
-      expense_category,
-      expense_category_detail
-    } = body
-
-    // Validation
-    console.log('Received transaction data:', body)
-    console.log(amount, typeof amount)
-    if (!transaction_date || !transaction_type || !source || !amount || !payment_mode || !description) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
-    }
-
-    if (amount <= 0) {
-      return NextResponse.json({ error: 'Amount must be greater than 0' }, { status: 400 })
-    }
-
-    if (!['credit', 'debit'].includes(transaction_type)) {
-      return NextResponse.json({ error: 'Invalid transaction type' }, { status: 400 })
-    }
-
-    if (!['patient', 'opd', 'expense'].includes(source)) {
-      return NextResponse.json({ error: 'Invalid source' }, { status: 400 })
-    }
-
-    if (!['cash', 'upi', 'card', 'bank_transfer', 'cheque'].includes(payment_mode)) {
-      return NextResponse.json({ error: 'Invalid payment mode' }, { status: 400 })
-    }
-
-    if (payment_mode === 'upi' && (!reference_number || reference_number.trim() === '')) {
-      return NextResponse.json({ error: 'Reference number required for UPI payments' }, { status: 400 })
-    }
-
-    // Only an expense row carries a category. Forcing the pair to null on every
-    // other source is what stops a credit or an OPD collection from drifting
-    // into holding one, which would make the column mean two different things.
-    let expenseCategory: string | null = null
-    let expenseCategoryDetail: string | null = null
-
-    if (source === 'expense') {
-      const categoryError = validateLedgerExpenseCategory(expense_category)
-      if (categoryError) {
-        return NextResponse.json({ error: categoryError }, { status: 400 })
-      }
-
-      const detail = normaliseLedgerCategoryDetail(expense_category, expense_category_detail)
-      if ('error' in detail) {
-        return NextResponse.json({ error: detail.error }, { status: 400 })
-      }
-
-      expenseCategory = expense_category
-      expenseCategoryDetail = detail.value
-    }
 
     const supabase = await createClient()
 
-    // Check if day is already closed
-    const { data: existingTransactions } = await supabase
-      .from('daily_ledger_transactions')
-      .select('status')
-      .eq('transaction_date', transaction_date)
-      .eq('status', 'day_closed')
-      .limit(1)
+    // Validation, the closed-day guard and the insert all live in lib/ledger, so
+    // the settlement routes that also write here are held to the same rules.
+    const result = await createLedgerTransaction(supabase, {
+      transaction_date: body.transaction_date,
+      transaction_type: body.transaction_type,
+      source: body.source,
+      amount: body.amount,
+      payment_mode: body.payment_mode,
+      reference_number: body.reference_number,
+      patient_id: body.patient_id,
+      description: body.description,
+      notes: body.notes,
+      expense_category: body.expense_category,
+      expense_category_detail: body.expense_category_detail,
+      created_by: payload.userId,
+    })
 
-    if (existingTransactions && existingTransactions.length > 0) {
-      return NextResponse.json({ 
-        error: `Cannot create transaction for ${transaction_date}. The day has been closed.` 
-      }, { status: 400 })
+    if (!result.ok) {
+      return NextResponse.json(
+        { error: result.error, ...(result.code ? { code: result.code, closure: result.closure } : {}) },
+        { status: result.status }
+      )
     }
 
-    // Create transaction
-    const { data, error } = await supabase
-      .from('daily_ledger_transactions')
-      .insert([{
-        transaction_date,
-        transaction_type,
-        source,
-        amount: parseFloat(amount),
-        payment_mode,
-        reference_number: reference_number || null,
-        patient_id: patient_id || null,
-        description,
-        notes: notes || null,
-        expense_category: expenseCategory,
-        expense_category_detail: expenseCategoryDetail,
-        created_by: payload.userId,
-        status: 'pending'
-      }])
-      .select(`
-        *,
-        created_by_user:users!created_by(id, username),
-        patient:patients(id, name)
-      `)
-      .single()
-
-    if (error) {
-      console.error('Create transaction error:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       message: 'Transaction created successfully',
-      data 
+      data: result.rows[0]
     }, { status: 201 })
   } catch (error: any) {
     console.error('Create transaction error:', error)

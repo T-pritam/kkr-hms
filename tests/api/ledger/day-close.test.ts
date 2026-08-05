@@ -2,19 +2,20 @@
  * Ledger reporting and day close:
  *   GET  /api/ledger/daily-summary/[date]
  *   POST /api/ledger/close-day
- *   POST /api/ledger/close-employee-day
  *   GET  /api/ledger/employee-shift-summary
+ *
+ * The shift-settlement routes that replaced POST /api/ledger/close-employee-day have
+ * their own file — settling a shift is no longer a way of closing anything.
  */
 
 import { describe, it, expect } from 'vitest'
 import { GET as dailySummary } from '@/app/api/ledger/daily-summary/[date]/route'
 import { POST as closeDay } from '@/app/api/ledger/close-day/route'
-import { POST as closeEmployeeDay } from '@/app/api/ledger/close-employee-day/route'
 import { GET as shiftSummary } from '@/app/api/ledger/employee-shift-summary/route'
 import { call } from '../../helpers/request'
 import { signInAs, signOut } from '../../helpers/auth'
 import { db } from '../../helpers/fake-supabase'
-import { aTransaction, aClosure, aUser } from '../../helpers/seed'
+import { aTransaction, aClosure, aShiftSettlement, aUser } from '../../helpers/seed'
 import { TODAY } from '../../setup'
 
 const summary = async (date: string) => {
@@ -26,9 +27,6 @@ const summary = async (date: string) => {
 }
 
 const close = (body: unknown) => call(closeDay, 'POST', '/api/ledger/close-day', { body })
-
-const closeEmployee = (body: unknown) =>
-  call(closeEmployeeDay, 'POST', '/api/ledger/close-employee-day', { body })
 
 const shifts = (query = {}) => call(shiftSummary, 'GET', '/api/ledger/employee-shift-summary', { query })
 
@@ -88,14 +86,47 @@ describe('GET /api/ledger/daily-summary/[date]', () => {
     expect((await summary(TODAY)).body.total_credits).toBe(1000)
   })
 
-  it('reports whether the day is closed', async () => {
+  it('reads the closed flag from the closure record, not from row statuses', async () => {
     await signInAs('RECEPTIONIST', { userId: 'u-me' })
     aTransaction({ transaction_date: TODAY, created_by: 'u-me', status: 'pending' })
 
     expect((await summary(TODAY)).body.is_day_closed).toBe(false)
 
-    aTransaction({ transaction_date: TODAY, created_by: 'u-me', status: 'day_closed' })
-    expect((await summary(TODAY)).body.is_day_closed).toBe(true)
+    aClosure({ closure_date: TODAY })
+    const { body } = await summary(TODAY)
+    expect(body.is_day_closed).toBe(true)
+    expect(body.closure.closure_date).toBe(TODAY)
+  })
+
+  it('treats a reopened day as open', async () => {
+    await signInAs('RECEPTIONIST', { userId: 'u-me' })
+    aTransaction({ transaction_date: TODAY, created_by: 'u-me' })
+    aClosure({
+      closure_date: TODAY,
+      status: 'superseded',
+      reopened_at: new Date().toISOString(),
+      reopen_reason: 'missed a UPI receipt',
+    })
+
+    expect((await summary(TODAY)).body.is_day_closed).toBe(false)
+  })
+
+  it('counts entries still awaiting verification', async () => {
+    await signInAs('RECEPTIONIST', { userId: 'u-me' })
+    aTransaction({ transaction_date: TODAY, created_by: 'u-me', status: 'pending' })
+    aTransaction({ transaction_date: TODAY, created_by: 'u-me', status: 'verified' })
+
+    expect((await summary(TODAY)).body.unverified_count).toBe(1)
+  })
+
+  it('previews the opening balance the next close would inherit', async () => {
+    await signInAs('ADMIN', { userId: 'u-me' })
+    aClosure({ closure_date: '2026-03-14', closing_balance: 4200, closing_cash_balance: 1100 })
+    aTransaction({ transaction_date: TODAY, created_by: 'u-me' })
+
+    const { body } = await summary(TODAY)
+    expect(body.opening_balance_preview).toBe(4200)
+    expect(body.opening_cash_balance_preview).toBe(1100)
   })
 
   it('returns zeroes for a day with no activity', async () => {
@@ -105,12 +136,8 @@ describe('GET /api/ledger/daily-summary/[date]', () => {
     expect(body).toMatchObject({ total_credits: 0, total_debits: 0, net_balance: 0, transaction_count: 0 })
   })
 
-  /**
-   * Known defect — see BUGS.md #34. The summary is hard-scoped to the caller's own
-   * entries, admins included, so the "Daily Ledger Summary" page never shows the day's
-   * actual takings — only whatever the person looking at it happened to record.
-   */
-  it.fails('should show an admin the whole day, not just their own entries', async () => {
+  /** Was BUGS.md #34 — the summary was hard-scoped to the caller, admins included. */
+  it('should show an admin the whole day, not just their own entries', async () => {
     await signInAs('ADMIN', { userId: 'u-admin' })
     aTransaction({ transaction_date: TODAY, created_by: 'u-admin', transaction_type: 'credit', amount: 1000 })
     aTransaction({ transaction_date: TODAY, created_by: 'u-reception', transaction_type: 'credit', amount: 4000 })
@@ -118,8 +145,8 @@ describe('GET /api/ledger/daily-summary/[date]', () => {
     expect((await summary(TODAY)).body.total_credits).toBe(5000)
   })
 
-  /** Known defect — see BUGS.md #35. Debits get no payment-mode breakdown, so cash paid out is invisible. */
-  it.fails('should break debits down by payment mode too', async () => {
+  /** Was BUGS.md #35 — debits had no payment-mode breakdown, so cash paid out was invisible. */
+  it('should break debits down by payment mode too', async () => {
     await signInAs('ADMIN', { userId: 'u-me' })
     aTransaction({ transaction_date: TODAY, created_by: 'u-me', transaction_type: 'debit', payment_mode: 'cash', amount: 800 })
 
@@ -129,7 +156,8 @@ describe('GET /api/ledger/daily-summary/[date]', () => {
 })
 
 describe('POST /api/ledger/close-day', () => {
-  it.each(['NURSE', 'RECEPTIONIST'] as const)('refuses %s', async (role) => {
+  // DOCTOR is refused too now: closing reconciles the day's cash and locks the period.
+  it.each(['DOCTOR', 'NURSE', 'RECEPTIONIST'] as const)('refuses %s', async (role) => {
     await signInAs(role)
     aTransaction({ transaction_date: TODAY })
 
@@ -154,8 +182,16 @@ describe('POST /api/ledger/close-day', () => {
 
     const { status, body } = await close({ closure_date: TODAY })
 
-    expect(status).toBe(400)
+    // 409, not 400: the request is well-formed, it conflicts with the period's state.
+    expect(status).toBe(409)
     expect(body.error).toBe('This date has already been closed')
+  })
+
+  it('refuses a date in the future', async () => {
+    await signInAs('ADMIN')
+
+    const { status } = await close({ closure_date: '2099-01-01' })
+    expect(status).toBe(400)
   })
 
   it('refuses a day with no transactions', async () => {
@@ -168,59 +204,66 @@ describe('POST /api/ledger/close-day', () => {
 
   it('writes a closure record with the day’s totals', async () => {
     await signInAs('ADMIN', { userId: 'u-admin' })
+    // The opening balance is derived from the previous close, never from the request.
+    aClosure({ closure_date: '2026-03-14', closing_balance: 2000, closing_cash_balance: 2000 })
     aTransaction({ transaction_date: TODAY, transaction_type: 'credit', payment_mode: 'cash', amount: 5000 })
     aTransaction({ transaction_date: TODAY, transaction_type: 'credit', payment_mode: 'upi', amount: 3000, reference_number: 'UPI-1' })
     aTransaction({ transaction_date: TODAY, transaction_type: 'debit', payment_mode: 'cash', amount: 1000 })
 
-    const { status, body } = await close({ closure_date: TODAY, opening_balance: 2000, notes: 'End of day' })
+    const { status, body } = await close({ closure_date: TODAY, notes: 'End of day' })
 
     expect(status).toBe(200)
-    expect(body.data).toMatchObject({
+    expect(body.data.closure).toMatchObject({
       closure_date: TODAY,
-      totalCredits: 8000,
-      totalDebits: 1000,
-      netBalance: 7000,
-      closingBalance: 9000,
-      transactionCount: 3,
-      creditCount: 2,
-      debitCount: 1,
-    })
-
-    expect(db.rows('daily_ledger_closures')[0]).toMatchObject({
-      closure_date: TODAY,
+      status: 'active',
+      version: 1,
       total_credits: 8000,
       total_debits: 1000,
       net_balance: 7000,
       total_credits_cash: 5000,
       total_credits_upi: 3000,
+      total_debits_cash: 1000,
+      transaction_count: 3,
+      credit_count: 2,
+      debit_count: 1,
       opening_balance: 2000,
       closing_balance: 9000,
+      // Cash only: 2000 carried in + 5000 taken - 1000 paid out.
+      closing_cash_balance: 6000,
       closed_by: 'u-admin',
       notes: 'End of day',
     })
   })
 
-  it('defaults the opening balance to zero', async () => {
+  it('ignores an opening_balance sent by the client', async () => {
+    await signInAs('ADMIN')
+    aClosure({ closure_date: '2026-03-14', closing_balance: 500 })
+    aTransaction({ transaction_date: TODAY, transaction_type: 'credit', amount: 100 })
+
+    const { body } = await close({ closure_date: TODAY, opening_balance: 999999 })
+    expect(body.data.closure.opening_balance).toBe(500)
+  })
+
+  it('defaults the opening balance to zero when nothing precedes it', async () => {
     await signInAs('ADMIN')
     aTransaction({ transaction_date: TODAY, transaction_type: 'credit', amount: 5000 })
 
     const { body } = await close({ closure_date: TODAY })
 
-    expect(body.data.closingBalance).toBe(5000)
-    expect(db.rows('daily_ledger_closures')[0].opening_balance).toBe(0)
+    expect(body.data.closure.closing_balance).toBe(5000)
+    expect(body.data.closure.opening_balance).toBe(0)
   })
 
-  it('freezes every transaction on the day', async () => {
+  it('leaves every transaction untouched — closing is a property of the date', async () => {
     await signInAs('ADMIN')
-    aTransaction({ id: 't1', transaction_date: TODAY, status: 'pending' })
+    aTransaction({ id: 't1', transaction_date: TODAY, status: 'pending', notes: 'Paid in two parts' })
     aTransaction({ id: 't2', transaction_date: TODAY, status: 'verified' })
-    aTransaction({ id: 't3', transaction_date: '2026-03-14', status: 'pending' })
 
     await close({ closure_date: TODAY })
 
-    expect(db.find('daily_ledger_transactions', (r) => r.id === 't1')!.status).toBe('day_closed')
-    expect(db.find('daily_ledger_transactions', (r) => r.id === 't2')!.status).toBe('day_closed')
-    expect(db.find('daily_ledger_transactions', (r) => r.id === 't3')!.status).toBe('pending')
+    expect(db.find('daily_ledger_transactions', (r) => r.id === 't1')!.status).toBe('pending')
+    expect(db.find('daily_ledger_transactions', (r) => r.id === 't1')!.notes).toBe('Paid in two parts')
+    expect(db.find('daily_ledger_transactions', (r) => r.id === 't2')!.status).toBe('verified')
   })
 
   it('closes across all users, not just the caller', async () => {
@@ -229,7 +272,17 @@ describe('POST /api/ledger/close-day', () => {
     aTransaction({ transaction_date: TODAY, created_by: 'u-reception', transaction_type: 'credit', amount: 4000 })
 
     const { body } = await close({ closure_date: TODAY })
-    expect(body.data.totalCredits).toBe(5000)
+    expect(body.data.closure.total_credits).toBe(5000)
+  })
+
+  it('records the close in the audit log', async () => {
+    await signInAs('ADMIN', { userId: 'u-admin' })
+    aTransaction({ transaction_date: TODAY, transaction_type: 'credit', amount: 1000 })
+
+    await close({ closure_date: TODAY })
+
+    const entry = db.find('record_audit_log', (r) => r.entity_type === 'ledger_day')
+    expect(entry).toMatchObject({ action: 'finalised', actor_id: 'u-admin' })
   })
 
   it('closes a day whose entries were never verified', async () => {
@@ -239,20 +292,25 @@ describe('POST /api/ledger/close-day', () => {
     expect((await close({ closure_date: TODAY })).status).toBe(200)
   })
 
-  /** Known defect — see BUGS.md #36. Unverified money should not be reconcilable. */
-  it.fails('should refuse to close a day that still has unverified entries', async () => {
+  /**
+   * Was BUGS.md #36, decided against. Blocking on unverified entries would strand a day
+   * whenever the person who verifies them is unavailable, and closing is a cash
+   * reconciliation rather than a sign-off. The count is warned about and recorded instead.
+   */
+  it('warns about unverified entries rather than blocking the close', async () => {
     await signInAs('ADMIN')
     aTransaction({ transaction_date: TODAY, status: 'pending' })
+    aTransaction({ transaction_date: TODAY, status: 'verified' })
 
-    expect((await close({ closure_date: TODAY })).status).toBe(400)
+    const { status, body } = await close({ closure_date: TODAY })
+
+    expect(status).toBe(200)
+    expect(body.data.warnings.unverified_count).toBe(1)
+    expect(body.data.closure.unverified_count).toBe(1)
   })
 
-  /**
-   * Known defect — see BUGS.md #37. Card credits are counted in total_credits but the
-   * per-mode switch has no 'card' branch, so the breakdown does not add up to the total
-   * whenever a card payment is taken.
-   */
-  it.fails('should include card credits in the payment-mode breakdown', async () => {
+  /** Was BUGS.md #37 — card credits counted toward the total with no branch in the switch. */
+  it('should include card credits in the payment-mode breakdown', async () => {
     await signInAs('ADMIN')
     aTransaction({ transaction_date: TODAY, transaction_type: 'credit', payment_mode: 'cash', amount: 1000 })
     aTransaction({ transaction_date: TODAY, transaction_type: 'credit', payment_mode: 'card', amount: 4000 })
@@ -261,17 +319,18 @@ describe('POST /api/ledger/close-day', () => {
 
     const closure = db.rows('daily_ledger_closures')[0]
     const breakdown =
-      Number(closure.total_credits_cash) + Number(closure.total_credits_upi) + Number(closure.total_credits_other)
+      Number(closure.total_credits_cash) +
+      Number(closure.total_credits_upi) +
+      Number(closure.total_credits_card) +
+      Number(closure.total_credits_bank_transfer) +
+      Number(closure.total_credits_cheque)
 
     expect(breakdown).toBe(Number(closure.total_credits))
+    expect(Number(closure.total_credits_card)).toBe(4000)
   })
 
-  /**
-   * Known defect — see BUGS.md #38. The opening balance is whatever the client sends; it
-   * is never checked against the previous day's closing balance, so the running cash
-   * position can silently break continuity.
-   */
-  it.fails('should carry the opening balance forward from the previous closing balance', async () => {
+  /** Was BUGS.md #38 — the opening balance was whatever the client sent. */
+  it('should carry the opening balance forward from the previous closing balance', async () => {
     await signInAs('ADMIN')
     aClosure({ closure_date: '2026-03-14', closing_balance: 12345 })
     aTransaction({ transaction_date: TODAY, transaction_type: 'credit', amount: 1000 })
@@ -282,124 +341,53 @@ describe('POST /api/ledger/close-day', () => {
   })
 
   /**
-   * Known defect — see BUGS.md #39. The status update and the closure insert are not in a
-   * transaction. If the insert fails the day is frozen with no closure record, and there
-   * is no re-open endpoint to recover.
+   * Was BUGS.md #39. The failure mode is gone by construction rather than by care: the
+   * close writes one row and touches no transaction, so there is nothing left frozen to
+   * point at a closure that was never written.
    */
-  it.fails('should not freeze the day when the closure record cannot be written', async () => {
+  it('leaves the date writable when the closure cannot be written', async () => {
     await signInAs('ADMIN')
     aTransaction({ id: 't1', transaction_date: TODAY, status: 'pending' })
-    db.failNext('daily_ledger_closures') // the already-closed lookup
-    db.failNext('daily_ledger_closures') // the closure insert
+    db.failNext('close_ledger_day')
 
-    await close({ closure_date: TODAY })
+    const { status } = await close({ closure_date: TODAY })
 
+    expect(status).toBe(500)
     expect(db.find('daily_ledger_transactions', (r) => r.id === 't1')!.status).toBe('pending')
-  })
-})
-
-describe('POST /api/ledger/close-employee-day', () => {
-  // DOCTOR was admitted here despite the guard's own message saying otherwise.
-  // Settling a shift freezes every transaction that operator booked that day.
-  it.each(['DOCTOR', 'NURSE', 'RECEPTIONIST'] as const)('refuses %s', async (role) => {
-    await signInAs(role)
-
-    const { status, body } = await closeEmployee({ employee_id: 'u1', settlement_date: TODAY })
-    expect(status).toBe(403)
-    expect(body.error).toBe('Forbidden. Admin access required.')
+    expect(db.rows('daily_ledger_closures').filter((c) => c.status === 'active')).toHaveLength(0)
   })
 
-  it('requires both the employee and the date', async () => {
+  it('re-closing after a reopen supersedes rather than duplicates', async () => {
     await signInAs('ADMIN')
-
-    expect((await closeEmployee({ settlement_date: TODAY })).body.error).toBe(
-      'employee_id and settlement_date are required'
-    )
-    expect((await closeEmployee({ employee_id: 'u1' })).status).toBe(400)
-  })
-
-  it('returns 404 when that employee has nothing on that date', async () => {
-    await signInAs('ADMIN')
-    aTransaction({ created_by: 'someone-else', transaction_date: TODAY })
-
-    const { status, body } = await closeEmployee({ employee_id: 'u1', settlement_date: TODAY })
-    expect(status).toBe(404)
-    expect(body.error).toBe('No transactions found for this employee on this date')
-  })
-
-  it('refuses an employee day that is already closed', async () => {
-    await signInAs('ADMIN')
-    aTransaction({ created_by: 'u1', transaction_date: TODAY, status: 'day_closed' })
-
-    const { status, body } = await closeEmployee({ employee_id: 'u1', settlement_date: TODAY })
-    expect(status).toBe(400)
-    expect(body.error).toBe('This employee day has already been closed')
-  })
-
-  it('closes that employee’s entries and returns their totals', async () => {
-    await signInAs('ADMIN')
-    aTransaction({ id: 't1', created_by: 'u1', transaction_date: TODAY, transaction_type: 'credit', amount: 5000 })
-    aTransaction({ id: 't2', created_by: 'u1', transaction_date: TODAY, transaction_type: 'debit', amount: 1200 })
-    aTransaction({ id: 't3', created_by: 'u2', transaction_date: TODAY, transaction_type: 'credit', amount: 9999 })
-
-    const { status, body } = await closeEmployee({ employee_id: 'u1', settlement_date: TODAY })
-
-    expect(status).toBe(200)
-    expect(body.data).toMatchObject({
-      employee_id: 'u1',
-      totalCredits: 5000,
-      totalDebits: 1200,
-      netBalance: 3800,
-      transactionsClosed: 2,
+    aTransaction({ transaction_date: TODAY, transaction_type: 'credit', amount: 1000 })
+    const first = aClosure({
+      closure_date: TODAY,
+      status: 'superseded',
+      version: 1,
+      reopened_at: new Date().toISOString(),
+      reopen_reason: 'missed a UPI receipt',
     })
 
-    expect(db.find('daily_ledger_transactions', (r) => r.id === 't1')!.status).toBe('day_closed')
-    expect(db.find('daily_ledger_transactions', (r) => r.id === 't3')!.status).toBe('pending')
+    const { status, body } = await close({ closure_date: TODAY })
+
+    expect(status).toBe(200)
+    expect(body.data.closure.version).toBe(2)
+    expect(body.data.closure.supersedes_id).toBe(first.id)
+    // The superseded row is history and is never removed.
+    expect(db.count('daily_ledger_closures')).toBe(2)
   })
 
-  it('records the settlement note', async () => {
+  it('allows an empty day to be re-closed after a reopen emptied it', async () => {
     await signInAs('ADMIN')
-    aTransaction({ id: 't1', created_by: 'u1', transaction_date: TODAY })
+    aClosure({
+      closure_date: TODAY,
+      status: 'superseded',
+      version: 1,
+      reopened_at: new Date().toISOString(),
+      reopen_reason: 'the only entry was a duplicate',
+    })
 
-    await closeEmployee({ employee_id: 'u1', settlement_date: TODAY, notes: 'Cash handed over' })
-
-    expect(db.find('daily_ledger_transactions', (r) => r.id === 't1')!.notes).toBe('Cash handed over')
-  })
-
-  it('defaults the note to "Marked as paid"', async () => {
-    await signInAs('ADMIN')
-    aTransaction({ id: 't1', created_by: 'u1', transaction_date: TODAY })
-
-    await closeEmployee({ employee_id: 'u1', settlement_date: TODAY })
-
-    expect(db.find('daily_ledger_transactions', (r) => r.id === 't1')!.notes).toBe('Marked as paid')
-  })
-
-  /**
-   * Known defect — see BUGS.md #40. Closing a shift overwrites the notes on every one of
-   * that employee's transactions, destroying whatever was recorded against each entry.
-   */
-  it.fails('should not overwrite the notes already on each transaction', async () => {
-    await signInAs('ADMIN')
-    aTransaction({ id: 't1', created_by: 'u1', transaction_date: TODAY, notes: 'Patient paid in two parts' })
-
-    await closeEmployee({ employee_id: 'u1', settlement_date: TODAY })
-
-    expect(db.find('daily_ledger_transactions', (r) => r.id === 't1')!.notes).toBe('Patient paid in two parts')
-  })
-
-  /**
-   * Known defect — see BUGS.md #41. Nothing is persisted about the settlement: no record,
-   * no cash-versus-UPI split, no closing balance. The only trace is the status change, so
-   * the day cannot be audited afterwards.
-   */
-  it.fails('should record the shift settlement somewhere durable', async () => {
-    await signInAs('ADMIN')
-    aTransaction({ created_by: 'u1', transaction_date: TODAY, transaction_type: 'credit', amount: 5000 })
-
-    await closeEmployee({ employee_id: 'u1', settlement_date: TODAY })
-
-    expect(db.count('daily_ledger_closures')).toBe(1)
+    expect((await close({ closure_date: TODAY })).status).toBe(200)
   })
 })
 
@@ -434,7 +422,7 @@ describe('GET /api/ledger/employee-shift-summary', () => {
       creditCount: 1,
       debitCount: 1,
       transactionCount: 2,
-      isClosed: false,
+      isSettled: false,
     })
 
     expect(body.data.employeeSummaries.find((e: any) => e.employeeId === 'u2').netBalance).toBe(2000)
@@ -447,11 +435,37 @@ describe('GET /api/ledger/employee-shift-summary', () => {
     expect((await shifts()).body.data.settlementDate).toBe(TODAY)
   })
 
-  it('marks an employee closed once their shift is settled', async () => {
+  it('marks an employee settled from the settlement record, not a row status', async () => {
     await signInAs('ADMIN')
-    aTransaction({ created_by: 'u1', transaction_date: TODAY, status: 'day_closed' })
+    aTransaction({ created_by: 'u1', transaction_date: TODAY })
+    aShiftSettlement({ employee_id: 'u1', settlement_date: TODAY })
 
-    expect((await shifts({ date: TODAY })).body.data.employeeSummaries[0].isClosed).toBe(true)
+    expect((await shifts({ date: TODAY })).body.data.employeeSummaries[0].isSettled).toBe(true)
+  })
+
+  it('reports whether the date itself is closed, separately from settlement', async () => {
+    await signInAs('ADMIN')
+    aTransaction({ created_by: 'u1', transaction_date: TODAY })
+    aClosure({ closure_date: TODAY })
+
+    const { body } = await shifts({ date: TODAY })
+    expect(body.data.dayClosed).toBe(true)
+    // Settling and closing are different acts; neither implies the other.
+    expect(body.data.employeeSummaries[0].isSettled).toBe(false)
+  })
+
+  it('ignores a reversed settlement', async () => {
+    await signInAs('ADMIN')
+    aTransaction({ created_by: 'u1', transaction_date: TODAY })
+    aShiftSettlement({
+      employee_id: 'u1',
+      settlement_date: TODAY,
+      status: 'reversed',
+      reversed_at: new Date().toISOString(),
+      reversal_reason: 'counted the float twice',
+    })
+
+    expect((await shifts({ date: TODAY })).body.data.employeeSummaries[0].isSettled).toBe(false)
   })
 
   it('falls back to "Unknown" when the user row is missing', async () => {
@@ -467,17 +481,18 @@ describe('GET /api/ledger/employee-shift-summary', () => {
     expect((await shifts({ date: TODAY })).body.data.employeeSummaries).toEqual([])
   })
 
-  /**
-   * Known defect — see BUGS.md #42. The shift summary is what the settlement modal shows
-   * before handing cash over, but it reports only a net figure — with no cash-versus-UPI
-   * split there is no way to know how much physical cash the employee owes.
-   */
-  it.fails('should split each employee’s takings by payment mode', async () => {
+  /** Was BUGS.md #42 — only a net figure, so the cash actually owed was unknowable. */
+  it('should split each employee’s takings by payment mode', async () => {
     await signInAs('ADMIN')
     aTransaction({ created_by: 'u1', transaction_date: TODAY, transaction_type: 'credit', payment_mode: 'cash', amount: 3000 })
     aTransaction({ created_by: 'u1', transaction_date: TODAY, transaction_type: 'credit', payment_mode: 'upi', amount: 2000, reference_number: 'UPI-1' })
+    aTransaction({ created_by: 'u1', transaction_date: TODAY, transaction_type: 'debit', payment_mode: 'cash', amount: 500 })
 
     const summaryRow = (await shifts({ date: TODAY })).body.data.employeeSummaries[0]
-    expect(summaryRow.cashCredits).toBe(3000)
+    expect(summaryRow.creditsCash).toBe(3000)
+    expect(summaryRow.creditsUpi).toBe(2000)
+    expect(summaryRow.debitsCash).toBe(500)
+    // Only cash leaves the drawer.
+    expect(summaryRow.cashExpected).toBe(2500)
   })
 })

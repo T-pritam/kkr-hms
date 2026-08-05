@@ -137,34 +137,25 @@ export function ExpenseEntryModal({ isOpen, onClose, onSuccess, selectedDate }: 
             </select>
           </div>
 
-          {/* Always rendered, enabled only for the catch-all — same shape as the
-              UPI reference field below. */}
-          <div>
-            <Label htmlFor="expense_category_detail">
-              {formData.expense_category === OTHER_LEDGER_CATEGORY
-                ? 'What was it for? *'
-                : 'Description (Other only)'}
-            </Label>
-            <Input
-              id="expense_category_detail"
-              type="text"
-              value={formData.expense_category_detail}
-              onChange={(e) => setFormData({ ...formData, expense_category_detail: e.target.value })}
-              disabled={formData.expense_category !== OTHER_LEDGER_CATEGORY}
-              required={formData.expense_category === OTHER_LEDGER_CATEGORY}
-              maxLength={EXPENSE_DETAIL_MAX}
-              placeholder={
-                formData.expense_category === OTHER_LEDGER_CATEGORY
-                  ? 'e.g. Courier charges'
-                  : 'Only needed when the category is Other'
-              }
-            />
-            {formData.expense_category === OTHER_LEDGER_CATEGORY && (
+          {/* Only appears for the catch-all category — nothing to show otherwise. */}
+          {formData.expense_category === OTHER_LEDGER_CATEGORY && (
+            <div>
+              <Label htmlFor="expense_category_detail">What was it for? *</Label>
+              <Input
+                id="expense_category_detail"
+                type="text"
+                value={formData.expense_category_detail}
+                onChange={(e) => setFormData({ ...formData, expense_category_detail: e.target.value })}
+                required
+                autoFocus
+                maxLength={EXPENSE_DETAIL_MAX}
+                placeholder="e.g. Courier charges"
+              />
               <p className="mt-1 text-xs text-muted text-right">
                 {formData.expense_category_detail.length}/{EXPENSE_DETAIL_MAX}
               </p>
-            )}
-          </div>
+            </div>
+          )}
 
           <div>
             <Label htmlFor="amount">Expense Amount *</Label>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { verifyToken, getAccessToken, getRefreshToken, setAuthCookies, generateAccessToken, generateRefreshToken } from '@/lib/auth/jwt'
 import { normaliseLedgerCategoryDetail, validateLedgerExpenseCategory } from '@/lib/finances/validate'
+import { assertLedgerDateOpen } from '@/lib/ledger/closure'
 
 /**
  * PUT /api/ledger/transactions/[id]
@@ -61,13 +62,13 @@ export async function PUT(
       return NextResponse.json({ error: 'Transaction not found' }, { status: 404 })
     }
 
-    // Check if day is closed
-    if (existing.status === 'day_closed') {
-      return NextResponse.json({ error: 'Cannot update closed transaction' }, { status: 400 })
-    }
+    // Whether the entry can be amended depends on its date, not on its own status.
+    const locked = await assertLedgerDateOpen(supabase, existing.transaction_date, 'update')
+    if (locked) return locked
 
-    // Check ownership (non-admin can only update their own)
-    if (payload.role !== 'admin' && existing.created_by !== payload.userId) {
+    // Check ownership (non-admin can only update their own). Roles are issued
+    // upper case by lib/auth/jwt.ts — comparing against 'admin' matched nobody.
+    if (payload.role !== 'ADMIN' && existing.created_by !== payload.userId) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -224,13 +225,13 @@ export async function DELETE(
       return NextResponse.json({ error: 'Transaction not found' }, { status: 404 })
     }
 
-    // Check if day is closed
-    if (existing.status === 'day_closed') {
-      return NextResponse.json({ error: 'Cannot delete closed transaction' }, { status: 400 })
-    }
+    // Whether the entry can be removed depends on its date, not on its own status.
+    const locked = await assertLedgerDateOpen(supabase, existing.transaction_date, 'delete')
+    if (locked) return locked
 
-    // Check ownership (non-admin can only delete their own)
-    if (payload.role !== 'admin' && existing.created_by !== payload.userId) {
+    // Check ownership (non-admin can only delete their own). Roles are issued
+    // upper case by lib/auth/jwt.ts — comparing against 'admin' matched nobody.
+    if (payload.role !== 'ADMIN' && existing.created_by !== payload.userId) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 

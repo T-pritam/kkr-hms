@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { assertLedgerDateOpen } from '@/lib/ledger/closure'
+import { createLedgerTransactions } from '@/lib/ledger/transactions'
 import {
   verifyToken,
   getAccessToken,
@@ -204,6 +206,13 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createClient()
 
+    const ledgerDate = new Date().toISOString().split('T')[0]
+
+    // Guard before the billings are marked settled, so a refused ledger write
+    // cannot leave commissions flagged as paid with no debit behind them.
+    const locked = await assertLedgerDateOpen(supabase, ledgerDate, 'settle')
+    if (locked) return locked
+
     // Update billing records
     const { data: updated, error: updateError } = await supabase
       .from('patient_billing')
@@ -223,23 +232,33 @@ export async function POST(request: NextRequest) {
 
     if (updateError) throw updateError
 
-    // Create ledger entries for each commission
+    // Create ledger entries for each commission, through the shared write path.
     if (updated && updated.length > 0) {
-      const ledgerEntries = updated.map((billing: any) => ({
-        transaction_date: new Date().toISOString().split('T')[0],
-        transaction_type: 'debit',
-        source: 'referral_commission',
-        amount: billing.referral_commission_amount,
-        payment_mode: payment_method,
-        reference_number: transaction_reference,
-        patient_id: billing.patient_id,
-        description: `Referral commission - ${billing.patient?.name || 'Unknown Patient'}`,
-        notes: settlement_notes,
-        status: 'verified',
-        created_by: payload.userId,
-      }))
+      const result = await createLedgerTransactions(
+        supabase,
+        updated.map((billing: any) => ({
+          transaction_date: ledgerDate,
+          transaction_type: 'debit' as const,
+          source: 'referral_commission' as const,
+          amount: billing.referral_commission_amount,
+          payment_mode: payment_method,
+          reference_number: transaction_reference,
+          patient_id: billing.patient_id,
+          description: `Referral commission - ${billing.patient?.name || 'Unknown Patient'}`,
+          notes: settlement_notes,
+          status: 'verified' as const,
+          created_by: payload.userId,
+        })),
+        { allowedSources: ['referral_commission'] }
+      )
 
-      await supabase.from('daily_ledger_transactions').insert(ledgerEntries)
+      if (!result.ok) {
+        console.error('Referral commission ledger entries rejected:', result.error)
+        return NextResponse.json(
+          { success: false, error: result.error, ...(result.code ? { code: result.code } : {}) },
+          { status: result.status }
+        )
+      }
     }
 
     return NextResponse.json({

@@ -15,7 +15,13 @@ interface EmployeeSummary {
   creditCount: number
   debitCount: number
   transactionCount: number
-  isClosed: boolean
+  creditsCash: number
+  debitsCash: number
+  /** Cash only — UPI and card never touch the drawer. */
+  cashExpected: number
+  /** This operator handed their cash over. Says nothing about the date's closure. */
+  isSettled: boolean
+  settlement: any | null
   transactions: any[]
 }
 
@@ -36,23 +42,31 @@ export function EmployeeShiftDetailsModal({
 }: EmployeeShiftDetailsModalProps) {
   const [loading, setLoading] = useState(false)
   const [notes, setNotes] = useState('')
+  const [cashHandedOver, setCashHandedOver] = useState('')
 
   const handleSettlement = async () => {
     if (!employee) return
 
-    if (!confirm(`Are you sure you want to mark ${employee.employeeName} as paid for ${settlementDate}? This will close all their transactions for this date.`)) {
+    // The old copy said this would "close all their transactions for this date",
+    // which is exactly what it did — and why one operator going home locked the
+    // date for everyone. It records a handover and nothing else now.
+    if (!confirm(
+      `Record the cash handover for ${employee.employeeName} on ${settlementDate}?\n\n` +
+      `This does not close the day or lock anyone else's entries.`
+    )) {
       return
     }
 
     try {
       setLoading(true)
-      const response = await fetch('/api/ledger/close-employee-day', {
+      const response = await fetch('/api/ledger/shift-settlements', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
           employee_id: employee.employeeId,
           settlement_date: settlementDate,
+          cash_handed_over: cashHandedOver === '' ? null : parseFloat(cashHandedOver),
           notes: notes || null
         })
       })
@@ -60,20 +74,23 @@ export function EmployeeShiftDetailsModal({
       const data = await response.json()
 
       if (response.ok && data.success) {
-        alert('Employee marked as paid successfully!')
         onSuccess()
         onClose()
         setNotes('')
+        setCashHandedOver('')
       } else {
-        alert(data.error || 'Failed to settle employee day')
+        alert(data.error || 'Failed to record the shift settlement')
       }
     } catch (error) {
       console.error('Settlement error:', error)
-      alert('Failed to settle employee day')
+      alert('Failed to record the shift settlement')
     } finally {
       setLoading(false)
     }
   }
+
+  const variance =
+    cashHandedOver === '' ? null : parseFloat(cashHandedOver) - (employee?.cashExpected ?? 0)
 
   const formatCurrency = (amount: number) => 
     `₹${amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
@@ -172,12 +189,9 @@ export function EmployeeShiftDetailsModal({
                         <span className={`px-2 py-1 rounded-full text-xs border ${
                           txn.status === 'verified'
                             ? 'bg-success-subtle text-success-text border-success/20'
-                            : txn.status === 'day_closed'
-                            ? 'bg-accent-subtle text-accent border-accent/20'
                             : 'bg-warning-subtle text-warning-text border-warning/20'
                         }`}>
-                          {txn.status === 'day_closed' && <Lock size={10} className="inline mr-1" />}
-                          {txn.status.toUpperCase().replace('_', ' ')}
+                          {txn.status.toUpperCase()}
                         </span>
                       </td>
                     </tr>
@@ -188,11 +202,48 @@ export function EmployeeShiftDetailsModal({
           </div>
 
           {/* Settlement Form */}
-          {!employee.isClosed && (
+          {!employee.isSettled && (
             <div className="bg-warning-subtle border border-warning/20 rounded-lg p-4">
-              <h3 className="text-lg font-semibold text-warning-text mb-3">Settlement</h3>
-              
+              <h3 className="text-lg font-semibold text-warning-text mb-1">Cash handover</h3>
+              <p className="text-sm text-warning-text/90 mb-3">
+                Records what this operator handed over. It does not close the day or lock
+                anyone else&apos;s entries.
+              </p>
+
               <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <Label>Cash expected</Label>
+                    <p className="text-xl font-bold text-foreground mt-2">
+                      {formatCurrency(employee.cashExpected)}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {formatCurrency(employee.creditsCash)} in − {formatCurrency(employee.debitsCash)} out
+                    </p>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="cash_handed_over">Cash handed over</Label>
+                    <input
+                      id="cash_handed_over"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={cashHandedOver}
+                      onChange={(e) => setCashHandedOver(e.target.value)}
+                      placeholder="Counted amount"
+                      className="w-full px-3 py-2 bg-input border border-input-border rounded-md text-foreground focus:outline-none focus:ring-2 focus:ring-ring mt-2"
+                    />
+                    {/* The gap is the finding — there has been nowhere to record it. */}
+                    {variance !== null && variance !== 0 && (
+                      <p className={`text-xs mt-1 font-medium ${variance < 0 ? 'text-destructive' : 'text-warning-text'}`}>
+                        {variance < 0 ? 'Short by ' : 'Over by '}
+                        {formatCurrency(Math.abs(variance))}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
                 <div>
                   <Label htmlFor="notes">Settlement Notes (Optional)</Label>
                   <textarea
@@ -205,22 +256,25 @@ export function EmployeeShiftDetailsModal({
                   />
                 </div>
 
-                <Button
-                  onClick={handleSettlement}
-                  disabled={loading}
-                  className="w-full bg-destructive hover:bg-destructive-hover"
-                >
-                  {loading ? 'Processing...' : 'Mark as Paid'}
+                <Button onClick={handleSettlement} disabled={loading} className="w-full">
+                  {loading ? 'Recording…' : 'Record handover'}
                 </Button>
               </div>
             </div>
           )}
 
-          {employee.isClosed && (
+          {employee.isSettled && (
             <div className="bg-accent-subtle border border-accent/20 rounded-lg p-4 text-center">
               <Lock className="mx-auto h-12 w-12 text-accent mb-2" />
-              <p className="text-accent font-semibold">This employee day has been closed</p>
-              <p className="text-muted text-sm mt-1">No further changes can be made</p>
+              <p className="text-accent font-semibold">This shift has been settled</p>
+              <p className="text-muted text-sm mt-1">
+                {employee.settlement?.cash_handed_over != null
+                  ? `${formatCurrency(employee.settlement.cash_handed_over)} handed over against ${formatCurrency(employee.settlement.cash_expected)} expected`
+                  : `${formatCurrency(employee.settlement?.cash_expected ?? employee.cashExpected)} expected; the counted amount was not recorded`}
+              </p>
+              {employee.settlement?.notes && (
+                <p className="text-muted text-sm mt-1 italic">{employee.settlement.notes}</p>
+              )}
             </div>
           )}
         </div>

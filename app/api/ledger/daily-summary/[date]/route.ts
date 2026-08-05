@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { verifyToken, getAccessToken, getRefreshToken, setAuthCookies, generateAccessToken, generateRefreshToken } from '@/lib/auth/jwt'
+import { getActiveClosure } from '@/lib/ledger/closure'
 
 /**
  * GET /api/ledger/daily-summary/[date]
@@ -47,8 +48,14 @@ export async function GET(
 
     const supabase = await createClient()
 
-    // Fetch all transactions for the date
-    const { data: transactions, error } = await supabase
+    // ADMIN and DOCTOR reconcile the whole day, so they see every operator's rows;
+    // ?user_id= is an optional filter for them. Everyone else is scoped to their own
+    // rows server-side and the parameter is ignored rather than trusted.
+    const seesWholeDay = payload.role === 'ADMIN' || payload.role === 'DOCTOR'
+    const userIdParam = request.nextUrl.searchParams.get('user_id')
+    const scopedTo = seesWholeDay ? userIdParam : payload.userId
+
+    let query = supabase
       .from('daily_ledger_transactions')
       .select(`
         *,
@@ -57,8 +64,13 @@ export async function GET(
         patient:patients(id, name)
       `)
       .eq('transaction_date', date)
-      .eq('created_by', payload.userId) // Ensure users only see their transactions
       .order('created_at', { ascending: false })
+
+    if (scopedTo) {
+      query = query.eq('created_by', scopedTo)
+    }
+
+    const { data: transactions, error } = await query
 
     if (error) {
       console.error('Get daily summary error:', error)
@@ -75,7 +87,18 @@ export async function GET(
     let totalCreditsCheque = 0
     let creditCount = 0
     let debitCount = 0
-    let isDayClosed = false
+    let unverifiedCount = 0
+
+    // Debits were only ever reported as one lump. Without the split there is no
+    // way to tell how much physical cash left the drawer, which is exactly what a
+    // closing count has to reconcile against.
+    const debitModes: Record<string, number> = {
+      cash: 0,
+      upi: 0,
+      card: 0,
+      bank_transfer: 0,
+      cheque: 0
+    }
 
     transactions?.forEach((txn: any) => {
       if (txn.transaction_type === 'credit') {
@@ -103,17 +126,37 @@ export async function GET(
       } else if (txn.transaction_type === 'debit') {
         totalDebits += parseFloat(txn.amount)
         debitCount++
+
+        if (txn.payment_mode in debitModes) {
+          debitModes[txn.payment_mode] += parseFloat(txn.amount)
+        }
       }
 
-      // Check if any transaction is closed
-      if (txn.status === 'day_closed') {
-        isDayClosed = true
+      if (txn.status !== 'verified') {
+        unverifiedCount++
       }
     })
 
     const netBalance = totalCredits - totalDebits
     const totalCreditsOther = totalCreditsBankTransfer + totalCreditsCheque
     const transactionCount = transactions?.length || 0
+
+    // Whether the day is closed is a property of the date, read from the one
+    // table that records it. It used to be inferred from whether any row on the
+    // date carried status = 'day_closed' — which one operator settling their
+    // shift was enough to trigger, for everyone.
+    const closure = await getActiveClosure(supabase, date)
+
+    // What the next close would open with, so the dialog can show the balance
+    // chain before the admin commits to it.
+    const { data: previousClosure } = await supabase
+      .from('daily_ledger_closures')
+      .select('closing_balance, closing_cash_balance')
+      .eq('status', 'active')
+      .lt('closure_date', date)
+      .order('closure_date', { ascending: false })
+      .limit(1)
+      .maybeSingle()
 
     const summary = {
       date,
@@ -134,8 +177,13 @@ export async function GET(
         bank_transfer: totalCreditsBankTransfer,
         cheque: totalCreditsCheque
       },
+      debit_mode_summary: debitModes,
       transactions,
-      is_day_closed: isDayClosed
+      is_day_closed: closure !== null,
+      closure,
+      unverified_count: unverifiedCount,
+      opening_balance_preview: Number(previousClosure?.closing_balance ?? 0),
+      opening_cash_balance_preview: Number(previousClosure?.closing_cash_balance ?? 0)
     }
 
     return NextResponse.json({ success: true, data: summary })

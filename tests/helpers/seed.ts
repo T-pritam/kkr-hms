@@ -298,6 +298,56 @@ export function aClosure(overrides: Row = {}): Row {
     closing_balance: 0,
     notes: null,
     closed_by: null,
+    // Seeded active by default — this is the row that says the date is closed.
+    status: 'active',
+    version: 1,
+    supersedes_id: null,
+    reopened_at: null,
+    reopened_by: null,
+    reopen_reason: null,
+    unverified_count: 0,
+    transaction_count: 0,
+    credit_count: 0,
+    debit_count: 0,
+    total_credits_cash: 0,
+    total_credits_upi: 0,
+    total_credits_card: 0,
+    total_credits_bank_transfer: 0,
+    total_credits_cheque: 0,
+    total_credits_other: 0,
+    total_debits_cash: 0,
+    closing_cash_balance: 0,
+    ...overrides,
+  })[0]
+}
+
+/**
+ * A settled shift. Deliberately separate from aClosure: settling one operator's
+ * shift records a cash handover and must never lock the date for anyone else.
+ */
+export function aShiftSettlement(overrides: Row = {}): Row {
+  return db.seed('daily_ledger_shift_settlements', {
+    id: overrides.id ?? nextId('shift'),
+    settlement_date: TODAY,
+    employee_id: null,
+    total_credits: 0,
+    total_debits: 0,
+    net_balance: 0,
+    credits_cash: 0,
+    credits_upi: 0,
+    credits_card: 0,
+    credits_bank_transfer: 0,
+    credits_cheque: 0,
+    debits_cash: 0,
+    cash_expected: 0,
+    cash_handed_over: null,
+    transaction_count: 0,
+    notes: null,
+    settled_by: null,
+    status: 'active',
+    reversed_at: null,
+    reversed_by: null,
+    reversal_reason: null,
     ...overrides,
   })[0]
 }

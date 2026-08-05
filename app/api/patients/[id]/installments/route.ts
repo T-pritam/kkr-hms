@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { verifyAuth } from '@/lib/auth/verify';
+import { assertLedgerDateOpen } from '@/lib/ledger/closure';
+import { createLedgerTransaction } from '@/lib/ledger/transactions';
 
 export async function GET(
   request: NextRequest,
@@ -72,6 +74,16 @@ export async function POST(
       ? existingInstallments[0].installment_number + 1
       : 1;
 
+    const ledgerDate = body.payment_date || new Date().toISOString().split('T')[0];
+
+    // Guard before anything is written. The ledger entry is created after the
+    // installment, so refusing it later would leave the payment recorded against
+    // the bill with no matching credit in a day that has already been reconciled.
+    if (body.create_ledger_entry) {
+      const locked = await assertLedgerDateOpen(supabase, ledgerDate, 'create');
+      if (locked) return locked;
+    }
+
     const installmentData = {
       patient_billing_id: body.patient_billing_id,
       installment_number: nextInstallmentNumber,
@@ -104,23 +116,30 @@ export async function POST(
       .update({ patient_paid_amount: totalPaid })
       .eq('id', body.patient_billing_id);
 
-    // Optionally create ledger entry
+    // Optionally create ledger entry. Routed through lib/ledger so it is subject
+    // to the same validation and the same closed-day rule as every other entry —
+    // this path used to insert straight into the table and skip both.
     if (body.create_ledger_entry) {
-      await supabase
-        .from('daily_ledger_transactions')
-        .insert({
-          transaction_date: body.payment_date || new Date().toISOString().split('T')[0],
-          transaction_type: 'credit',
-          source: 'patient',
-          amount: body.amount,
-          payment_mode: body.payment_method || 'cash',
-          reference_number: body.transaction_reference,
-          patient_id: patientId,
-          description: `Patient installment payment #${nextInstallmentNumber}`,
-          notes: body.remarks,
-          status: 'pending',
-          created_by: authResult.user.id,
-        });
+      const result = await createLedgerTransaction(supabase, {
+        transaction_date: ledgerDate,
+        transaction_type: 'credit',
+        source: 'patient',
+        amount: body.amount,
+        payment_mode: body.payment_method || 'cash',
+        reference_number: body.transaction_reference,
+        patient_id: patientId,
+        description: `Patient installment payment #${nextInstallmentNumber}`,
+        notes: body.remarks,
+        created_by: authResult.user.id,
+      });
+
+      if (!result.ok) {
+        console.error('Installment ledger entry rejected:', result.error);
+        return NextResponse.json(
+          { error: result.error, ...(result.code ? { code: result.code } : {}) },
+          { status: result.status }
+        );
+      }
     }
 
     return NextResponse.json(data);

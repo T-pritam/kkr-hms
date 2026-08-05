@@ -29,6 +29,7 @@ import {
 import { SettleDoctorFeesModal } from '@/components/finances/settle-doctor-fees-modal'
 import { SettleReferralCommissionModal } from '@/components/finances/settle-referral-commission-modal'
 import { GeneralExpenseModal } from '@/components/finances/general-expense-modal'
+import { DayCloseWorklist } from '@/components/finances/day-close-worklist'
 import {
   generateSalaryPDF,
   generateExpensesPDF,
@@ -81,9 +82,11 @@ export default function FinancesPage() {
   const [selectedMonth, setSelectedMonth] = useState<string>(
     new Date().toISOString().slice(0, 7)
   )
-  const [activeTab, setActiveTab] = useState<'overview' | 'settlements' | 'transactions' | 'expenses'>(
+  const [activeTab, setActiveTab] = useState<'overview' | 'settlements' | 'transactions' | 'expenses' | 'dayclose'>(
     'overview'
   )
+  // Surfaced on the tab label so the backlog is visible without opening the panel.
+  const [openDayCount, setOpenDayCount] = useState(0)
   const [doctorFeesModalOpen, setDoctorFeesModalOpen] = useState(false)
   const [referralModalOpen, setReferralModalOpen] = useState(false)
   const [showAddForm, setShowAddForm] = useState(false)
@@ -95,10 +98,20 @@ export default function FinancesPage() {
   const [transactionsSubTab, setTransactionsSubTab] = useState<'all' | 'credit' | 'debit'>('all')
   const [transactionUserFilter, setTransactionUserFilter] = useState('')
   const [transactionSourceFilter, setTransactionSourceFilter] = useState('')
+  const [transactionStatusFilter, setTransactionStatusFilter] = useState('')
+  const [transactionStartDate, setTransactionStartDate] = useState('')
+  const [transactionEndDate, setTransactionEndDate] = useState('')
   const [transactions, setTransactions] = useState<any[]>([])
   const [transactionsLoading, setTransactionsLoading] = useState(false)
   const [users, setUsers] = useState<{ id: string; username: string }[]>([])
   const usersFetchedRef = useRef(false)
+
+  // Deep link from the unclosed-day banner on the Daily Ledger screen. Read from
+  // location rather than useSearchParams so the page needs no Suspense boundary.
+  useEffect(() => {
+    const tab = new URLSearchParams(window.location.search).get('tab')
+    if (tab === 'dayclose') setActiveTab('dayclose')
+  }, [])
 
   useEffect(() => {
     fetchSummary()
@@ -112,7 +125,19 @@ export default function FinancesPage() {
         usersFetchedRef.current = true
       }
     }
-  }, [selectedMonth, activeTab])
+    // Every transaction filter is listed here. A second effect used to watch three
+    // of them separately, so a filter change fetched twice; the new status and date
+    // filters would have needed a third. One list, one fetch.
+  }, [
+    selectedMonth,
+    activeTab,
+    transactionsSubTab,
+    transactionUserFilter,
+    transactionSourceFilter,
+    transactionStatusFilter,
+    transactionStartDate,
+    transactionEndDate,
+  ])
 
   useRealtimeRefetch(
     ['expenses', 'doctor_visit_settlements', 'referrals', 'salary_payments', 'patient_billing', 'patient_charges'],
@@ -122,12 +147,6 @@ export default function FinancesPage() {
       if (activeTab === 'transactions') fetchTransactions()
     }
   )
-
-  useEffect(() => {
-    if (activeTab === 'transactions') {
-      fetchTransactions()
-    }
-  }, [transactionsSubTab, transactionUserFilter, transactionSourceFilter])
 
   const fetchSummary = async () => {
     try {
@@ -165,9 +184,12 @@ export default function FinancesPage() {
     try {
       setTransactionsLoading(true)
       const [year, month] = selectedMonth.split('-').map(Number)
-      const startDate = `${selectedMonth}-01`
       const lastDay = new Date(year, month, 0).getDate()
-      const endDate = `${selectedMonth}-${String(lastDay).padStart(2, '0')}`
+
+      // The selected month is the default window. An explicit date range overrides it,
+      // so an admin chasing one unclosed day is not forced to think in whole months.
+      const startDate = transactionStartDate || `${selectedMonth}-01`
+      const endDate = transactionEndDate || `${selectedMonth}-${String(lastDay).padStart(2, '0')}`
 
       const params = new URLSearchParams({
         start_date: startDate,
@@ -176,6 +198,7 @@ export default function FinancesPage() {
       if (transactionsSubTab !== 'all') params.set('transaction_type', transactionsSubTab)
       if (transactionUserFilter) params.set('created_by', transactionUserFilter)
       if (transactionSourceFilter) params.set('source', transactionSourceFilter)
+      if (transactionStatusFilter) params.set('status', transactionStatusFilter)
 
       const response = await fetch(`/api/ledger/transactions?${params.toString()}`, {
         credentials: 'include',
@@ -352,6 +375,20 @@ export default function FinancesPage() {
               }`}
           >
             Expenses
+          </button>
+          <button
+            onClick={() => setActiveTab('dayclose')}
+            className={`px-4 py-3 min-h-[44px] font-medium whitespace-nowrap transition-colors flex items-center gap-2 ${activeTab === 'dayclose'
+                ? 'text-primary border-b-2 border-primary'
+                : 'text-muted hover:text-foreground'
+              }`}
+          >
+            Day Close
+            {openDayCount > 0 && (
+              <span className="px-1.5 py-0.5 text-xs rounded-full bg-warning-subtle text-warning-text border border-warning/30">
+                {openDayCount}
+              </span>
+            )}
           </button>
         </div>
 
@@ -775,12 +812,55 @@ export default function FinancesPage() {
                   ))}
                 </div>
 
+                {/* Status filter — the fast way to find entries still awaiting review */}
+                <select
+                  value={transactionStatusFilter}
+                  onChange={(e) => setTransactionStatusFilter(e.target.value)}
+                  className="px-3 py-1.5 text-sm bg-input border border-input-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="">All Statuses</option>
+                  <option value="pending">Pending</option>
+                  <option value="verified">Verified</option>
+                </select>
+
+                {/* Explicit date range — overrides the month picker when set */}
+                <div className="flex items-center gap-1">
+                  <input
+                    type="date"
+                    value={transactionStartDate}
+                    onChange={(e) => setTransactionStartDate(e.target.value)}
+                    className="px-2 py-1.5 text-sm bg-input border border-input-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                  <span className="text-muted text-sm">→</span>
+                  <input
+                    type="date"
+                    value={transactionEndDate}
+                    onChange={(e) => setTransactionEndDate(e.target.value)}
+                    className="px-2 py-1.5 text-sm bg-input border border-input-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                </div>
+
                 {/* Dismissible source filter chip */}
                 {transactionSourceFilter && (
                   <span className="flex items-center gap-1 px-3 py-1 text-xs rounded-full bg-warning-subtle text-warning-text border border-warning/30">
                     Source: {transactionSourceFilter}
                     <button
                       onClick={() => setTransactionSourceFilter('')}
+                      className="ml-1 hover:opacity-70"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                )}
+
+                {(transactionStartDate || transactionEndDate) && (
+                  <span className="flex items-center gap-1 px-3 py-1 text-xs rounded-full bg-info-subtle text-info border border-info/30">
+                    Custom range
+                    <button
+                      onClick={() => {
+                        setTransactionStartDate('')
+                        setTransactionEndDate('')
+                      }}
                       className="ml-1 hover:opacity-70"
                     >
                       <X className="h-3 w-3" />
@@ -860,17 +940,27 @@ export default function FinancesPage() {
                             {formatCurrency(txn.amount)}
                           </td>
                           <td className="py-3 px-2 text-center hidden md:table-cell">
-                            <span
-                              className={`px-2 py-1 rounded text-xs ${
-                                txn.status === 'verified'
-                                  ? 'bg-info-subtle text-info'
-                                  : txn.status === 'day_closed'
-                                    ? 'bg-surface-inset text-muted'
+                            <div className="flex items-center justify-center gap-1">
+                              <span
+                                className={`px-2 py-1 rounded text-xs ${
+                                  txn.status === 'verified'
+                                    ? 'bg-info-subtle text-info'
                                     : 'bg-warning-subtle text-warning-text'
-                              }`}
-                            >
-                              {txn.status}
-                            </span>
+                                }`}
+                              >
+                                {txn.status}
+                              </span>
+                              {/* Separate chip, because the day being closed is a
+                                  fact about the date, not about this entry. */}
+                              {txn.day_closed && (
+                                <span
+                                  className="px-1.5 py-1 rounded text-xs bg-surface-inset text-muted"
+                                  title="This day has been closed"
+                                >
+                                  🔒
+                                </span>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -887,6 +977,8 @@ export default function FinancesPage() {
         )}
 
         {/* Expenses Tab */}
+        {activeTab === 'dayclose' && <DayCloseWorklist onCountChange={setOpenDayCount} />}
+
         {activeTab === 'expenses' && summary && (
           <div className="space-y-6">
             {/* Summary Cards */}

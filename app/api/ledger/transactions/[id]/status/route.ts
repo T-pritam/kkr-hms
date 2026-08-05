@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { verifyToken, getAccessToken, getRefreshToken, setAuthCookies, generateAccessToken, generateRefreshToken } from '@/lib/auth/jwt'
+import { assertLedgerDateOpen } from '@/lib/ledger/closure'
 
 /**
  * PUT /api/ledger/transactions/[id]/status
@@ -70,10 +71,10 @@ export async function PUT(
       return NextResponse.json({ error: 'Transaction not found' }, { status: 404 })
     }
 
-    // Cannot change status of closed day
-    if (existing.status === 'day_closed') {
-      return NextResponse.json({ error: 'Cannot update status of closed transaction' }, { status: 400 })
-    }
+    // Verification is part of reconciling the day, so it stops when the day is
+    // closed — a property of the date, not of the row.
+    const locked = await assertLedgerDateOpen(supabase, existing.transaction_date, 'verify')
+    if (locked) return locked
 
     // Update status
     const updates: any = { status }

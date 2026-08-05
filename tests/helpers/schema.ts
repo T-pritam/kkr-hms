@@ -24,6 +24,21 @@ export const SCHEMA: Record<string, string[]> = {
     'id', 'closure_date', 'total_credits_cash', 'total_credits_upi', 'total_credits_other',
     'total_credits', 'total_debits', 'net_balance', 'transaction_count', 'credit_count',
     'debit_count', 'closed_at', 'closed_by', 'notes', 'opening_balance', 'closing_balance',
+    // 20260807000001 — one active closure per date, reopenable, with the per-mode
+    // breakdown the old close routine silently dropped `card` from.
+    'status', 'version', 'supersedes_id', 'reopened_at', 'reopened_by', 'reopen_reason',
+    'unverified_count', 'total_credits_card', 'total_credits_bank_transfer',
+    'total_credits_cheque', 'total_debits_cash', 'closing_cash_balance',
+  ],
+
+  // 20260807000002 — a shift settlement is a cash handover, not a date lock.
+  daily_ledger_shift_settlements: [
+    'id', 'settlement_date', 'employee_id',
+    'total_credits', 'total_debits', 'net_balance',
+    'credits_cash', 'credits_upi', 'credits_card', 'credits_bank_transfer', 'credits_cheque',
+    'debits_cash', 'cash_expected', 'cash_handed_over', 'transaction_count',
+    'notes', 'settled_at', 'settled_by',
+    'status', 'reversed_at', 'reversed_by', 'reversal_reason',
   ],
 
   daily_ledger_transactions: [

@@ -23,6 +23,14 @@
  *     list in ./schema.ts. `doctor_visit_settlements.total_amount` is a plain nullable
  *     column — it is neither generated nor maintained by a trigger in the real database,
  *     which the tests rely on to expose stale-total bugs.
+ *
+ * Known fidelity limit — `RPCS`:
+ *   The database functions below are re-implemented in TypeScript, not executed. Tests
+ *   against them verify the *contract* the routes depend on — the shape of the result and
+ *   the error code each refusal raises — never the SQL itself. Two things they therefore
+ *   cannot catch: a divergence between this implementation and the migration, and the
+ *   concurrency guarantees the real functions get from `pg_advisory_xact_lock` and the
+ *   partial unique index. Verify those against a real project after changing a function.
  */
 
 import { randomUUID } from 'node:crypto'
@@ -818,6 +826,69 @@ function bumpCounter(db: FakeDb, table: string, year: number): number {
 const peekCounter = (db: FakeDb, table: string, year: number): number =>
   ((db.find(table, (r) => r.year === year)?.last_no as number) ?? 0) + 1
 
+/**
+ * A function raising a custom SQLSTATE, surfaced the way PostgREST would.
+ *
+ * The ledger close functions signal every refusal through an error code rather
+ * than message text, so the routes can map them without string matching. Raising
+ * the same codes here is what makes that mapping genuinely tested.
+ */
+class RpcError extends Error {
+  constructor(readonly code: string, message: string) {
+    super(message)
+  }
+}
+
+const num = (value: unknown): number => Number(value ?? 0)
+
+/** Rows of a table, deterministically ordered by a numeric or string key. */
+function sortedBy<T extends Row>(rows: T[], key: string, direction: 'asc' | 'desc' = 'asc'): T[] {
+  return [...rows].sort((a, b) => {
+    const l = a[key] as any
+    const r = b[key] as any
+    if (l === r) return 0
+    return (l < r ? -1 : 1) * (direction === 'asc' ? 1 : -1)
+  })
+}
+
+const activeClosureFor = (db: FakeDb, date: string): Row | undefined =>
+  db.find('daily_ledger_closures', (r) => r.closure_date === date && r.status === 'active')
+
+const todayISO = () => new Date().toISOString().slice(0, 10)
+
+/**
+ * The totals close_ledger_day and the shift settlement both need.
+ *
+ * Kept in one place so the closure and the per-operator settlement cannot drift
+ * into disagreeing about what the same rows add up to.
+ */
+function totalsFor(rows: Row[]) {
+  const sum = (predicate: (r: Row) => boolean) =>
+    rows.filter(predicate).reduce((acc, r) => acc + num(r.amount), 0)
+
+  const credit = (mode: string) =>
+    sum((r) => r.transaction_type === 'credit' && r.payment_mode === mode)
+
+  const totalCredits = sum((r) => r.transaction_type === 'credit')
+  const totalDebits = sum((r) => r.transaction_type === 'debit')
+
+  return {
+    total_credits: totalCredits,
+    total_debits: totalDebits,
+    net_balance: totalCredits - totalDebits,
+    cash: credit('cash'),
+    upi: credit('upi'),
+    card: credit('card'),
+    bank_transfer: credit('bank_transfer'),
+    cheque: credit('cheque'),
+    debits_cash: sum((r) => r.transaction_type === 'debit' && r.payment_mode === 'cash'),
+    transaction_count: rows.length,
+    credit_count: rows.filter((r) => r.transaction_type === 'credit').length,
+    debit_count: rows.filter((r) => r.transaction_type === 'debit').length,
+    unverified_count: rows.filter((r) => r.status !== 'verified').length,
+  }
+}
+
 /** Database functions the routes call through `supabase.rpc(...)`. */
 const RPCS: Record<string, (db: FakeDb, args: Record<string, unknown>) => unknown> = {
   // LAB/<year>/<5 digits>.
@@ -861,6 +932,155 @@ const RPCS: Record<string, (db: FakeDb, args: Record<string, unknown>) => unknow
     const next = peekCounter(db, 'employee_counters', year)
     return `EMP/${yy}/${String(next).padStart(3, '0')}`
   },
+
+  // Closes a date by writing one closure row. Deliberately never touches
+  // daily_ledger_transactions — the lock belongs to the date, not to each entry.
+  close_ledger_day: (db, args) => {
+    const date = args.p_closure_date as string
+    const closedBy = (args.p_closed_by as string) ?? null
+    const notes = ((args.p_notes as string) ?? '').trim() || null
+
+    if (date > todayISO()) {
+      throw new RpcError('LC003', 'closure date is in the future')
+    }
+
+    if (activeClosureFor(db, date)) {
+      throw new RpcError('LC001', 'this date has already been closed')
+    }
+
+    const rows = db.rows('daily_ledger_transactions').filter((r) => r.transaction_date === date)
+    const prior = sortedBy(
+      db.rows('daily_ledger_closures').filter((r) => r.closure_date === date),
+      'version',
+      'desc'
+    )[0]
+
+    // An empty day has nothing to reconcile — unless we are re-closing after a
+    // reopen that removed the last entry, where refusing would strand the date.
+    if (rows.length === 0 && !prior) {
+      throw new RpcError('LC002', 'no transactions found for this date')
+    }
+
+    const previous = sortedBy(
+      db.rows('daily_ledger_closures').filter((r) => r.status === 'active' && (r.closure_date as string) < date),
+      'closure_date',
+      'desc'
+    )[0]
+
+    // Derived, never supplied by the caller: each day starts where the last finished.
+    const opening = num(previous?.closing_balance)
+    const openingCash = num(previous?.closing_cash_balance)
+    const t = totalsFor(rows)
+
+    return db.seed('daily_ledger_closures', {
+      closure_date: date,
+      status: 'active',
+      version: num(prior?.version) + 1,
+      supersedes_id: prior?.id ?? null,
+      total_credits: t.total_credits,
+      total_debits: t.total_debits,
+      net_balance: t.net_balance,
+      total_credits_cash: t.cash,
+      total_credits_upi: t.upi,
+      total_credits_card: t.card,
+      total_credits_bank_transfer: t.bank_transfer,
+      total_credits_cheque: t.cheque,
+      total_credits_other: t.bank_transfer + t.cheque,
+      total_debits_cash: t.debits_cash,
+      transaction_count: t.transaction_count,
+      credit_count: t.credit_count,
+      debit_count: t.debit_count,
+      unverified_count: t.unverified_count,
+      opening_balance: opening,
+      closing_balance: opening + t.net_balance,
+      closing_cash_balance: openingCash + t.cash - t.debits_cash,
+      closed_at: new Date().toISOString(),
+      closed_by: closedBy,
+      reopened_at: null,
+      reopened_by: null,
+      reopen_reason: null,
+      notes,
+    })[0]
+  },
+
+  // Supersedes the active closure. Never deletes: the superseded row keeps the
+  // totals that were reported at the time, plus who reopened it and why.
+  reopen_ledger_day: (db, args) => {
+    const date = args.p_closure_date as string
+    const reason = ((args.p_reason as string) ?? '').trim()
+
+    if (reason.length < 10) {
+      throw new RpcError('LC005', 'a reason of at least 10 characters is required to reopen a closed day')
+    }
+
+    const patched = db.patchRow(
+      'daily_ledger_closures',
+      (r) => r.closure_date === date && r.status === 'active',
+      {
+        status: 'superseded',
+        reopened_at: new Date().toISOString(),
+        reopened_by: (args.p_reopened_by as string) ?? null,
+        reopen_reason: reason,
+      }
+    )
+
+    if (!patched) {
+      throw new RpcError('LC004', 'this date is not currently closed')
+    }
+
+    return patched
+  },
+
+  // Every date carrying activity with no active closure, oldest first.
+  ledger_open_days: (db, args) => {
+    const limit = num(args.p_limit ?? 50)
+    const includeToday = Boolean(args.p_include_today)
+    const today = todayISO()
+
+    const byDate = new Map<string, Row[]>()
+    for (const row of db.rows('daily_ledger_transactions')) {
+      const date = row.transaction_date as string
+      if (activeClosureFor(db, date)) continue
+      if (!includeToday && date >= today) continue
+      byDate.set(date, [...(byDate.get(date) ?? []), row])
+    }
+
+    return [...byDate.entries()]
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .slice(0, limit)
+      .map(([date, rows]) => {
+        const t = totalsFor(rows)
+        // A date that was closed and reopened must not look like one nobody has
+        // ever closed — the worklist reads very differently for the two.
+        const superseded = sortedBy(
+          db.rows('daily_ledger_closures').filter(
+            (r) => r.closure_date === date && r.status === 'superseded'
+          ),
+          'version',
+          'desc'
+        )[0]
+
+        return {
+          date,
+          transaction_count: t.transaction_count,
+          credit_count: t.credit_count,
+          debit_count: t.debit_count,
+          total_credits: t.total_credits,
+          total_debits: t.total_debits,
+          net_balance: t.net_balance,
+          cash_credits: t.cash,
+          unverified_count: t.unverified_count,
+          reopened: Boolean(superseded),
+          last_reopened_at: superseded?.reopened_at ?? null,
+          last_reopen_reason: superseded?.reopen_reason ?? null,
+        }
+      })
+  },
+
+  ledger_closure_continuity: (db, args) =>
+    db.rows('daily_ledger_closures').filter(
+      (r) => r.status === 'active' && (r.closure_date as string) > (args.p_from as string)
+    ).length,
 }
 
 export function createFakeClient(db: FakeDb): FakeSupabaseClient {
@@ -879,7 +1099,29 @@ export function createFakeClient(db: FakeDb): FakeSupabaseClient {
           } as PostgrestError,
         }
       }
-      return { data: impl(db, args), error: null }
+      // `db.failNext('close_ledger_day')` drives the routes' RPC error branches.
+      // Keyed by function name, since an RPC touches no single table.
+      const injected = db.takeFailure(fn)
+      if (injected) {
+        return { data: null, error: injected }
+      }
+
+      try {
+        return { data: impl(db, args), error: null }
+      } catch (error) {
+        if (error instanceof RpcError) {
+          return {
+            data: null,
+            error: {
+              code: error.code,
+              message: error.message,
+              details: null as unknown as string,
+              hint: undefined,
+            } as PostgrestError,
+          }
+        }
+        throw error
+      }
     },
     auth: {
       getUser: async () => ({ data: { user: db.getAuthUser() }, error: null }),

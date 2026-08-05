@@ -32,6 +32,7 @@ import {
   aDoctor,
   aPatient,
   aReferral,
+  aClosure,
 } from '../../helpers/seed'
 import { THIS_MONTH, TODAY } from '../../setup'
 import {
@@ -554,6 +555,25 @@ describe('POST /api/finances/doctor-settlements — pay out', () => {
   })
 
   /**
+   * The ledger write used to happen after the settlements were marked paid, and with no
+   * closed-day check at all. Guard ordering is the whole point of this test: a refusal
+   * must leave nothing behind, or doctors end up flagged as settled with no debit against
+   * them.
+   */
+  it('refuses the whole payout when today is closed, leaving the fees unsettled', async () => {
+    await signInAs('ADMIN')
+    aSettlement({ id: 's1', settled: false, total_amount: 4500 })
+    aClosure({ closure_date: TODAY })
+
+    const { status, body } = await paySettlements({ settlement_ids: ['s1'], payment_method: 'cash' })
+
+    expect(status).toBe(409)
+    expect(body.code).toBe('LEDGER_DAY_CLOSED')
+    expect(db.find('doctor_visit_settlements', (r) => r.id === 's1')!.settled).toBe(false)
+    expect(db.count('daily_ledger_transactions')).toBe(0)
+  })
+
+  /**
    * Known defect — see BUGS.md #52. The ledger description is built from a row returned by
    * an update that carries no joins, so `settlement.doctor?.name` is always undefined and
    * every payout is recorded against "Unknown Doctor".
@@ -624,6 +644,20 @@ describe('/api/finances/referral-commissions', () => {
       patient_id: 'p1',
       status: 'verified',
     })
+  })
+
+  /** Same guard-ordering concern as the doctor payout: a refusal must leave nothing behind. */
+  it('refuses the whole payout when today is closed, leaving the commissions unsettled', async () => {
+    await signInAs('ADMIN')
+    aBilling({ id: 'b1', referral_commission_amount: 3000, referral_settled: false })
+    aClosure({ closure_date: TODAY })
+
+    const { status, body } = await payCommission({ billing_ids: ['b1'], payment_method: 'cash' })
+
+    expect(status).toBe(409)
+    expect(body.code).toBe('LEDGER_DAY_CLOSED')
+    expect(db.find('patient_billing', (r) => r.id === 'b1')!.referral_settled).toBe(false)
+    expect(db.count('daily_ledger_transactions')).toBe(0)
   })
 
   it('skips commissions that were already settled', async () => {

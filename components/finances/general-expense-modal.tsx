@@ -293,41 +293,27 @@ export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense
               </div>
             </div>
 
-            {/*
-              Always rendered, relabelled and enabled only for the catch-all type —
-              the same shape as the UPI reference field in the ledger modals, so a
-              conditionally-required input behaves the same way everywhere.
-            */}
-            <div>
-              <label className="flex items-center text-sm font-medium text-primary mb-2">
-                {formData.expense_type === MISCELLANEOUS_TYPE ? (
-                  <>
-                    <span className="mr-1">*</span>What was it for?
-                  </>
-                ) : (
-                  <span className="text-muted-foreground">Description (Miscellaneous only)</span>
-                )}
-              </label>
-              <input
-                type="text"
-                value={formData.expense_type_detail}
-                onChange={(e) => setFormData({ ...formData, expense_type_detail: e.target.value })}
-                disabled={formData.expense_type !== MISCELLANEOUS_TYPE}
-                required={formData.expense_type === MISCELLANEOUS_TYPE}
-                maxLength={EXPENSE_DETAIL_MAX}
-                placeholder={
-                  formData.expense_type === MISCELLANEOUS_TYPE
-                    ? 'e.g. Broken window pane'
-                    : 'Only needed for a Miscellaneous expense'
-                }
-                className="w-full px-4 py-2.5 bg-input border border-primary rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:border-ring disabled:opacity-50 disabled:cursor-not-allowed"
-              />
-              {formData.expense_type === MISCELLANEOUS_TYPE && (
+            {/* Only appears for the catch-all type — nothing to show otherwise. */}
+            {formData.expense_type === MISCELLANEOUS_TYPE && (
+              <div>
+                <label className="flex items-center text-sm font-medium text-primary mb-2">
+                  <span className="mr-1">*</span>What was it for?
+                </label>
+                <input
+                  type="text"
+                  value={formData.expense_type_detail}
+                  onChange={(e) => setFormData({ ...formData, expense_type_detail: e.target.value })}
+                  required
+                  autoFocus
+                  maxLength={EXPENSE_DETAIL_MAX}
+                  placeholder="e.g. Broken window pane"
+                  className="w-full px-4 py-2.5 bg-input border border-primary rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:border-ring"
+                />
                 <p className="mt-1 text-xs text-muted-foreground text-right">
                   {formData.expense_type_detail.length}/{EXPENSE_DETAIL_MAX}
                 </p>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* Amount */}
             <div>

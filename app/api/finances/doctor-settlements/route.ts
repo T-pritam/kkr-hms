@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { assertLedgerDateOpen } from '@/lib/ledger/closure'
+import { createLedgerTransactions } from '@/lib/ledger/transactions'
 import {
   verifyToken,
   getAccessToken,
@@ -178,6 +180,14 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createClient()
 
+    const ledgerDate = new Date().toISOString().split('T')[0]
+
+    // Guard before the settlements are marked paid. Refusing the ledger write
+    // afterwards would leave doctors flagged as settled with no matching debit —
+    // money moved in the records with nothing in the ledger to account for it.
+    const locked = await assertLedgerDateOpen(supabase, ledgerDate, 'settle')
+    if (locked) return locked
+
     // Update settlements
     const { data: updated, error: updateError } = await supabase
       .from('doctor_visit_settlements')
@@ -197,22 +207,33 @@ export async function POST(request: NextRequest) {
 
     if (updateError) throw updateError
 
-    // Create ledger entries for each settlement
+    // Create ledger entries for each settlement, through the shared write path so
+    // they are validated and closure-checked like every other ledger entry.
     if (updated && updated.length > 0) {
-      const ledgerEntries = updated.map((settlement: any) => ({
-        transaction_date: new Date().toISOString().split('T')[0],
-        transaction_type: 'debit',
-        source: 'doctor_settlement',
-        amount: settlement_amount || settlement.total_amount,
-        payment_mode: payment_method,
-        reference_number: transaction_reference,
-        description: `Doctor settlement - ${settlement.doctor?.name || 'Unknown Doctor'}`,
-        notes: settlement_notes,
-        status: 'verified',
-        created_by: payload.userId,
-      }))
+      const result = await createLedgerTransactions(
+        supabase,
+        updated.map((settlement: any) => ({
+          transaction_date: ledgerDate,
+          transaction_type: 'debit' as const,
+          source: 'doctor_settlement' as const,
+          amount: settlement_amount || settlement.total_amount,
+          payment_mode: payment_method,
+          reference_number: transaction_reference,
+          description: `Doctor settlement - ${settlement.doctor?.name || 'Unknown Doctor'}`,
+          notes: settlement_notes,
+          status: 'verified' as const,
+          created_by: payload.userId,
+        })),
+        { allowedSources: ['doctor_settlement'] }
+      )
 
-      await supabase.from('daily_ledger_transactions').insert(ledgerEntries)
+      if (!result.ok) {
+        console.error('Doctor settlement ledger entries rejected:', result.error)
+        return NextResponse.json(
+          { success: false, error: result.error, ...(result.code ? { code: result.code } : {}) },
+          { status: result.status }
+        )
+      }
     }
 
     return NextResponse.json({

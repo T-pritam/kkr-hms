@@ -13,15 +13,13 @@ Status legend: 🔴 security · 🟠 correctness · 🟡 consistency
 
 ## Start here
 
-87 failing-by-design tests cover 63 defects. If you fix nothing else, fix these five:
+46 failing-by-design tests cover the defects below. If you fix nothing else, fix these three:
 
 | # | What breaks | Where |
 |---|---|---|
 | **#16** | **Billing totals are never recalculated** — the function dies on a missing column, silently. Add a charge and the bill does not move. | `lib/recalculate-billing.ts:14` |
 | **#23** | The same missing columns 500 the billing editor and zero out the finance summary's commission, doctor fees and receivables. | `billing/route.ts:169`, `finances/summary/route.ts:100` |
-| **#32** | Role compared against lowercase `'admin'` — admins cannot edit others' ledger entries, and the Verify button never appears at all. | `ledger/transactions/[id]/route.ts:69,199` |
 | **#49** | `/api/referrals` has **no authentication** on either verb. | `app/api/referrals/route.ts` |
-| **#20** | Recording a patient payment writes into the ledger bypassing the day-closed guard, breaking closed-day reconciliation. | `installments/route.ts:107` |
 
 Three of these (#16, #23, #26) come from the same root cause: **the code and the live
 schema disagree**. `patient_billing` has no `*_included_in_package` columns, and
@@ -299,19 +297,6 @@ or negative amount. Overpayment produces a negative balance everywhere it is dis
 
 ---
 
-### 🔴 #20 — Recording a payment bypasses every ledger rule
-**Where:** `app/api/patients/[id]/installments/route.ts:107-123`
-**Tests:** `tests/api/billing/installments.test.ts` (2 cases)
-
-The installment route inserts straight into `daily_ledger_transactions`. It skips the
-amount check, the payment-mode whitelist, the UPI-reference requirement and — most
-seriously — **the day-closed guard**. A payment can be booked into a date that has
-already been closed and reconciled, after which the closure totals no longer match the
-transactions they summarise. The insert's error is not even captured.
-
-**Fix:** call the ledger's own creation path, or replicate its validation here.
-
----
 
 ### 🟠 #21 — Editing or deleting a payment leaves the ledger entry behind
 **Where:** `app/api/patients/[id]/installments/[installmentId]/route.ts`
@@ -393,44 +378,6 @@ consultation and their settlement keeps its old visit count and fee forever.
 
 ## Section 4 — Ledger
 
-### 🔴 #32 — Admins cannot correct anyone else's ledger entry
-**Where:** `app/api/ledger/transactions/[id]/route.ts:69` and `:199`
-**Tests:** `tests/api/ledger/transactions.test.ts` (2 cases)
-
-```ts
-if (payload.role !== 'admin' && existing.created_by !== payload.userId)
-```
-
-Roles are stored and issued in **upper case**, so `'ADMIN' !== 'admin'` is always true and
-an administrator is treated as a stranger to every entry they did not create. The same
-lower-case comparison appears in `app/ledger/summary/page.tsx`, where it hides the Verify
-button from admins entirely — so in practice **nothing can ever be verified through the
-UI**.
-
-**Fix:** compare against `'ADMIN'` in both places.
-
----
-
-### 🔴 #34 — The daily summary only ever shows your own takings
-**Where:** `app/api/ledger/daily-summary/[date]/route.ts:60`
-
-`.eq('created_by', payload.userId)` is applied unconditionally, admins included, and the
-`?user_id=` the page sends is ignored. The "Daily Ledger Summary" screen therefore never
-shows the day's actual position — only the entries the person looking at it happened to
-record.
-
----
-
-### 🟠 #31 — Closing one employee's shift locks the date for everyone
-**Where:** `app/api/ledger/transactions/route.ts:195-206`
-
-The day-closed guard looks for any `day_closed` row on the date rather than consulting
-`daily_ledger_closures`, and it is not scoped per user. Since `close-employee-day` sets
-that status, settling the first employee's shift blocks every other employee from
-recording anything for the rest of the day.
-
----
-
 ### 🟡 #33 — A user can verify their own entry
 **Where:** `app/api/ledger/transactions/[id]/status/route.ts`
 
@@ -438,63 +385,20 @@ No separation of duties: whoever recorded the transaction can also mark it verif
 
 ---
 
-### 🟡 #35 / #42 — No payment-mode split for debits, or per employee
-**Where:** `app/api/ledger/daily-summary/[date]/route.ts`, `app/api/ledger/employee-shift-summary/route.ts`
 
-Credits are broken down by mode; debits are not. The employee shift summary — the screen
-used when physically taking cash from staff — reports only a net figure, so there is no
-way to know how much of it is cash.
+### ⚪ #36 — A day can be closed with unverified entries — *decided against, not a defect*
 
----
+**Resolution (2026-08-04): closing warns about unverified entries; it does not block.**
 
-### 🟠 #36 — A day can be closed with unverified entries
-**Where:** `app/api/ledger/close-day/route.ts`
+Closing the day is a cash reconciliation, not a sign-off. Blocking on unverified entries
+would strand a day whenever the person who verifies them is unavailable — and the Verify
+button was itself unreachable until #32 was fixed, so a hard gate would have deadlocked
+closing outright. `POST /api/ledger/close-day` returns `warnings.unverified_count`, the
+close dialog shows it before the admin commits, and the count is persisted on the closure
+row so the decision is auditable afterwards.
 
-Nothing blocks a close while transactions are still `pending`.
-
----
-
-### 🟠 #37 — Card payments vanish from the closure breakdown
-**Where:** `app/api/ledger/close-day/route.ts:96-115`
-
-The per-mode switch handles cash, upi, bank_transfer and cheque but **not card**. Card
-credits still count toward `total_credits`, so whenever a card is used the closure's
-breakdown no longer reconciles to its own total.
-
----
-
-### 🟠 #38 — The opening balance is whatever the client sends
-**Where:** `app/api/ledger/close-day/route.ts:120`
-
-`opening_balance` is taken from the request and never checked against the previous day's
-`closing_balance`, so the running cash position can break continuity silently.
-
----
-
-### 🔴 #39 — Day close is not atomic and cannot be undone
-**Where:** `app/api/ledger/close-day/route.ts:123-155`
-
-The bulk status update and the closure insert are separate statements. If the insert
-fails, every transaction on that date is frozen as `day_closed` with no closure record —
-and there is **no re-open endpoint anywhere in the codebase** to recover from it.
-
----
-
-### 🟠 #40 — Settling a shift destroys the notes on every transaction
-**Where:** `app/api/ledger/close-employee-day/route.ts:95-99`
-
-The update writes `notes: notes || 'Marked as paid'` across all of that employee's
-transactions for the day, overwriting whatever was recorded against each one.
-
----
-
-### 🟠 #41 — Employee shift settlement leaves no record
-**Where:** `app/api/ledger/close-employee-day/route.ts`
-
-Nothing durable is written: no closure row, no cash/UPI split, no balances. The only
-trace is the status change and the clobbered notes, so the settlement cannot be audited
-afterwards. Note also that **no UI calls `/api/ledger/close-day` at all** — this is the
-only close path users have.
+Covered by a passing test (`day-close.test.ts` — "warns about unverified entries rather
+than blocking the close"). **Do not reopen this without changing that decision first.**
 
 ---
 

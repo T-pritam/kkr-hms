@@ -17,14 +17,19 @@ import {
   CheckCircle,
   Clock,
   Lock,
+  Unlock,
   Download
 } from 'lucide-react'
 import { OpdEntryModal } from '@/components/ledger/opd-entry-modal'
 import { ExpenseEntryModal } from '@/components/ledger/expense-entry-modal'
 import { EditTransactionModal } from '@/components/ledger/edit-transaction-modal'
 import { AddPatientInstallmentModal } from '@/components/ledger/add-patient-installment-modal'
+import { CloseDayDialog } from '@/components/ledger/close-day-dialog'
+import { ReopenDayDialog } from '@/components/ledger/reopen-day-dialog'
+import { DayCloseBanner } from '@/components/ledger/day-close-banner'
 import { useUser } from '@/hooks/use-user'
 import { ledgerExpenseCategoryLabel } from '@/lib/format/expense'
+import type { LedgerClosure } from '@/lib/ledger/closure'
 
 interface Transaction {
   id: string
@@ -66,8 +71,14 @@ interface DailySummary {
     bank_transfer: number
     cheque: number
   }
+  debit_mode_summary: Record<string, number>
   transactions: Transaction[]
+  /** Derived from daily_ledger_closures, not from any transaction's status. */
   is_day_closed: boolean
+  closure: LedgerClosure | null
+  unverified_count: number
+  opening_balance_preview: number
+  opening_cash_balance_preview: number
 }
 
 export default function DailyLedgerSummaryPage() {
@@ -81,16 +92,23 @@ export default function DailyLedgerSummaryPage() {
   const [showExpenseModal, setShowExpenseModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [showInstallmentModal, setShowInstallmentModal] = useState(false)
+  const [showCloseDialog, setShowCloseDialog] = useState(false)
+  const [showReopenDialog, setShowReopenDialog] = useState(false)
+  const [closureRefreshKey, setClosureRefreshKey] = useState(0)
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null)
-  const [userRole, setUserRole] = useState<string>('')
+
+  // Roles are upper case (types/auth.ts). The page used to fetch /api/auth/me into
+  // its own `userRole` and read `data.role`, but that route returns `{ user: { role } }`
+  // — so the value was always '' and every role-gated control stayed hidden.
+  const userRole = user?.role ?? ''
+  const canVerify = userRole === 'ADMIN' || userRole === 'DOCTOR'
+  // Closing reconciles the day's cash and locks the period; narrower than reading it.
+  const canCloseDay = userRole === 'ADMIN'
 
   useEffect(() => {
     // Set default date to today
     const today = new Date().toISOString().split('T')[0]
     setSelectedDate(today)
-    
-    // Get user role from cookie or API
-    fetchUserRole()
   }, [])
 
   useEffect(() => {
@@ -99,22 +117,13 @@ export default function DailyLedgerSummaryPage() {
     }
   }, [selectedDate])
 
-  const fetchUserRole = async () => {
-    try {
-      const response = await fetch('/api/auth/me', { credentials: 'include' })
-      if (response.ok) {
-        const data = await response.json()
-        setUserRole(data.role || '')
-      }
-    } catch (error) {
-      console.error('Failed to fetch user role:', error)
-    }
-  }
-
   const fetchDailySummary = async () => {
     try {
       setLoading(true)
-      const response = await fetch(`/api/ledger/daily-summary/${selectedDate}?user_id=${user?.id}`, {
+      // No user_id filter: the route scopes non-privileged roles to their own rows
+      // on the server. Sending it here re-scoped admins to themselves, which is why
+      // the whole-day totals and the closed/open flag were never right for them.
+      const response = await fetch(`/api/ledger/daily-summary/${selectedDate}`, {
         credentials: 'include'
       })
       const data = await response.json()
@@ -131,7 +140,16 @@ export default function DailyLedgerSummaryPage() {
     }
   }
 
-  useRealtimeRefetch(['daily_ledger_transactions', 'daily_ledger_closures', 'expenses'], fetchDailySummary)
+  useRealtimeRefetch(
+    ['daily_ledger_transactions', 'daily_ledger_closures', 'daily_ledger_shift_settlements', 'expenses'],
+    fetchDailySummary
+  )
+
+  /** After a close or reopen, both the day and the open-day backlog have moved. */
+  const handleClosureChanged = () => {
+    fetchDailySummary()
+    setClosureRefreshKey((key) => key + 1)
+  }
 
   const handleDeleteTransaction = async (id: string) => {
     if (!confirm('Are you sure you want to delete this transaction?')) return
@@ -183,14 +201,14 @@ export default function DailyLedgerSummaryPage() {
   const formatTime = (dateStr: string) => 
     new Date(dateStr).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 
+  // A row is pending or verified. 'day_closed' used to appear here too, which is
+  // how one status came to mean both "reviewed" and "the period is locked".
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'verified':
         return 'bg-success-subtle text-success-text border-success/20'
       case 'pending':
         return 'bg-warning-subtle text-warning-text border-warning/20'
-      case 'day_closed':
-        return 'bg-accent-subtle text-accent border-accent/20'
       default:
         return 'bg-surface text-muted border-border'
     }
@@ -202,8 +220,6 @@ export default function DailyLedgerSummaryPage() {
         return <CheckCircle size={14} />
       case 'pending':
         return <Clock size={14} />
-      case 'day_closed':
-        return <Lock size={14} />
       default:
         return null
     }
@@ -247,8 +263,31 @@ export default function DailyLedgerSummaryPage() {
                 </Button>
               </>
             )}
+
+            {/* The close action had no UI at all — /api/ledger/close-day existed
+                and nothing in the app ever called it. */}
+            {canCloseDay && !summary?.is_day_closed && (summary?.transaction_count ?? 0) > 0 && (
+              <Button onClick={() => setShowCloseDialog(true)} variant="outline">
+                <Lock size={18} className="mr-2" />
+                Close Day
+              </Button>
+            )}
+            {canCloseDay && summary?.is_day_closed && (
+              <Button onClick={() => setShowReopenDialog(true)} variant="outline">
+                <Unlock size={18} className="mr-2" />
+                Reopen Day
+              </Button>
+            )}
           </div>
         </div>
+
+        <DayCloseBanner
+          date={selectedDate}
+          closure={summary?.closure ?? null}
+          canReopen={canCloseDay}
+          onReopen={() => setShowReopenDialog(true)}
+          refreshKey={closureRefreshKey}
+        />
 
         {/* Summary Statistics */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -316,6 +355,17 @@ export default function DailyLedgerSummaryPage() {
                   {summary?.is_day_closed ? '🔒 CLOSED' : '✓ OPEN'}
                 </span>
               </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {summary?.is_day_closed
+                  ? `Close #${summary.closure?.version ?? 1}${
+                      summary.closure?.closed_by_user?.username
+                        ? ` · ${summary.closure.closed_by_user.username}`
+                        : ''
+                    }`
+                  : (summary?.unverified_count ?? 0) > 0
+                    ? `${summary?.unverified_count} unverified`
+                    : 'All entries verified'}
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -398,7 +448,7 @@ export default function DailyLedgerSummaryPage() {
                         </td>
                         <td className="py-3 px-4">
                           <div className="flex gap-2">
-                            {txn.status !== 'day_closed' && (
+                            {!summary.is_day_closed && (
                               <>
                                 <Button
                                   size="sm"
@@ -417,7 +467,7 @@ export default function DailyLedgerSummaryPage() {
                                 >
                                   <Trash2 size={16} />
                                 </Button>
-                                {userRole === 'admin' && txn.status === 'pending' && (
+                                {canVerify && txn.status === 'pending' && (
                                   <Button
                                     size="sm"
                                     variant="default"
@@ -474,7 +524,7 @@ export default function DailyLedgerSummaryPage() {
                         <span>By: {txn.created_by_user?.username || 'Unknown'}</span>
                       </div>
 
-                      {txn.status !== 'day_closed' && (
+                      {!summary.is_day_closed && (
                         <div className="flex gap-2 pt-1">
                           <Button
                             size="sm"
@@ -495,7 +545,7 @@ export default function DailyLedgerSummaryPage() {
                           >
                             <Trash2 size={14} />
                           </Button>
-                          {userRole === 'admin' && txn.status === 'pending' && (
+                          {canVerify && txn.status === 'pending' && (
                             <Button
                               size="sm"
                               variant="default"
@@ -545,6 +595,24 @@ export default function DailyLedgerSummaryPage() {
         }}
         onSuccess={fetchDailySummary}
         transaction={selectedTransaction}
+      />
+
+      {summary && (
+        <CloseDayDialog
+          isOpen={showCloseDialog}
+          onClose={() => setShowCloseDialog(false)}
+          onSuccess={handleClosureChanged}
+          date={selectedDate}
+          totals={summary}
+        />
+      )}
+
+      <ReopenDayDialog
+        isOpen={showReopenDialog}
+        onClose={() => setShowReopenDialog(false)}
+        onSuccess={handleClosureChanged}
+        date={selectedDate}
+        closure={summary?.closure ?? null}
       />
     </DashboardLayout>
   )

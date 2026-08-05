@@ -25,12 +25,21 @@ interface EmployeeSummary {
   creditCount: number
   debitCount: number
   transactionCount: number
-  isClosed: boolean
+  creditsCash: number
+  debitsCash: number
+  /** Cash only — UPI and card never touch the drawer. */
+  cashExpected: number
+  /** This operator handed their cash over. Separate from the date being closed. */
+  isSettled: boolean
+  settlement: any | null
   transactions: any[]
 }
 
 interface ShiftSummaryData {
   settlementDate: string
+  /** The financial period lock, which no shift settlement can set. */
+  dayClosed: boolean
+  closure: any | null
   employeeSummaries: EmployeeSummary[]
 }
 
@@ -110,6 +119,18 @@ export default function EmployeeShiftPage() {
             </Button>
           </div>
         </div>
+
+        {/* Settling a shift and closing the day are different acts, so the screen
+            states both rather than letting one imply the other. */}
+        {data?.dayClosed && (
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-accent-subtle border border-accent/20 text-sm">
+            <Lock size={16} className="text-accent shrink-0" />
+            <span className="text-foreground">
+              The ledger for this date is closed. Handovers can still be recorded — they
+              change no totals.
+            </span>
+          </div>
+        )}
 
         {/* Overall Summary */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -205,14 +226,14 @@ export default function EmployeeShiftPage() {
                           </td>
                           <td className="py-3 px-4">
                             <span className={`px-3 py-1 rounded-full text-xs border ${
-                              emp.isClosed
+                              emp.isSettled
                                 ? 'bg-accent-subtle text-accent border-accent/20'
                                 : 'bg-warning-subtle text-warning-text border-warning/20'
                             }`}>
-                              {emp.isClosed ? (
+                              {emp.isSettled ? (
                                 <>
                                   <Lock size={12} className="inline mr-1" />
-                                  CLOSED
+                                  SETTLED
                                 </>
                               ) : (
                                 'PENDING'
@@ -253,11 +274,11 @@ export default function EmployeeShiftPage() {
                           </p>
                         </div>
                         <span className={`px-2 py-1 rounded-full text-xs border ${
-                          emp.isClosed
+                          emp.isSettled
                             ? 'bg-accent-subtle text-accent border-accent/20'
                             : 'bg-warning-subtle text-warning-text border-warning/20'
                         }`}>
-                          {emp.isClosed ? '🔒 CLOSED' : 'PENDING'}
+                          {emp.isSettled ? '✓ SETTLED' : 'PENDING'}
                         </span>
                       </div>
 

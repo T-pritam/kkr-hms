@@ -1,10 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { verifyToken, getAccessToken, getRefreshToken, setAuthCookies, generateAccessToken, generateRefreshToken } from '@/lib/auth/jwt'
+import { recordAudit } from '@/lib/audit/log'
 
 /**
  * POST /api/ledger/close-day
- * Closes the entire daily ledger for a specific date (admin only)
+ *
+ * Closes the financial day. Admin only.
+ *
+ * The work is done by the `close_ledger_day` database function, which holds the
+ * existence check, the totals and the insert inside one transaction. It used to
+ * be three separate round-trips from here, followed by a bulk update flipping
+ * every transaction on the date to status = 'day_closed'. That update is gone:
+ * closing is recorded once, against the date, in `daily_ledger_closures`.
+ *
+ * `opening_balance` is no longer accepted from the request. The browser was
+ * choosing the number that anchors the day's balance chain, and nothing
+ * reconciled it against the previous day. It is now derived server-side.
+ *
+ * Unverified entries do not block a close. Closing is a cash reconciliation, and
+ * a day cannot be held open because the person who verifies entries has gone
+ * home. The count is returned as a warning and stored on the closure row.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -41,137 +57,79 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Admin only
-    if (payload.role !== 'ADMIN' && payload.role !== 'DOCTOR') {
+    // Admin only. Closing reconciles the day's cash and locks the period; it is
+    // narrower than the read side, which DOCTOR also has.
+    if (payload.role !== 'ADMIN') {
       return NextResponse.json({ error: 'Forbidden. Admin access required.' }, { status: 403 })
     }
 
     const body = await request.json()
-    const { closure_date, opening_balance, notes } = body
+    const { closure_date, notes } = body
 
     if (!closure_date) {
       return NextResponse.json({ error: 'closure_date is required' }, { status: 400 })
     }
 
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(closure_date)) {
+      return NextResponse.json({ error: 'closure_date must be a YYYY-MM-DD date' }, { status: 400 })
+    }
+
     const supabase = await createClient()
 
-    // Check if already closed
-    const { data: existingClosure } = await supabase
-      .from('daily_ledger_closures')
-      .select('*')
-      .eq('closure_date', closure_date)
-      .single()
-
-    if (existingClosure) {
-      return NextResponse.json({ error: 'This date has already been closed' }, { status: 400 })
-    }
-
-    // Get all transactions for the date
-    const { data: transactions, error: fetchError } = await supabase
-      .from('daily_ledger_transactions')
-      .select('*')
-      .eq('transaction_date', closure_date)
-
-    if (fetchError) {
-      console.error('Fetch transactions error:', fetchError)
-      return NextResponse.json({ error: fetchError.message }, { status: 500 })
-    }
-
-    if (!transactions || transactions.length === 0) {
-      return NextResponse.json({ error: 'No transactions found for this date' }, { status: 404 })
-    }
-
-    // Calculate statistics
-    let totalCredits = 0
-    let totalDebits = 0
-    let totalCreditsCash = 0
-    let totalCreditsUpi = 0
-    let totalCreditsBankTransfer = 0
-    let totalCreditsCheque = 0
-    let creditCount = 0
-    let debitCount = 0
-
-    transactions.forEach((txn: any) => {
-      if (txn.transaction_type === 'credit') {
-        totalCredits += parseFloat(txn.amount)
-        creditCount++
-
-        switch (txn.payment_mode) {
-          case 'cash':
-            totalCreditsCash += parseFloat(txn.amount)
-            break
-          case 'upi':
-            totalCreditsUpi += parseFloat(txn.amount)
-            break
-          case 'bank_transfer':
-            totalCreditsBankTransfer += parseFloat(txn.amount)
-            break
-          case 'cheque':
-            totalCreditsCheque += parseFloat(txn.amount)
-            break
-        }
-      } else if (txn.transaction_type === 'debit') {
-        totalDebits += parseFloat(txn.amount)
-        debitCount++
-      }
+    const { data: closure, error } = await supabase.rpc('close_ledger_day', {
+      p_closure_date: closure_date,
+      p_closed_by: payload.userId,
+      p_notes: notes ?? null
     })
 
-    const netBalance = totalCredits - totalDebits
-    const totalCreditsOther = totalCreditsBankTransfer + totalCreditsCheque
-    const closingBalance = (opening_balance || 0) + netBalance
-
-    // Update all transactions to day_closed
-    const { error: updateError } = await supabase
-      .from('daily_ledger_transactions')
-      .update({ status: 'day_closed' })
-      .eq('transaction_date', closure_date)
-
-    if (updateError) {
-      console.error('Update transactions error:', updateError)
-      return NextResponse.json({ error: updateError.message }, { status: 500 })
+    if (error) {
+      // Mapped on the code the function raises, never on message text.
+      switch (error.code) {
+        case 'LC003':
+          return NextResponse.json({ error: 'Cannot close a date in the future' }, { status: 400 })
+        case 'LC002':
+          return NextResponse.json({ error: 'No transactions found for this date' }, { status: 404 })
+        case 'LC001':
+        // 23505 means another admin won the race to the partial unique index.
+        case '23505':
+          return NextResponse.json({ error: 'This date has already been closed' }, { status: 409 })
+        default:
+          console.error('Close day error:', error)
+          return NextResponse.json({ error: error.message }, { status: 500 })
+      }
     }
 
-    // Create closure record
-    const { data: closure, error: closureError } = await supabase
-      .from('daily_ledger_closures')
-      .insert([{
-        closure_date,
-        total_credits: totalCredits,
-        total_debits: totalDebits,
-        net_balance: netBalance,
-        total_credits_cash: totalCreditsCash,
-        total_credits_upi: totalCreditsUpi,
-        total_credits_other: totalCreditsOther,
-        transaction_count: transactions.length,
-        credit_count: creditCount,
-        debit_count: debitCount,
-        closed_by: payload.userId,
-        notes: notes || null,
-        opening_balance: opening_balance || 0,
-        closing_balance: closingBalance
-      }])
-      .select()
-      .single()
+    // Reopening an earlier day would change its closing balance, which every
+    // later closure was calculated from. We warn rather than cascade — see the
+    // reopen route.
+    const { data: laterClosures } = await supabase.rpc('ledger_closure_continuity', {
+      p_from: closure_date
+    })
 
-    if (closureError) {
-      console.error('Create closure error:', closureError)
-      return NextResponse.json({ error: closureError.message }, { status: 500 })
-    }
+    await recordAudit(supabase, {
+      entityType: 'ledger_day',
+      entityId: closure.id,
+      action: 'finalised',
+      summary: `Closed the daily ledger for ${closure_date} (close #${closure.version})`,
+      changes: {
+        total_credits: { from: null, to: closure.total_credits },
+        total_debits: { from: null, to: closure.total_debits },
+        net_balance: { from: null, to: closure.net_balance },
+        closing_cash_balance: { from: null, to: closure.closing_cash_balance },
+        unverified_count: { from: null, to: closure.unverified_count }
+      },
+      actor: { id: payload.userId, role: payload.role }
+    })
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       message: 'Daily ledger closed successfully',
       data: {
-        closure_date,
-        totalCredits,
-        totalDebits,
-        netBalance,
-        closingBalance,
-        transactionCount: transactions.length,
-        creditCount,
-        debitCount,
-        closedAt: closure.closed_at,
-        closedBy: payload.userId
+        closure,
+        warnings: {
+          unverified_count: closure.unverified_count ?? 0,
+          later_closure_count: laterClosures ?? 0
+        }
       }
     })
   } catch (error: any) {
