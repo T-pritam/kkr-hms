@@ -1,14 +1,18 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, ChevronRight, Download, Plus, Printer } from 'lucide-react';
+import { AlertCircle, ChevronRight, Download, Pill, Plus, Printer } from 'lucide-react';
 import { useUser } from '@/hooks/use-user';
 import { UpdatedStamp } from '@/components/ui/updated-stamp';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { ChargeEntryModal } from '@/components/patients/charge-entry-modal';
+import { PharmacyBillAddModal } from '@/components/patients/pharmacy-bill-add-modal';
+import { PharmacyBillViewModal } from '@/components/patients/pharmacy-bill-view-modal';
+import { PatientChargesDownloadModal } from '@/components/patients/patient-charges-download-modal';
 import { CHARGE_CATEGORY_LABELS } from '@/lib/billing/constants';
 import {
-  generatePatientChargesPDF, printPatientCharges, type PatientChargesPatient,
+  printPatientCharges, type PatientChargesPatient,
 } from '@/lib/pdf/patient-charges-pdf';
 
 /**
@@ -58,6 +62,9 @@ export default function ChargesTab({ patientId, billing, onCreateBilling, patien
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<any | null>(null);
+  const [pharmacyAddOpen, setPharmacyAddOpen] = useState(false);
+  const [pharmacyViewBillId, setPharmacyViewBillId] = useState<string | null>(null);
+  const [downloadOpen, setDownloadOpen] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -221,7 +228,7 @@ export default function ChargesTab({ patientId, billing, onCreateBilling, patien
 
           <Button
             variant="outline"
-            onClick={() => generatePatientChargesPDF(pdfData)}
+            onClick={() => setDownloadOpen(true)}
             className="min-h-[44px]"
           >
             <Download className="h-4 w-4 sm:mr-2" />
@@ -234,6 +241,11 @@ export default function ChargesTab({ patientId, billing, onCreateBilling, patien
           >
             <Printer className="h-4 w-4 sm:mr-2" />
             <span className="hidden sm:inline">Print</span>
+          </Button>
+
+          <Button variant="outline" onClick={() => setPharmacyAddOpen(true)} className="min-h-[44px]">
+            <Pill className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Add Pharmacy Bill</span>
           </Button>
 
           <Button onClick={openAdd} className="min-h-[44px]">
@@ -284,6 +296,9 @@ export default function ChargesTab({ patientId, billing, onCreateBilling, patien
                     </td>
                     <td className="px-4 py-3 text-sm text-foreground">
                       {charge.charge_type}
+                      {charge.pharmacy_bill && (
+                        <Badge variant="info" className="ml-2">Pharmacy</Badge>
+                      )}
                       {charge.charge_group_id && (
                         <span className="ml-2 text-xs text-muted">per day</span>
                       )}
@@ -305,14 +320,24 @@ export default function ChargesTab({ patientId, billing, onCreateBilling, patien
                     </td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex gap-2 justify-center">
+                        {charge.pharmacy_bill && (
+                          <button
+                            onClick={() => setPharmacyViewBillId(charge.pharmacy_bill.id)}
+                            className="text-info hover:text-info text-sm font-medium"
+                          >
+                            View
+                          </button>
+                        )}
                         {canModify(charge) ? (
                           <>
-                            <button
-                              onClick={() => openEdit(charge)}
-                              className="text-info hover:text-info text-sm font-medium"
-                            >
-                              Edit
-                            </button>
+                            {!charge.pharmacy_bill && (
+                              <button
+                                onClick={() => openEdit(charge)}
+                                className="text-info hover:text-info text-sm font-medium"
+                              >
+                                Edit
+                              </button>
+                            )}
                             <button
                               onClick={() => handleDelete(charge, false)}
                               className="text-destructive hover:text-destructive text-sm font-medium"
@@ -321,7 +346,7 @@ export default function ChargesTab({ patientId, billing, onCreateBilling, patien
                             </button>
                           </>
                         ) : (
-                          <span className="text-muted-foreground text-sm">-</span>
+                          !charge.pharmacy_bill && <span className="text-muted-foreground text-sm">-</span>
                         )}
                       </div>
                     </td>
@@ -344,7 +369,12 @@ export default function ChargesTab({ patientId, billing, onCreateBilling, patien
               <div key={charge.id} className="bg-surface-hover rounded-lg p-4 space-y-3">
                 <div className="flex items-start justify-between">
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium text-foreground">{charge.charge_type}</p>
+                    <p className="font-medium text-foreground">
+                      {charge.charge_type}
+                      {charge.pharmacy_bill && (
+                        <Badge variant="info" className="ml-2">Pharmacy</Badge>
+                      )}
+                    </p>
                     {charge.description && (
                       <p className="text-xs text-muted mt-0.5 line-clamp-2">{charge.description}</p>
                     )}
@@ -363,20 +393,34 @@ export default function ChargesTab({ patientId, billing, onCreateBilling, patien
                   </span>
                 </div>
                 <UpdatedStamp by={charge.updated_by_user?.username} at={charge.updated_at} />
-                {canModify(charge) && (
+                {(charge.pharmacy_bill || canModify(charge)) && (
                   <div className="flex gap-3 pt-2 border-t border-input-border">
-                    <button
-                      onClick={() => openEdit(charge)}
-                      className="text-info text-sm font-medium min-h-[44px] flex items-center"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDelete(charge, false)}
-                      className="text-destructive text-sm font-medium min-h-[44px] flex items-center"
-                    >
-                      Delete
-                    </button>
+                    {charge.pharmacy_bill && (
+                      <button
+                        onClick={() => setPharmacyViewBillId(charge.pharmacy_bill.id)}
+                        className="text-info text-sm font-medium min-h-[44px] flex items-center"
+                      >
+                        View
+                      </button>
+                    )}
+                    {canModify(charge) && (
+                      <>
+                        {!charge.pharmacy_bill && (
+                          <button
+                            onClick={() => openEdit(charge)}
+                            className="text-info text-sm font-medium min-h-[44px] flex items-center"
+                          >
+                            Edit
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleDelete(charge, false)}
+                          className="text-destructive text-sm font-medium min-h-[44px] flex items-center"
+                        >
+                          Delete
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
@@ -508,6 +552,33 @@ export default function ChargesTab({ patientId, billing, onCreateBilling, patien
         patientId={patientId}
         billingId={billing?.id ?? null}
         charge={editing}
+      />
+
+      <PharmacyBillAddModal
+        isOpen={pharmacyAddOpen}
+        onClose={() => setPharmacyAddOpen(false)}
+        onSuccess={fetchCharges}
+        patientId={patientId}
+        billingId={billing?.id ?? null}
+      />
+
+      {pharmacyViewBillId && (
+        <PharmacyBillViewModal
+          isOpen={Boolean(pharmacyViewBillId)}
+          onClose={() => setPharmacyViewBillId(null)}
+          patientId={patientId}
+          billId={pharmacyViewBillId}
+          patient={patient}
+          onDateChanged={fetchCharges}
+        />
+      )}
+
+      <PatientChargesDownloadModal
+        isOpen={downloadOpen}
+        onClose={() => setDownloadOpen(false)}
+        patientId={patientId}
+        patient={patient}
+        charges={charges}
       />
     </div>
   );

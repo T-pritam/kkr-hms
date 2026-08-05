@@ -36,7 +36,8 @@ const LIST_SELECT = `
   *,
   users!created_by(id, username),
   updated_by_user:users!updated_by(id, username),
-  charge_item:charge_items(id, name, category, billing_mode, unit_label)
+  charge_item:charge_items(id, name, category, billing_mode, unit_label),
+  pharmacy_bill:pharmacy_bills!patient_charge_id(id, entry_number, entry_date, external_bill_id, invoice_url)
 `
 
 export async function GET(

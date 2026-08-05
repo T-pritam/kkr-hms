@@ -26,6 +26,7 @@ export type BillingCapability =
   | 'billing:write'
   | 'visit-purpose:write'
   | 'doctor-fee:write'
+  | 'pharmacy-charge:write'
 
 const EVERYONE: UserRole[] = ['ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST', 'LAB_TECHNICIAN']
 
@@ -38,6 +39,10 @@ export const BILLING_CAPABILITIES: Record<BillingCapability, UserRole[]> = {
 
   // Placing and correcting a charge on a patient. Reversible and attributed.
   'charge:write': BILLERS,
+
+  // Fetching a pharmacy bill by id and attaching it as a charge. Same desk as
+  // charge:write — reception routinely looks up and attaches these.
+  'pharmacy-charge:write': BILLERS,
 
   // The price list. One edit here changes what every future charge costs, so it
   // is admin only — same reasoning as app/api/lab-tests/route.ts, which calls

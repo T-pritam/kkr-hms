@@ -93,4 +93,6 @@ export const FIELD_LABELS: Record<string, string> = {
   visit_purpose_id: 'Purpose of visit',
   fee: 'Fee',
   price_per_visit: 'Fee',
+  bill_id: 'Pharmacy bill ID',
+  entry_date: 'Bill date',
 }
