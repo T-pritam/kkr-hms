@@ -107,8 +107,8 @@ export default function ChargeCataloguePage() {
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-1">Charge Catalogue</h1>
             <p className="text-muted">
-              What can be billed, and what it costs by default. Per-day charges expand into one
-              line per day when placed on a patient.
+              What can be billed, and what it costs by default. Per-day and per-hour charges
+              expand into one line per day when placed on a patient.
             </p>
           </div>
           {isAdmin && (
@@ -151,9 +151,10 @@ export default function ChargeCataloguePage() {
             ))}
           </Select>
           <Select value={modeFilter} onChange={e => setModeFilter(e.target.value)}>
-            <option value="">One-time and per-day</option>
+            <option value="">All billing modes</option>
             <option value="one_time">One-time only</option>
             <option value="per_day">Per day only</option>
+            <option value="per_hour">Per hour only</option>
           </Select>
         </div>
 
@@ -205,7 +206,15 @@ export default function ChargeCataloguePage() {
                         </Badge>
                       </td>
                       <td className="px-4 py-3">
-                        <Badge variant={item.billing_mode === 'per_day' ? 'warning' : 'outline'}>
+                        <Badge
+                          variant={
+                            item.billing_mode === 'per_day'
+                              ? 'warning'
+                              : item.billing_mode === 'per_hour'
+                                ? 'accent'
+                                : 'outline'
+                          }
+                        >
                           {CHARGE_BILLING_MODE_LABELS[
                             item.billing_mode as keyof typeof CHARGE_BILLING_MODE_LABELS
                           ] ?? item.billing_mode}

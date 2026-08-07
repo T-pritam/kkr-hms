@@ -87,7 +87,16 @@ describe('/api/charge-items — validation', () => {
     await signInAs('ADMIN')
 
     expect((await create({ ...VALID, category: 'invented' })).status).toBe(400)
-    expect((await create({ ...VALID, billing_mode: 'per_hour' })).status).toBe(400)
+    expect((await create({ ...VALID, billing_mode: 'per_fortnight' })).status).toBe(400)
+  })
+
+  it('accepts every billing mode in the vocabulary', async () => {
+    await signInAs('ADMIN')
+
+    for (const mode of ['one_time', 'per_day', 'per_hour']) {
+      const { status } = await create({ ...VALID, name: `Service ${mode}`, billing_mode: mode })
+      expect(status).toBe(201)
+    }
   })
 
   it('rejects a negative price', async () => {

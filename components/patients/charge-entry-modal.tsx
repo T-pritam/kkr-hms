@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, Loader2 } from 'lucide-react'
+import { AlertCircle, Loader2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -11,7 +11,7 @@ import {
   ChargeItemSelect,
   type ChargeItemOption,
 } from '@/components/charges/charge-item-select'
-import { MAX_CHARGE_DAYS } from '@/lib/billing/constants'
+import { MAX_CHARGE_DAYS, isRangeBillingMode } from '@/lib/billing/constants'
 
 /**
  * Placing a charge on a patient, and correcting one.
@@ -77,6 +77,23 @@ function dayCount(from: string, to: string): number {
   return Math.floor(ms / 86_400_000) + 1
 }
 
+/** Every date from `from` to `to` inclusive, stepped in UTC so a DST boundary
+ * never repeats or skips a day. Mirrors expandDateRange in lib/billing/validate.ts. */
+function eachDay(from: string, to: string): string[] {
+  const days: string[] = []
+  const end = Date.parse(`${to}T00:00:00Z`)
+  for (let t = Date.parse(`${from}T00:00:00Z`); t <= end; t += 86_400_000) {
+    days.push(new Date(t).toISOString().slice(0, 10))
+  }
+  return days
+}
+
+/** A day of a per-hour entry, as the form holds it. */
+interface HourRow {
+  charge_date: string
+  hours: string
+}
+
 function Field({
   id,
   label,
@@ -119,6 +136,8 @@ export function ChargeEntryModal({
 
   const [form, setForm] = useState<FormState>(BLANK)
   const [item, setItem] = useState<ChargeItemOption | null>(null)
+  const [hoursByDate, setHoursByDate] = useState<Record<string, string>>({})
+  const [removedDays, setRemovedDays] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
@@ -128,6 +147,8 @@ export function ChargeEntryModal({
     setError('')
     setFieldErrors({})
     setItem(null)
+    setHoursByDate({})
+    setRemovedDays(new Set())
 
     setForm(
       charge
@@ -160,20 +181,25 @@ export function ChargeEntryModal({
    * authority — a charge saved as one_time stays one_time even if the service has
    * since been switched to per-day.
    */
-  const billingMode: 'one_time' | 'per_day' =
+  const storedMode = charge?.billing_mode
+  const billingMode: 'one_time' | 'per_day' | 'per_hour' =
     mode === 'edit'
-      ? charge?.billing_mode === 'per_day'
-        ? 'per_day'
+      ? isRangeBillingMode(storedMode)
+        ? storedMode
         : 'one_time'
-      : item?.billing_mode === 'per_day'
-        ? 'per_day'
+      : isRangeBillingMode(item?.billing_mode)
+        ? (item!.billing_mode as 'per_day' | 'per_hour')
         : 'one_time'
 
   // Only meaningful on create: an edit touches exactly one stored row.
   const isRange = billingMode === 'per_day' && mode === 'create'
+  const isHourly = billingMode === 'per_hour' && mode === 'create'
+  /** Both range modes ask for from/to dates; only the hourly one asks per day. */
+  const hasDateRange = isRange || isHourly
 
   const chooseItem = (chosen: ChargeItemOption | null) => {
     setItem(chosen)
+    const ranged = isRangeBillingMode(chosen?.billing_mode)
     setForm(prev => ({
       ...prev,
       charge_item_id: chosen?.id ?? '',
@@ -181,21 +207,44 @@ export function ChargeEntryModal({
       charge_type: chosen ? '' : prev.charge_type,
       // Prefill the rate, but never overwrite a figure already typed.
       amount: chosen && !prev.amount ? String(chosen.default_price ?? '') : prev.amount,
-      from_date: chosen?.billing_mode === 'per_day' && !prev.from_date ? today() : prev.from_date,
-      to_date: chosen?.billing_mode === 'per_day' && !prev.to_date ? today() : prev.to_date,
+      from_date: ranged && !prev.from_date ? today() : prev.from_date,
+      to_date: ranged && !prev.to_date ? today() : prev.to_date,
     }))
   }
 
   const days = useMemo(
-    () => (isRange ? dayCount(form.from_date, form.to_date) : 1),
-    [isRange, form.from_date, form.to_date],
+    () => (hasDateRange ? dayCount(form.from_date, form.to_date) : 1),
+    [hasDateRange, form.from_date, form.to_date],
+  )
+
+  /**
+   * The per-day hour rows, derived from the range rather than stored.
+   *
+   * Deriving means a range change can never strand or duplicate a row: the days
+   * come from the range, the hours typed so far are looked up by date, and days
+   * the user removed stay removed. Holding the rows in state instead would need
+   * every one of those cases reconciled by hand on each keystroke.
+   */
+  const hourRows = useMemo<HourRow[]>(() => {
+    if (!isHourly) return []
+    if (!form.from_date || !form.to_date || days < 1 || days > MAX_CHARGE_DAYS) return []
+
+    return eachDay(form.from_date, form.to_date)
+      .filter(day => !removedDays.has(day))
+      .map(day => ({ charge_date: day, hours: hoursByDate[day] ?? '' }))
+  }, [isHourly, form.from_date, form.to_date, days, removedDays, hoursByDate])
+
+  const totalHours = useMemo(
+    () => hourRows.reduce((sum, r) => sum + (Number(r.hours) || 0), 0),
+    [hourRows],
   )
 
   const preview = useMemo(() => {
     const rate = Number(form.amount) || 0
     const qty = Number(form.qty) || 1
+    if (isHourly) return { total: rate * totalHours, rate, qty: 1 }
     return { total: rate * qty * (days || 0), rate, qty }
-  }, [form.amount, form.qty, days])
+  }, [form.amount, form.qty, days, isHourly, totalHours])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -219,6 +268,14 @@ export function ChargeEntryModal({
           payload.billing_mode = 'per_day'
           payload.from_date = form.from_date
           payload.to_date = form.to_date
+        } else if (isHourly) {
+          // The days are sent explicitly rather than as a range: the desk may
+          // have removed the days the service was not used on.
+          payload.billing_mode = 'per_hour'
+          payload.hour_lines = hourRows.map(row => ({
+            charge_date: row.charge_date,
+            hours: Number(row.hours),
+          }))
         } else {
           payload.charge_date = form.charge_date
         }
@@ -254,8 +311,24 @@ export function ChargeEntryModal({
   }
 
   const named = Boolean(form.charge_item_id || form.charge_type.trim())
-  const datesReady = isRange ? days > 0 && days <= MAX_CHARGE_DAYS : Boolean(form.charge_date)
-  const canSave = named && Number(form.amount) > 0 && datesReady && (mode === 'edit' || !!billingId)
+  const datesReady = hasDateRange
+    ? days > 0 && days <= MAX_CHARGE_DAYS
+    : Boolean(form.charge_date)
+  // Every remaining day must carry hours, or the entry silently bills nothing
+  // for that day.
+  const hoursReady =
+    !isHourly || (hourRows.length > 0 && hourRows.every(r => Number(r.hours) >= 1))
+  const canSave =
+    named && Number(form.amount) > 0 && datesReady && hoursReady && (mode === 'edit' || !!billingId)
+
+  const submitLabel = () => {
+    if (mode === 'edit') return 'Save changes'
+    if (isHourly && hourRows.length > 0) {
+      return `Add ${hourRows.length} ${hourRows.length === 1 ? 'day' : 'days'}`
+    }
+    if (isRange && days > 1) return `Add ${days} lines`
+    return 'Add charge'
+  }
 
   return (
     <Modal
@@ -266,7 +339,9 @@ export function ChargeEntryModal({
       description={
         isRange
           ? 'Billed per day — one line will be added for each day in the range.'
-          : 'Pick a charge from the catalogue, or enter one manually.'
+          : isHourly
+            ? 'Billed by the hour — pick the range, then enter the hours used on each day.'
+            : 'Pick a charge from the catalogue, or enter one manually.'
       }
       footer={
         <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
@@ -275,7 +350,7 @@ export function ChargeEntryModal({
           </Button>
           <Button type="submit" form="charge-entry-form" disabled={saving || !canSave}>
             {saving && <Loader2 size={16} className="mr-2 animate-spin" />}
-            {mode === 'edit' ? 'Save changes' : isRange && days > 1 ? `Add ${days} lines` : 'Add charge'}
+            {submitLabel()}
           </Button>
         </div>
       }
@@ -318,10 +393,10 @@ export function ChargeEntryModal({
           </Field>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className={`grid grid-cols-1 gap-4 ${isHourly ? '' : 'sm:grid-cols-2'}`}>
           <Field
             id="charge-amount"
-            label={isRange ? 'Rate per day (₹)' : 'Rate (₹)'}
+            label={isRange ? 'Rate per day (₹)' : isHourly ? 'Rate per hour (₹)' : 'Rate (₹)'}
             required
             error={fieldErrors.amount}
             hint={
@@ -344,26 +419,29 @@ export function ChargeEntryModal({
             />
           </Field>
 
-          <Field
-            id="charge-qty"
-            label={isRange ? 'Units per day' : 'Quantity'}
-            required
-            error={fieldErrors.qty}
-          >
-            <Input
+          {/* Hourly has no separate quantity — the hours on each day are it. */}
+          {!isHourly && (
+            <Field
               id="charge-qty"
-              type="number"
-              min="1"
-              step="1"
-              value={form.qty}
-              onFocus={e => e.target.select()}
-              onChange={e => update('qty', e.target.value)}
-              disabled={saving}
-            />
-          </Field>
+              label={isRange ? 'Units per day' : 'Quantity'}
+              required
+              error={fieldErrors.qty}
+            >
+              <Input
+                id="charge-qty"
+                type="number"
+                min="1"
+                step="1"
+                value={form.qty}
+                onFocus={e => e.target.select()}
+                onChange={e => update('qty', e.target.value)}
+                disabled={saving}
+              />
+            </Field>
+          )}
         </div>
 
-        {isRange ? (
+        {hasDateRange ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field id="from-date" label="From" required error={fieldErrors.from_date}>
               <Input
@@ -408,14 +486,82 @@ export function ChargeEntryModal({
           </Field>
         )}
 
+        {/* One row per day of the range: type the hours used, or drop the day.
+            Nothing is computed from clock times — the hours are what the desk
+            says they are. */}
+        {isHourly && hourRows.length > 0 && (
+          <div className="space-y-1.5">
+            <Label>
+              Hours on each day <span className="text-destructive">*</span>
+            </Label>
+            <ul className="rounded-md border border-border divide-y divide-input-border max-h-56 overflow-y-auto">
+              {hourRows.map(row => (
+                <li key={row.charge_date} className="flex items-center gap-3 px-3 py-2">
+                  <span className="text-sm text-foreground flex-1 min-w-0">
+                    {new Date(`${row.charge_date}T00:00:00`).toLocaleDateString('en-IN', {
+                      weekday: 'short',
+                      day: '2-digit',
+                      month: 'short',
+                    })}
+                  </span>
+                  <Input
+                    type="number"
+                    min="1"
+                    step="1"
+                    aria-label={`Hours on ${row.charge_date}`}
+                    className="w-24 h-9"
+                    value={row.hours}
+                    placeholder="hrs"
+                    onFocus={e => e.target.select()}
+                    onChange={e =>
+                      setHoursByDate(prev => ({ ...prev, [row.charge_date]: e.target.value }))
+                    }
+                    disabled={saving}
+                  />
+                  <button
+                    type="button"
+                    aria-label={`Remove ${row.charge_date}`}
+                    className="text-muted hover:text-destructive shrink-0"
+                    onClick={() =>
+                      setRemovedDays(prev => new Set(prev).add(row.charge_date))
+                    }
+                    disabled={saving}
+                  >
+                    <X size={16} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <p className="text-xs text-muted">
+              {removedDays.size > 0 && (
+                <>
+                  {removedDays.size} day{removedDays.size === 1 ? '' : 's'} removed ·{' '}
+                  <button
+                    type="button"
+                    className="text-info underline"
+                    onClick={() => setRemovedDays(new Set())}
+                  >
+                    restore
+                  </button>
+                  {' · '}
+                </>
+              )}
+              {totalHours} hour{totalHours === 1 ? '' : 's'} across {hourRows.length} day
+              {hourRows.length === 1 ? '' : 's'}
+            </p>
+          </div>
+        )}
+
         {/* What is about to be billed, before it is billed. */}
-        {Number(form.amount) > 0 && (isRange ? days > 0 : true) && (
+        {Number(form.amount) > 0 && (hasDateRange ? days > 0 : true) && (
           <div className="rounded-md bg-surface-inset border border-border px-3 py-2 text-sm">
             <div className="flex items-center justify-between">
               <span className="text-muted">
-                {isRange
-                  ? `${days} day${days === 1 ? '' : 's'} × ${preview.qty} × ${money(preview.rate)}`
-                  : `${preview.qty} × ${money(preview.rate)}`}
+                {isHourly
+                  ? `${totalHours} hour${totalHours === 1 ? '' : 's'} × ${money(preview.rate)}`
+                  : isRange
+                    ? `${days} day${days === 1 ? '' : 's'} × ${preview.qty} × ${money(preview.rate)}`
+                    : `${preview.qty} × ${money(preview.rate)}`}
               </span>
               <span className="font-semibold text-foreground">{money(preview.total)}</span>
             </div>

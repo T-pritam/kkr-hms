@@ -254,7 +254,9 @@ export function ChargeItemFormModal({ isOpen, onClose, onSuccess, item }: Props)
             hint={
               form.billing_mode === 'per_day'
                 ? 'Billed for every day of a stay. Entry asks for a date range and writes one row per day.'
-                : 'Billed once. Entry asks for a single date.'
+                : form.billing_mode === 'per_hour'
+                  ? 'Billed by the hour. Entry asks for a date range and the hours used on each day.'
+                  : 'Billed once. Entry asks for a single date.'
             }
           >
             <Select
@@ -302,7 +304,13 @@ export function ChargeItemFormModal({ isOpen, onClose, onSuccess, item }: Props)
               value={form.unit_label}
               onChange={e => update('unit_label', e.target.value)}
               disabled={saving}
-              placeholder={form.billing_mode === 'per_day' ? 'per day' : 'per unit'}
+              placeholder={
+                form.billing_mode === 'per_day'
+                  ? 'per day'
+                  : form.billing_mode === 'per_hour'
+                    ? 'per hour'
+                    : 'per unit'
+              }
             />
           </Field>
         </div>

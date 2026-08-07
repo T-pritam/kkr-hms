@@ -146,7 +146,10 @@ export async function POST(
       }
 
       chargeItem = data
-      values.billing_mode = data.billing_mode === 'per_day' ? 'per_day' : 'one_time'
+      values.billing_mode =
+        data.billing_mode === 'per_day' || data.billing_mode === 'per_hour'
+          ? data.billing_mode
+          : 'one_time'
       // Snapshot the name so a later catalogue rename never rewrites this bill.
       values.charge_type = data.name
     }
@@ -172,19 +175,35 @@ export async function POST(
       updated_by: user.id,
     }
 
-    // One row per day for a range, one row otherwise. The group id ties a range's
-    // rows together for the collapsed view and for deleting the block.
-    const rows =
-      values.billing_mode === 'per_day'
-        ? (() => {
-            const groupId = crypto.randomUUID()
-            return expandDateRange(values.from_date!, values.to_date!).map(day => ({
-              ...shared,
-              charge_date: day,
-              charge_group_id: groupId,
-            }))
-          })()
-        : [{ ...shared, charge_date: values.charge_date, charge_group_id: null }]
+    // One row per day for either range mode, one row otherwise. The group id ties
+    // a range's rows together for the collapsed view and for deleting the block.
+    //
+    // per_day bills the same units on every day, so the range is expanded here.
+    // per_hour differs by day and arrives already expanded — the form generated a
+    // line per day and the desk removed the ones the service was not used on — so
+    // the hours on each line become that row's qty.
+    const rows = (() => {
+      if (values.billing_mode === 'per_day') {
+        const groupId = crypto.randomUUID()
+        return expandDateRange(values.from_date!, values.to_date!).map(day => ({
+          ...shared,
+          charge_date: day,
+          charge_group_id: groupId,
+        }))
+      }
+
+      if (values.billing_mode === 'per_hour') {
+        const groupId = crypto.randomUUID()
+        return values.hour_lines.map(line => ({
+          ...shared,
+          qty: line.hours,
+          charge_date: line.charge_date,
+          charge_group_id: groupId,
+        }))
+      }
+
+      return [{ ...shared, charge_date: values.charge_date, charge_group_id: null }]
+    })()
 
     const { data, error } = await supabase.from('patient_charges').insert(rows).select()
 
@@ -196,7 +215,9 @@ export async function POST(
       {
         message:
           rows.length > 1
-            ? `Added ${rows.length} daily charges`
+            ? values.billing_mode === 'per_hour'
+              ? `Added ${rows.length} days of hourly charges`
+              : `Added ${rows.length} daily charges`
             : 'Charge added',
         charges: data,
         // The old route returned the bare row and the tab read `.id` off it.

@@ -172,6 +172,7 @@ export function ChargeItemSelect({
                 {CHARGE_CATEGORY_LABELS[item.category as keyof typeof CHARGE_CATEGORY_LABELS] ??
                   item.category}
                 {item.billing_mode === 'per_day' && ' · billed per day'}
+                {item.billing_mode === 'per_hour' && ' · billed per hour'}
               </span>
             </button>
           ))}

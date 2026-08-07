@@ -128,9 +128,19 @@ export function validateChargeItem(
 
 // ── Patient charges ──────────────────────────────────────────────────────────
 
+/** One day of a per-hour entry: the date, and the hours used on it. */
+export interface HourLine {
+  charge_date: string | null
+  hours: number | null
+}
+
 export interface NormalisedCharge {
-  /** 'one_time' writes one row; 'per_day' expands from_date..to_date into one row per day. */
-  billing_mode: 'one_time' | 'per_day'
+  /**
+   * 'one_time' writes one row; 'per_day' expands from_date..to_date into one row
+   * per day; 'per_hour' writes one row per `hour_lines` entry, with the hours as
+   * that row's qty.
+   */
+  billing_mode: 'one_time' | 'per_day' | 'per_hour'
   charge_item_id: string | null
   charge_type: string | null
   description: string | null
@@ -139,10 +149,12 @@ export interface NormalisedCharge {
   charge_date: string | null
   from_date: string | null
   to_date: string | null
+  /** Only meaningful for 'per_hour'. */
+  hour_lines: HourLine[]
 }
 
 /**
- * The two entry shapes, reduced to one record.
+ * The three entry shapes, reduced to one record.
  *
  * `billing_mode` is what the caller *asks* for; the route overrides it from the
  * catalogue entry when there is one, so a client cannot bill a per-day service as
@@ -150,10 +162,12 @@ export interface NormalisedCharge {
  */
 export function normalisePatientChargeBody(body: any): NormalisedCharge {
   const b = body && typeof body === 'object' ? body : {}
-  const mode = b.billing_mode === 'per_day' ? 'per_day' : 'one_time'
+  const mode =
+    b.billing_mode === 'per_day' || b.billing_mode === 'per_hour' ? b.billing_mode : 'one_time'
 
   return {
     billing_mode: mode,
+    hour_lines: normaliseHourLines(b.hour_lines),
     charge_item_id: blank(b.charge_item_id) ? null : String(b.charge_item_id).trim(),
     charge_type: blank(b.charge_type) ? null : String(b.charge_type).trim(),
     description: blank(b.description) ? null : String(b.description).trim(),
@@ -169,6 +183,25 @@ export function normalisePatientChargeBody(body: any): NormalisedCharge {
     from_date: blank(b.from_date) ? null : String(b.from_date).trim(),
     to_date: blank(b.to_date) ? null : String(b.to_date).trim(),
   }
+}
+
+/**
+ * The per-hour day list.
+ *
+ * The form generates one entry per day of the chosen range and lets the desk
+ * drop the days the service was not used, so what arrives here is already the
+ * exact set of days to bill — this only trims and coerces it.
+ */
+export function normaliseHourLines(raw: any): HourLine[] {
+  if (!Array.isArray(raw)) return []
+
+  return raw.map((line: any) => {
+    const l = line && typeof line === 'object' ? line : {}
+    return {
+      charge_date: blank(l.charge_date) ? null : String(l.charge_date).trim(),
+      hours: integer(l.hours),
+    }
+  })
 }
 
 export function validatePatientCharge(
@@ -204,6 +237,36 @@ export function validatePatientCharge(
         }
       }
     }
+  } else if (values.billing_mode === 'per_hour') {
+    // The days arrive already chosen — the form expanded the range and the desk
+    // removed the days the service was not used. An empty list means every day
+    // was removed, which is a mistake worth naming rather than saving as nothing.
+    if (values.hour_lines.length === 0) {
+      errors.hour_lines = 'Add at least one day with hours on it'
+    } else if (values.hour_lines.length > MAX_CHARGE_DAYS) {
+      errors.hour_lines = `That is ${values.hour_lines.length} days. A single entry covers at most ${MAX_CHARGE_DAYS}.`
+    }
+
+    values.hour_lines.forEach((line, index) => {
+      if (!isValidDate(line.charge_date)) {
+        errors[`hour_lines.${index}.charge_date`] = 'Not a valid date'
+      }
+      if (line.hours === null) {
+        errors[`hour_lines.${index}.hours`] = `${label('hours')} must be a whole number`
+      } else if (line.hours < 1) {
+        errors[`hour_lines.${index}.hours`] = `${label('hours')} must be at least 1`
+      }
+    })
+
+    // Two rows for the same day would double-bill it.
+    const seen = new Set<string>()
+    values.hour_lines.forEach((line, index) => {
+      if (!line.charge_date) return
+      if (seen.has(line.charge_date)) {
+        errors[`hour_lines.${index}.charge_date`] = 'That day is already listed'
+      }
+      seen.add(line.charge_date)
+    })
   } else if (!isValidDate(values.charge_date)) {
     errors.charge_date = `${label('charge_date')} is required`
   }

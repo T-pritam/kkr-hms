@@ -36,16 +36,33 @@ export const CHARGE_CATEGORY_LABELS: Record<ChargeCategory, string> = {
  *
  * `one_time` is billed once and asks for a single date. `per_day` is billed for
  * every day of a stay and asks for a range, which the charge route expands into
- * one row per day — see app/api/patients/[id]/charges/route.ts. Room rent,
- * oxygen and a nebuliser are per_day; registration is one_time.
+ * one row per day — see app/api/patients/[id]/charges/route.ts. Room rent and a
+ * nebuliser are per_day; registration is one_time.
+ *
+ * `per_hour` is billed against the hours used rather than the days spanned —
+ * oxygen is the case it exists for. It asks for the same date range, but each
+ * day in that range carries its own hours (and can be dropped before saving),
+ * and the hours are stored as the row's `qty` against an hourly `amount`. So a
+ * six-hour day is billed as six hours, not as a whole day.
+ *
+ * Both range modes share a `charge_group_id` across the rows one entry produced,
+ * which is what lets the whole block be removed in one go.
  */
-export const CHARGE_BILLING_MODES = ['one_time', 'per_day'] as const
+export const CHARGE_BILLING_MODES = ['one_time', 'per_day', 'per_hour'] as const
 
 export type ChargeBillingMode = (typeof CHARGE_BILLING_MODES)[number]
 
 export const CHARGE_BILLING_MODE_LABELS: Record<ChargeBillingMode, string> = {
   one_time: 'One-time',
   per_day: 'Per day',
+  per_hour: 'Per hour',
+}
+
+/** The modes entered as a date range rather than a single date. */
+export const RANGE_BILLING_MODES: readonly ChargeBillingMode[] = ['per_day', 'per_hour']
+
+export function isRangeBillingMode(mode: unknown): mode is 'per_day' | 'per_hour' {
+  return mode === 'per_day' || mode === 'per_hour'
 }
 
 /** Who a temporary charge sheet is about. */
@@ -95,4 +112,6 @@ export const FIELD_LABELS: Record<string, string> = {
   price_per_visit: 'Fee',
   bill_id: 'Pharmacy bill ID',
   entry_date: 'Bill date',
+  hours: 'Hours',
+  hour_lines: 'Hours per day',
 }

@@ -632,3 +632,125 @@ describe('charges — effect on billing totals', () => {
     expect(Number(db.find('patient_billing', (r) => r.id === 'b1')!.patient_charges_total)).toBe(0)
   })
 })
+
+/**
+ * Per-hour charges — oxygen, the case the mode exists for.
+ *
+ * Unlike per_day, the days are not derived from the range: the form expands the
+ * range, the desk removes the days the service was not used, and what arrives is
+ * the exact set of days to bill with the hours on each. The hours land in `qty`
+ * against an hourly `amount`, so `amount * qty` — which every total in the app
+ * already computes — needs no special case.
+ */
+describe('POST /api/patients/[id]/charges — per-hour charges', () => {
+  const perHourItem = () =>
+    aChargeItem({ name: 'Oxygen', billing_mode: 'per_hour', category: 'medical', default_price: 200 })
+
+  it('writes one row per day, with that day’s hours as the quantity', async () => {
+    await signInAs('NURSE')
+    aBilling({ id: 'b1', patient_id: 'p1' })
+    const item = perHourItem()
+
+    const { status } = await create('p1', {
+      patient_billing_id: 'b1',
+      charge_item_id: item.id,
+      amount: 200,
+      hour_lines: [
+        { charge_date: '2026-08-04', hours: 6 },
+        { charge_date: '2026-08-05', hours: 12 },
+      ],
+    })
+
+    expect(status).toBe(201)
+
+    const rows = db.rows('patient_charges')
+    expect(rows).toHaveLength(2)
+    expect(rows.map((r) => [r.charge_date, r.qty])).toEqual([
+      ['2026-08-04', 6],
+      ['2026-08-05', 12],
+    ])
+    expect(rows.every((r) => r.billing_mode === 'per_hour')).toBe(true)
+    expect(rows.every((r) => Number(r.amount) === 200)).toBe(true)
+  })
+
+  /** The block has to come out in one go, exactly like a per-day block. */
+  it('shares one charge_group_id across the days', async () => {
+    await signInAs('NURSE')
+    aBilling({ id: 'b1', patient_id: 'p1' })
+    const item = perHourItem()
+
+    await create('p1', {
+      patient_billing_id: 'b1',
+      charge_item_id: item.id,
+      amount: 200,
+      hour_lines: [
+        { charge_date: '2026-08-04', hours: 6 },
+        { charge_date: '2026-08-05', hours: 12 },
+      ],
+    })
+
+    const groups = new Set(db.rows('patient_charges').map((r) => r.charge_group_id))
+    expect(groups.size).toBe(1)
+    expect([...groups][0]).toBeTruthy()
+  })
+
+  /** Only the days that were left in are billed — a removed day writes nothing. */
+  it('bills only the days sent, not the span they cover', async () => {
+    await signInAs('NURSE')
+    aBilling({ id: 'b1', patient_id: 'p1' })
+    const item = perHourItem()
+
+    await create('p1', {
+      patient_billing_id: 'b1',
+      charge_item_id: item.id,
+      amount: 200,
+      hour_lines: [
+        { charge_date: '2026-08-01', hours: 4 },
+        // 2nd and 3rd removed by the desk
+        { charge_date: '2026-08-04', hours: 8 },
+      ],
+    })
+
+    expect(db.rows('patient_charges').map((r) => r.charge_date)).toEqual([
+      '2026-08-01',
+      '2026-08-04',
+    ])
+  })
+
+  it('takes per_hour from the catalogue even when the body claims one_time', async () => {
+    await signInAs('NURSE')
+    aBilling({ id: 'b1', patient_id: 'p1' })
+    const item = perHourItem()
+
+    const { status } = await create('p1', {
+      patient_billing_id: 'b1',
+      charge_item_id: item.id,
+      billing_mode: 'one_time',
+      amount: 200,
+      charge_date: '2026-08-04',
+    })
+
+    // Rejected for the missing hour lines, because the catalogue says per_hour.
+    expect(status).toBe(400)
+    expect(db.count('patient_charges')).toBe(0)
+  })
+
+  it('refuses a day with no hours on it', async () => {
+    await signInAs('NURSE')
+    aBilling({ id: 'b1', patient_id: 'p1' })
+    const item = perHourItem()
+
+    const { status } = await create('p1', {
+      patient_billing_id: 'b1',
+      charge_item_id: item.id,
+      amount: 200,
+      hour_lines: [
+        { charge_date: '2026-08-04', hours: 6 },
+        { charge_date: '2026-08-05' },
+      ],
+    })
+
+    expect(status).toBe(400)
+    expect(db.count('patient_charges')).toBe(0)
+  })
+})

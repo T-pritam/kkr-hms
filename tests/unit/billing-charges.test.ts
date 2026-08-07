@@ -140,3 +140,77 @@ describe('validatePatientCharge', () => {
   })
 })
 
+
+/**
+ * Per-hour charges — the mode oxygen exists for.
+ *
+ * The hours are typed per day rather than derived from clock times, and each day
+ * becomes its own row with the hours as that row's `qty`. What matters here is
+ * that a day cannot slip through without hours on it, and that the same day
+ * cannot appear twice — either one silently mis-bills the stay.
+ */
+describe('validatePatientCharge — per_hour', () => {
+  const hourly = (hour_lines: unknown) =>
+    validatePatientCharge(
+      normalisePatientChargeBody({
+        charge_type: 'Oxygen',
+        amount: 200,
+        billing_mode: 'per_hour',
+        hour_lines,
+      }),
+    )
+
+  it('accepts a list of days each carrying hours', () => {
+    expect(
+      hourly([
+        { charge_date: '2026-08-04', hours: 6 },
+        { charge_date: '2026-08-05', hours: 12 },
+      ]).ok,
+    ).toBe(true)
+  })
+
+  it('rejects an empty list — every day was removed', () => {
+    expect(hourly([]).ok).toBe(false)
+    expect(hourly(undefined).ok).toBe(false)
+  })
+
+  it('rejects a day with missing, zero or fractional hours', () => {
+    expect(hourly([{ charge_date: '2026-08-04' }]).ok).toBe(false)
+    expect(hourly([{ charge_date: '2026-08-04', hours: 0 }]).ok).toBe(false)
+    expect(hourly([{ charge_date: '2026-08-04', hours: 2.5 }]).ok).toBe(false)
+  })
+
+  it('rejects an invalid date', () => {
+    expect(hourly([{ charge_date: '2026-02-31', hours: 3 }]).ok).toBe(false)
+    expect(hourly([{ charge_date: 'yesterday', hours: 3 }]).ok).toBe(false)
+  })
+
+  it('rejects the same day listed twice, which would double-bill it', () => {
+    expect(
+      hourly([
+        { charge_date: '2026-08-04', hours: 6 },
+        { charge_date: '2026-08-04', hours: 4 },
+      ]).ok,
+    ).toBe(false)
+  })
+
+  it('rejects more days than one entry may cover', () => {
+    const tooMany = Array.from({ length: 181 }, (_, i) => ({
+      charge_date: expandDateRange('2026-01-01', '2026-12-31')[i],
+      hours: 1,
+    }))
+    expect(hourly(tooMany).ok).toBe(false)
+  })
+
+  it('does not require from/to dates — the days are sent explicitly', () => {
+    const values = normalisePatientChargeBody({
+      charge_type: 'Oxygen',
+      amount: 200,
+      billing_mode: 'per_hour',
+      hour_lines: [{ charge_date: '2026-08-04', hours: 6 }],
+    })
+    expect(values.from_date).toBeNull()
+    expect(values.to_date).toBeNull()
+    expect(validatePatientCharge(values).ok).toBe(true)
+  })
+})
