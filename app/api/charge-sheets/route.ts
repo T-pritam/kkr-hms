@@ -138,7 +138,9 @@ export async function POST(request: NextRequest) {
         items.map(item => ({
           charge_sheet_id: sheet.id,
           charge_item_id: item.charge_item_id,
+          charge_name: item.charge_name,
           description: item.description,
+          billing_mode: item.billing_mode,
           unit_price: item.unit_price,
           qty: item.qty,
           service_date: item.service_date,

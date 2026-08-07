@@ -127,8 +127,13 @@ export async function POST(
           patient_id: sheet.patient_id,
           patient_billing_id: billingId,
           charge_item_id: item.charge_item_id ?? null,
-          charge_type: item.description,
-          billing_mode: 'one_time',
+          // The name, not the note beside it. Lines written before the two were
+          // split carry only `description`, which was the name back then.
+          charge_type: item.charge_name || item.description,
+          // Snapshot the mode the line was quoted under. Stamping everything
+          // one_time here made a per-day quote arrive as undifferentiated
+          // charges, losing the very distinction the sheet had recorded.
+          billing_mode: item.billing_mode || 'one_time',
           description: `From charge sheet ${sheet.sheet_no}`,
           amount: item.unit_price,
           qty: item.qty,

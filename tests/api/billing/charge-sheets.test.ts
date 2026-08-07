@@ -399,3 +399,157 @@ describe('/api/charge-sheets — forwarding into billing', () => {
     expect(db.find('charge_sheets', (r) => r.id === sheet.id)!.status).toBe('draft')
   })
 })
+
+/**
+ * Line reconciliation on save.
+ *
+ * Lines used to be deleted and re-inserted wholesale on every PATCH. That was
+ * harmless while nothing referenced them, but a pharmacy bill hangs off a line
+ * by id with ON DELETE CASCADE — so a wholesale replace would destroy the bill,
+ * and its medicines, every time someone edited an unrelated row on the sheet.
+ */
+describe('/api/charge-sheets — line reconciliation', () => {
+  it('keeps the id of a line the client still knows about', async () => {
+    await signInAs('RECEPTIONIST')
+    const sheet = aChargeSheet({ total_amount: 500 })
+    const line = aChargeSheetItem({ charge_sheet_id: sheet.id, unit_price: 500, qty: 1 })
+
+    const { status } = await update(sheet.id, {
+      items: [{ id: line.id, charge_name: 'Dressing', unit_price: 750, qty: 1 }],
+    })
+
+    expect(status).toBe(200)
+
+    const rows = db.rows('charge_sheet_items')
+    expect(rows).toHaveLength(1)
+    // Same row, updated in place — not a replacement wearing a new id.
+    expect(rows[0].id).toBe(line.id)
+    expect(Number(rows[0].unit_price)).toBe(750)
+  })
+
+  it('deletes only the lines actually dropped', async () => {
+    await signInAs('RECEPTIONIST')
+    const sheet = aChargeSheet()
+    const kept = aChargeSheetItem({ charge_sheet_id: sheet.id, unit_price: 100, qty: 1 })
+    const dropped = aChargeSheetItem({ charge_sheet_id: sheet.id, unit_price: 200, qty: 1 })
+
+    await update(sheet.id, {
+      items: [{ id: kept.id, charge_name: 'Kept', unit_price: 100, qty: 1 }],
+    })
+
+    const ids = db.rows('charge_sheet_items').map((r) => r.id)
+    expect(ids).toEqual([kept.id])
+    expect(ids).not.toContain(dropped.id)
+  })
+
+  it('inserts lines that arrive without an id', async () => {
+    await signInAs('RECEPTIONIST')
+    const sheet = aChargeSheet()
+    const line = aChargeSheetItem({ charge_sheet_id: sheet.id, unit_price: 100, qty: 1 })
+
+    await update(sheet.id, {
+      items: [
+        { id: line.id, charge_name: 'Old', unit_price: 100, qty: 1 },
+        { charge_name: 'New', unit_price: 300, qty: 1 },
+      ],
+    })
+
+    expect(db.rows('charge_sheet_items')).toHaveLength(2)
+    expect(Number(db.find('charge_sheets', (r) => r.id === sheet.id)!.total_amount)).toBe(400)
+  })
+
+  it('stores the name and the note as separate fields', async () => {
+    await signInAs('RECEPTIONIST')
+
+    const { status } = await create({
+      subject_type: 'opd',
+      opd_name: 'Walk-in',
+      items: [
+        { charge_name: 'Dressing', description: 'left forearm', unit_price: 200, qty: 1 },
+      ],
+    })
+
+    expect(status).toBe(201)
+    expect(db.rows('charge_sheet_items')[0]).toMatchObject({
+      charge_name: 'Dressing',
+      description: 'left forearm',
+    })
+  })
+
+  /** Payloads written before the split sent only `description`, and it was the name. */
+  it('falls back to description as the name for a pre-split payload', async () => {
+    await signInAs('RECEPTIONIST')
+
+    const { status } = await create({
+      subject_type: 'opd',
+      opd_name: 'Walk-in',
+      items: [{ description: 'X-Ray', unit_price: 400, qty: 1 }],
+    })
+
+    expect(status).toBe(201)
+    expect(db.rows('charge_sheet_items')[0].charge_name).toBe('X-Ray')
+  })
+
+  it('rejects a line with no name at all', async () => {
+    await signInAs('RECEPTIONIST')
+
+    const { status } = await create({
+      subject_type: 'opd',
+      opd_name: 'Walk-in',
+      items: [{ unit_price: 400, qty: 1 }],
+    })
+
+    expect(status).toBe(400)
+  })
+})
+
+/**
+ * Forwarding used to stamp every copied line `one_time`, which threw away the
+ * distinction the sheet had just recorded — a per-day quote arrived on the bill
+ * as undifferentiated charges.
+ */
+describe('/api/charge-sheets — forward carries the billing mode', () => {
+  it('snapshots each line’s mode onto the patient charge', async () => {
+    await signInAs('ADMIN')
+    const patient = aPatient({ id: 'p1' })
+    aBilling({ id: 'b1', patient_id: patient.id })
+    const sheet = aChargeSheet({ subject_type: 'patient', patient_id: patient.id })
+    aChargeSheetItem({
+      charge_sheet_id: sheet.id,
+      charge_name: 'Room Charges',
+      billing_mode: 'per_day',
+      unit_price: 3000,
+      qty: 1,
+      service_date: '2026-08-01',
+    })
+
+    const { status } = await forward(sheet.id)
+
+    expect(status).toBe(200)
+    expect(db.rows('patient_charges')[0]).toMatchObject({
+      charge_type: 'Room Charges',
+      billing_mode: 'per_day',
+    })
+  })
+
+  it('still copies a pre-split line, using its description as the name', async () => {
+    await signInAs('ADMIN')
+    const patient = aPatient({ id: 'p1' })
+    aBilling({ id: 'b1', patient_id: patient.id })
+    const sheet = aChargeSheet({ subject_type: 'patient', patient_id: patient.id })
+    aChargeSheetItem({
+      charge_sheet_id: sheet.id,
+      charge_name: null,
+      description: 'Consultation',
+      unit_price: 300,
+      qty: 1,
+    })
+
+    await forward(sheet.id)
+
+    expect(db.rows('patient_charges')[0]).toMatchObject({
+      charge_type: 'Consultation',
+      billing_mode: 'one_time',
+    })
+  })
+})

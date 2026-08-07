@@ -99,9 +99,27 @@ export const SCHEMA: Record<string, string[]> = {
   charge_sheet_items: [
     'id', 'charge_sheet_id', 'charge_item_id', 'description', 'unit_price', 'qty',
     'service_date', 'line_total', 'created_at', 'updated_at',
+    // 20260810000002 — parity with patient charges: how the line is billed, and
+    // the name split out from the note beside it
+    'billing_mode', 'charge_name',
   ],
 
   charge_sheet_counters: ['scope', 'last_no'],
+
+  // 20260809000006 — pharmacy bills fetched once from SmartPharma360 and stored
+  pharmacy_bills: [
+    'id', 'patient_id', 'patient_charge_id', 'external_bill_id', 'entry_number', 'entry_date',
+    'invoice_number', 'bill_patient_name', 'doctor_name', 'invoice_url', 'net_amount',
+    'gross_total', 'total_gst_value', 'total_disc', 'rounding', 'raw_response',
+    'created_at', 'created_by', 'updated_at', 'updated_by',
+  ],
+
+  pharmacy_bill_items: [
+    'id', 'pharmacy_bill_id', 'product_name', 'batch_number', 'packing', 'sale_quantity',
+    'mrp', 'gst_percent', 'gst_value', 'net_amount', 'created_at',
+  ],
+
+  pharmacy_api_sessions: ['scope', 'access_token', 'expires_at', 'updated_at'],
 
   case_sheet_doctors: [
     'id', 'case_sheet_id', 'doctor_id', 'doctor_name', 'doctor_specialist', 'display_order',

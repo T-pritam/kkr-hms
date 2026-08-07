@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, Loader2, Plus, Trash2 } from 'lucide-react'
+import { AlertCircle, Loader2, Plus, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -10,6 +10,11 @@ import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { PatientSelect, type SelectedPatient } from '@/components/lab/patient-select'
 import { ChargeItemSelect, type ChargeItemOption } from '@/components/charges/charge-item-select'
+import {
+  CHARGE_BILLING_MODE_LABELS,
+  MAX_CHARGE_DAYS,
+  isRangeBillingMode,
+} from '@/lib/billing/constants'
 
 /**
  * Raising and editing a temporary charge sheet.
@@ -19,25 +24,46 @@ import { ChargeItemSelect, type ChargeItemOption } from '@/components/charges/ch
  * Picking "walk-in" swaps the patient search for plain name and contact fields,
  * and the API clears whichever side is unused so the two can never both be set.
  *
- * Lines are edited as a block and replaced wholesale on save. A sheet is a
- * handful of rows edited as a unit, so diffing them client-side would buy
- * nothing.
+ * Otherwise a sheet quotes exactly what the Charges tab bills, so it offers the
+ * same things — only the layout differs. A catalogue entry's `billing_mode` was
+ * being read and thrown away here, which is why Room, Oxygen and Nebulizer got
+ * no date range on a sheet: picking one of those now opens a range beneath the
+ * line, and a per-hour one opens the hours-per-day list, both expanding into one
+ * stored line per day exactly as the patient form does.
  *
- * The date used to be per line. A temporary sheet is raised in one sitting for
- * one visit, so it is now one date for the whole sheet — one less field to
- * repeat on every row, and one less reason for a row to feel like its own form.
- * Each line is now a single compact row (item, description, qty, rate, amount,
- * remove) rather than a bordered card, and the last row grows a fresh blank one
- * the moment it gets its first content — typed or picked — so adding a charge
- * is "keep typing", not "click Add line, then type". The button stays too, for
- * adding a row without touching the last one first.
+ * The name and the note about it are two fields, not one box doing both jobs —
+ * again matching patient charges, where a line that says "Dressing" can also
+ * say why.
+ *
+ * The sheet-level date is the default for a plain one-time line; a line that
+ * came from a range carries its own day. Lines are reconciled by id on save
+ * rather than replaced wholesale, because a pharmacy bill hangs off a line and
+ * would otherwise be destroyed by editing any other row.
+ *
+ * The last row grows a fresh blank one the moment it gets its first content —
+ * typed or picked — so adding a charge is "keep typing", not "click Add line,
+ * then type". The button stays too, for adding a row without touching the last.
  */
 
 export interface ChargeSheetLine {
+  /** The stored row this is, when editing. Null for a line not yet saved. */
+  id: string | null
   charge_item_id: string | null
+  /** What the line is — the required half. */
+  charge_name: string
+  /** The optional note beside it. */
   description: string
   unit_price: string
   qty: string
+  billing_mode: 'one_time' | 'per_day' | 'per_hour'
+  /** The day this line falls on. Blank means "use the sheet date". */
+  service_date: string
+  /** Range entry, only ever set on a line that has not been saved yet. */
+  from_date: string
+  to_date: string
+  /** per_hour: hours typed against each day, and the days dropped from the range. */
+  hours: Record<string, string>
+  removed_days: string[]
 }
 
 interface Props {
@@ -51,17 +77,111 @@ interface Props {
 const today = () => new Date().toISOString().slice(0, 10)
 
 const BLANK_LINE: ChargeSheetLine = {
+  id: null,
   charge_item_id: null,
+  charge_name: '',
   description: '',
   unit_price: '',
   qty: '1',
+  billing_mode: 'one_time',
+  service_date: '',
+  from_date: '',
+  to_date: '',
+  hours: {},
+  removed_days: [],
 }
 
 /** A line is real once it names something — picked or typed. */
-const isBlank = (line: ChargeSheetLine) => !line.description.trim() && !line.charge_item_id
+const isBlank = (line: ChargeSheetLine) => !line.charge_name.trim() && !line.charge_item_id
 
 const money = (n: number) =>
   `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+/**
+ * Shared by the header row and every line, so the two cannot drift apart.
+ *
+ * Written out twice rather than composed with a `sm:` prefix at runtime:
+ * Tailwind generates classes by scanning the source for literal strings, so a
+ * template-built `sm:grid-cols-[…]` would never exist in the stylesheet.
+ */
+const LINE_GRID = 'grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_56px_88px_88px_28px]'
+const LINE_GRID_SM =
+  'sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_56px_88px_88px_28px]'
+
+/** Every date from `from` to `to` inclusive, stepped in UTC so a DST boundary
+ * never repeats or skips a day. Mirrors expandDateRange in lib/billing/validate.ts. */
+function eachDay(from: string, to: string): string[] {
+  if (!from || !to) return []
+  const start = Date.parse(`${from}T00:00:00Z`)
+  const end = Date.parse(`${to}T00:00:00Z`)
+  if (Number.isNaN(start) || Number.isNaN(end) || end < start) return []
+
+  const days: string[] = []
+  for (let t = start; t <= end && days.length <= MAX_CHARGE_DAYS; t += 86_400_000) {
+    days.push(new Date(t).toISOString().slice(0, 10))
+  }
+  return days
+}
+
+/** The days a ranged line covers, after the ones the user dropped. */
+function daysOf(line: ChargeSheetLine): string[] {
+  const dropped = new Set(line.removed_days)
+  return eachDay(line.from_date, line.to_date).filter(day => !dropped.has(day))
+}
+
+/**
+ * What one form line becomes once saved.
+ *
+ * A line already stored, or a plain one-time one, is a single row. A ranged line
+ * that has not been saved yet becomes one row per day — the same expansion the
+ * patient charges route does server-side, done here because the sheet API takes
+ * the lines as given.
+ */
+function expandLine(line: ChargeSheetLine, sheetDate: string) {
+  const base = {
+    charge_item_id: line.charge_item_id,
+    charge_name: line.charge_name.trim(),
+    description: line.description.trim() || null,
+    unit_price: Number(line.unit_price) || 0,
+    billing_mode: line.billing_mode,
+  }
+
+  const ranged = !line.id && isRangeBillingMode(line.billing_mode)
+
+  if (!ranged) {
+    return [
+      {
+        ...base,
+        id: line.id,
+        qty: Number(line.qty) || 1,
+        service_date: line.service_date || sheetDate,
+      },
+    ]
+  }
+
+  return daysOf(line).map(day => ({
+    ...base,
+    id: null,
+    // per_hour bills the hours typed against that day; per_day bills the units.
+    qty:
+      line.billing_mode === 'per_hour'
+        ? Number(line.hours[day]) || 0
+        : Number(line.qty) || 1,
+    service_date: day,
+  }))
+}
+
+/** What a line will add up to, days and hours included. */
+function lineTotal(line: ChargeSheetLine): number {
+  const rate = Number(line.unit_price) || 0
+  if (line.id || !isRangeBillingMode(line.billing_mode)) {
+    return rate * (Number(line.qty) || 1)
+  }
+  if (line.billing_mode === 'per_hour') {
+    return daysOf(line).reduce((sum, day) => sum + rate * (Number(line.hours[day]) || 0), 0)
+  }
+  return rate * (Number(line.qty) || 1) * daysOf(line).length
+}
 
 export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props) {
   const mode: 'create' | 'edit' = sheetId ? 'edit' : 'create'
@@ -120,13 +240,21 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
         // whatever this field ends up holding.
         setSheetDate(items[0]?.service_date ? String(items[0].service_date).slice(0, 10) : today())
         setNotes(sheet.notes || '')
+        // Stored lines come back one per day, already expanded — the same way
+        // the Charges tab shows a saved per-day block as its individual days.
+        // Editing one touches that day alone; a new range is entered as a range.
         setLines(
           items.length > 0
             ? items.map((i: any) => ({
+                ...BLANK_LINE,
+                id: i.id,
                 charge_item_id: i.charge_item_id,
-                description: i.description || '',
+                charge_name: i.charge_name || i.description || '',
+                description: i.charge_name ? i.description || '' : '',
                 unit_price: String(i.unit_price ?? ''),
                 qty: String(i.qty ?? 1),
+                billing_mode: i.billing_mode || 'one_time',
+                service_date: i.service_date ? String(i.service_date).slice(0, 10) : '',
               }))
             : [{ ...BLANK_LINE }],
         )
@@ -161,10 +289,22 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
   }
 
   const chooseItem = (index: number, item: ChargeItemOption | null) => {
+    const current = lines[index]
+    // A saved line keeps the mode it was quoted under; only a new line takes the
+    // catalogue's current one.
+    const mode = current.id
+      ? current.billing_mode
+      : isRangeBillingMode(item?.billing_mode)
+        ? (item!.billing_mode as 'per_day' | 'per_hour')
+        : 'one_time'
+
     updateLine(index, {
       charge_item_id: item?.id ?? null,
-      description: item ? item.name : lines[index].description,
-      unit_price: item ? String(item.default_price ?? '') : lines[index].unit_price,
+      charge_name: item ? item.name : current.charge_name,
+      unit_price: item ? String(item.default_price ?? '') : current.unit_price,
+      billing_mode: mode,
+      from_date: isRangeBillingMode(mode) && !current.from_date ? sheetDate : current.from_date,
+      to_date: isRangeBillingMode(mode) && !current.to_date ? sheetDate : current.to_date,
     })
   }
 
@@ -180,8 +320,14 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
   const filledLines = useMemo(() => lines.filter(l => !isBlank(l)), [lines])
 
   const total = useMemo(
-    () => filledLines.reduce((sum, l) => sum + (Number(l.unit_price) || 0) * (Number(l.qty) || 1), 0),
+    () => filledLines.reduce((sum, l) => sum + lineTotal(l), 0),
     [filledLines],
+  )
+
+  /** Every stored row the filled lines will become, ranges expanded. */
+  const expandedItems = useMemo(
+    () => filledLines.flatMap(l => expandLine(l, sheetDate)),
+    [filledLines, sheetDate],
   )
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -194,13 +340,7 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
       const payload: Record<string, any> = {
         subject_type: subjectType,
         notes: notes || null,
-        items: filledLines.map(l => ({
-          charge_item_id: l.charge_item_id,
-          description: l.description,
-          unit_price: Number(l.unit_price) || 0,
-          qty: Number(l.qty) || 1,
-          service_date: sheetDate,
-        })),
+        items: expandedItems,
       }
 
       if (subjectType === 'patient') {
@@ -237,7 +377,25 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
   }
 
   const subjectReady = subjectType === 'patient' ? !!patient : !!opd.name.trim()
-  const linesReady = filledLines.length > 0 && filledLines.every(l => Number(l.unit_price) >= 0)
+
+  /**
+   * A ranged line must actually resolve to days, and a per-hour one to hours on
+   * every day left in — otherwise saving quietly writes nothing for that line,
+   * or writes a day billed for zero hours.
+   */
+  const lineReady = (line: ChargeSheetLine) => {
+    if (Number(line.unit_price) < 0) return false
+    if (line.id || !isRangeBillingMode(line.billing_mode)) return true
+
+    const days = daysOf(line)
+    if (days.length === 0 || days.length > MAX_CHARGE_DAYS) return false
+    if (line.billing_mode === 'per_hour') {
+      return days.every(day => Number(line.hours[day]) >= 1)
+    }
+    return true
+  }
+
+  const linesReady = filledLines.length > 0 && filledLines.every(lineReady)
 
   return (
     <Modal
@@ -390,8 +548,9 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
 
             {/* Column header — desktop only; the mobile layout labels each field
                 on its own line instead, where a header row would just repeat. */}
-            <div className="hidden sm:grid grid-cols-[minmax(0,1.4fr)_minmax(0,1.4fr)_64px_96px_96px_28px] gap-2 px-1 text-xs font-medium text-muted uppercase">
+            <div className={`hidden sm:grid ${LINE_GRID} gap-2 px-1 text-xs font-medium text-muted uppercase`}>
               <span>Charge</span>
+              <span>Name</span>
               <span>Description</span>
               <span className="text-center">Qty</span>
               <span className="text-right">Rate</span>
@@ -401,77 +560,190 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
 
             <div className="space-y-2">
               {lines.map((line, index) => {
-                const amount = (Number(line.unit_price) || 0) * (Number(line.qty) || 1)
                 const removable = lines.length > 1
+                // A saved line is one stored day; only a new one enters a range.
+                const ranged = !line.id && isRangeBillingMode(line.billing_mode)
+                const days = ranged ? daysOf(line) : []
 
                 return (
                   <div
-                    key={index}
-                    className="rounded-lg border border-border bg-surface-inset p-2 sm:p-1.5
-                               grid grid-cols-2 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1.4fr)_64px_96px_96px_28px]
-                               gap-2 items-center"
+                    key={line.id ?? `new-${index}`}
+                    className="rounded-lg border border-border bg-surface-inset p-2 sm:p-1.5 space-y-2"
                   >
-                    <div className="col-span-2 sm:col-span-1">
-                      <ChargeItemSelect
-                        id={`sheet-line-${index}`}
-                        value={line.charge_item_id || ''}
-                        onChange={item => chooseItem(index, item)}
-                        disabled={saving}
-                      />
-                    </div>
+                    <div className={`grid grid-cols-2 ${LINE_GRID_SM} gap-2 items-center`}>
+                      <div className="col-span-2 sm:col-span-1">
+                        <ChargeItemSelect
+                          id={`sheet-line-${index}`}
+                          value={line.charge_item_id || ''}
+                          onChange={item => chooseItem(index, item)}
+                          disabled={saving}
+                        />
+                      </div>
 
-                    <div className="col-span-2 sm:col-span-1">
+                      <div className="col-span-2 sm:col-span-1">
+                        <Input
+                          aria-label="Name"
+                          value={line.charge_name}
+                          onChange={e => updateLine(index, { charge_name: e.target.value })}
+                          disabled={saving}
+                          placeholder="What is being charged"
+                        />
+                        {fieldErrors[`items.${index}.charge_name`] && (
+                          <p className="text-xs text-destructive mt-1">
+                            {fieldErrors[`items.${index}.charge_name`]}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="col-span-2 sm:col-span-1">
+                        <Input
+                          aria-label="Description"
+                          value={line.description}
+                          onChange={e => updateLine(index, { description: e.target.value })}
+                          disabled={saving}
+                          placeholder="Note (optional)"
+                        />
+                      </div>
+
                       <Input
-                        aria-label="Description"
-                        value={line.description}
-                        onChange={e => updateLine(index, { description: e.target.value })}
-                        disabled={saving}
-                        placeholder="What is being charged for"
+                        aria-label={line.billing_mode === 'per_day' ? 'Units per day' : 'Quantity'}
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={line.qty}
+                        onFocus={e => e.target.select()}
+                        onChange={e => updateLine(index, { qty: e.target.value })}
+                        disabled={saving || (ranged && line.billing_mode === 'per_hour')}
+                        className="text-center"
                       />
-                      {fieldErrors[`items.${index}.description`] && (
-                        <p className="text-xs text-destructive mt-1">
-                          {fieldErrors[`items.${index}.description`]}
-                        </p>
-                      )}
+
+                      <Input
+                        aria-label="Rate"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={line.unit_price}
+                        onFocus={e => e.target.select()}
+                        onChange={e => updateLine(index, { unit_price: e.target.value })}
+                        disabled={saving}
+                        className="text-right"
+                      />
+
+                      <span className="text-sm font-medium text-foreground text-right pr-1">
+                        {money(lineTotal(line))}
+                      </span>
+
+                      <button
+                        type="button"
+                        onClick={() => removeLine(index)}
+                        disabled={saving || !removable}
+                        aria-label={`Remove line ${index + 1}`}
+                        className="p-1.5 text-muted hover:text-destructive disabled:opacity-0 justify-self-end"
+                      >
+                        <Trash2 size={16} />
+                      </button>
                     </div>
 
-                    <Input
-                      aria-label="Quantity"
-                      type="number"
-                      min="1"
-                      step="1"
-                      value={line.qty}
-                      onFocus={e => e.target.select()}
-                      onChange={e => updateLine(index, { qty: e.target.value })}
-                      disabled={saving}
-                      className="text-center"
-                    />
+                    {/* Range controls live under the line rather than in it: they
+                        only apply to two of the three modes, and cramming them
+                        into the grid would squeeze every other row for them. */}
+                    {ranged && (
+                      <div className="border-t border-input-border pt-2 space-y-2">
+                        <div className="flex flex-wrap items-end gap-2">
+                          <span className="text-xs font-medium text-muted uppercase pb-2.5">
+                            {CHARGE_BILLING_MODE_LABELS[line.billing_mode]}
+                          </span>
+                          <div className="space-y-1">
+                            <Label htmlFor={`from-${index}`} className="text-xs">From</Label>
+                            <Input
+                              id={`from-${index}`}
+                              type="date"
+                              className="h-9 w-40"
+                              value={line.from_date}
+                              max={line.to_date || undefined}
+                              onChange={e => updateLine(index, { from_date: e.target.value })}
+                              disabled={saving}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor={`to-${index}`} className="text-xs">To</Label>
+                            <Input
+                              id={`to-${index}`}
+                              type="date"
+                              className="h-9 w-40"
+                              value={line.to_date}
+                              min={line.from_date || undefined}
+                              onChange={e => updateLine(index, { to_date: e.target.value })}
+                              disabled={saving}
+                            />
+                          </div>
+                          <span className="text-xs text-muted pb-2.5">
+                            {days.length === 0
+                              ? 'Pick a range'
+                              : `${days.length} day${days.length === 1 ? '' : 's'} — ${days.length} line${days.length === 1 ? '' : 's'} will be added`}
+                          </span>
+                        </div>
 
-                    <Input
-                      aria-label="Rate"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={line.unit_price}
-                      onFocus={e => e.target.select()}
-                      onChange={e => updateLine(index, { unit_price: e.target.value })}
-                      disabled={saving}
-                      className="text-right"
-                    />
+                        {line.billing_mode === 'per_hour' && days.length > 0 && (
+                          <ul className="rounded-md border border-border divide-y divide-input-border max-h-44 overflow-y-auto">
+                            {days.map(day => (
+                              <li key={day} className="flex items-center gap-3 px-3 py-1.5">
+                                <span className="text-sm text-foreground flex-1 min-w-0">
+                                  {new Date(`${day}T00:00:00`).toLocaleDateString('en-IN', {
+                                    weekday: 'short',
+                                    day: '2-digit',
+                                    month: 'short',
+                                  })}
+                                </span>
+                                <Input
+                                  type="number"
+                                  min="1"
+                                  step="1"
+                                  aria-label={`Hours on ${day}`}
+                                  className="w-24 h-9"
+                                  placeholder="hrs"
+                                  value={line.hours[day] ?? ''}
+                                  onFocus={e => e.target.select()}
+                                  onChange={e =>
+                                    updateLine(index, {
+                                      hours: { ...line.hours, [day]: e.target.value },
+                                    })
+                                  }
+                                  disabled={saving}
+                                />
+                                <button
+                                  type="button"
+                                  aria-label={`Remove ${day}`}
+                                  className="text-muted hover:text-destructive shrink-0"
+                                  onClick={() =>
+                                    updateLine(index, {
+                                      removed_days: [...line.removed_days, day],
+                                    })
+                                  }
+                                  disabled={saving}
+                                >
+                                  <X size={16} />
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
 
-                    <span className="text-sm font-medium text-foreground text-right pr-1">
-                      {money(amount)}
-                    </span>
-
-                    <button
-                      type="button"
-                      onClick={() => removeLine(index)}
-                      disabled={saving || !removable}
-                      aria-label={`Remove line ${index + 1}`}
-                      className="p-1.5 text-muted hover:text-destructive disabled:opacity-0 justify-self-end"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                        {line.removed_days.length > 0 && (
+                          <p className="text-xs text-muted">
+                            {line.removed_days.length} day
+                            {line.removed_days.length === 1 ? '' : 's'} removed ·{' '}
+                            <button
+                              type="button"
+                              className="text-info underline"
+                              onClick={() => updateLine(index, { removed_days: [] })}
+                            >
+                              restore
+                            </button>
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )
               })}

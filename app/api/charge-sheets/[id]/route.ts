@@ -97,30 +97,67 @@ export async function PATCH(
     if (body.status === 'cancelled') values.status = 'cancelled'
     if (body.status === 'draft') values.status = 'draft'
 
-    // Items are replaced wholesale rather than diffed. A sheet is a handful of
-    // lines edited as a unit, and a diff would need stable client-side ids for no
-    // benefit here.
+    /**
+     * Items are reconciled by id, not replaced wholesale.
+     *
+     * They used to be deleted and re-inserted on every save, which was fine when
+     * nothing pointed at them. A pharmacy bill now hangs off a line by id with
+     * ON DELETE CASCADE, so a wholesale replace would silently destroy the bill —
+     * and its medicines — every time someone edited an unrelated line on the
+     * sheet. Rows the client still knows about keep their identity; only the ones
+     * genuinely dropped are deleted.
+     */
     if (hasItems) {
       values.total_amount = items.reduce((sum, i) => sum + (i.unit_price ?? 0) * (i.qty ?? 1), 0)
 
-      const { error: clearError } = await supabase
+      const { data: existing, error: existingError } = await supabase
         .from('charge_sheet_items')
-        .delete()
+        .select('id')
         .eq('charge_sheet_id', id)
 
-      if (clearError) throw clearError
+      if (existingError) throw existingError
 
-      if (items.length > 0) {
-        const { error: insertError } = await supabase.from('charge_sheet_items').insert(
-          items.map(item => ({
-            charge_sheet_id: id,
-            charge_item_id: item.charge_item_id,
-            description: item.description,
-            unit_price: item.unit_price,
-            qty: item.qty,
-            service_date: item.service_date,
-          }))
-        )
+      const keptIds = new Set(items.map(i => i.id).filter(Boolean) as string[])
+      const goneIds = (existing ?? []).map(r => r.id).filter(rowId => !keptIds.has(rowId))
+
+      if (goneIds.length > 0) {
+        const { error: deleteError } = await supabase
+          .from('charge_sheet_items')
+          .delete()
+          .in('id', goneIds)
+          .eq('charge_sheet_id', id)
+
+        if (deleteError) throw deleteError
+      }
+
+      const columns = (item: (typeof items)[number]) => ({
+        charge_item_id: item.charge_item_id,
+        charge_name: item.charge_name,
+        description: item.description,
+        billing_mode: item.billing_mode,
+        unit_price: item.unit_price,
+        qty: item.qty,
+        service_date: item.service_date,
+      })
+
+      for (const item of items.filter(i => i.id)) {
+        // Scoped to the sheet as well as the row: an id is a client-supplied
+        // value, and a tampered one must not reach another sheet's line.
+        const { error: updateError } = await supabase
+          .from('charge_sheet_items')
+          .update(columns(item))
+          .eq('id', item.id!)
+          .eq('charge_sheet_id', id)
+
+        if (updateError) throw updateError
+      }
+
+      const fresh = items.filter(i => !i.id)
+      if (fresh.length > 0) {
+        const { error: insertError } = await supabase
+          .from('charge_sheet_items')
+          .insert(fresh.map(item => ({ charge_sheet_id: id, ...columns(item) })))
+
         if (insertError) throw insertError
       }
     }

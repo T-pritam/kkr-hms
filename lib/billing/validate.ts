@@ -341,8 +341,14 @@ export function normaliseChargeSheetBody(body: any): Record<string, any> {
 }
 
 export interface NormalisedSheetItem {
+  /** The existing row this line is, when the sheet is being edited. */
+  id: string | null
   charge_item_id: string | null
+  /** The required half — what the line is. */
+  charge_name: string | null
+  /** The optional note beside it. */
   description: string | null
+  billing_mode: string | null
   unit_price: number | null
   qty: number | null
   service_date: string | null
@@ -353,9 +359,17 @@ export function normaliseChargeSheetItems(raw: any): NormalisedSheetItem[] {
 
   return raw.map((item: any) => {
     const i = item && typeof item === 'object' ? item : {}
+    // Lines written before the name/description split carry only `description`,
+    // and that value was always the name — so fall back to it rather than
+    // rejecting a payload that predates the split.
+    const name = blank(i.charge_name) ? i.description : i.charge_name
+
     return {
+      id: blank(i.id) ? null : String(i.id).trim(),
       charge_item_id: blank(i.charge_item_id) ? null : String(i.charge_item_id).trim(),
+      charge_name: blank(name) ? null : String(name).trim(),
       description: blank(i.description) ? null : String(i.description).trim(),
+      billing_mode: blank(i.billing_mode) ? 'one_time' : String(i.billing_mode).trim(),
       unit_price: money(i.unit_price),
       qty: blank(i.qty) ? 1 : integer(i.qty),
       service_date: blank(i.service_date) ? null : String(i.service_date).trim(),
@@ -388,13 +402,19 @@ export function validateChargeSheet(
   items.forEach((item, index) => {
     const at = (field: string) => `items.${index}.${field}`
 
-    if (blank(item.description)) errors[at('description')] = 'Describe this line'
+    if (blank(item.charge_name)) errors[at('charge_name')] = 'Name this line'
     if (item.unit_price === null || item.unit_price < 0) {
       errors[at('unit_price')] = `${label('unit_price')} must be zero or more`
     }
     if (item.qty === null || item.qty < 1) errors[at('qty')] = `${label('qty')} must be at least 1`
     if (item.service_date !== null && !isValidDate(item.service_date)) {
       errors[at('service_date')] = 'Not a valid date'
+    }
+    if (
+      item.billing_mode !== null &&
+      !(CHARGE_BILLING_MODES as readonly string[]).includes(item.billing_mode)
+    ) {
+      errors[at('billing_mode')] = `${label('billing_mode')} must be one of: ${CHARGE_BILLING_MODES.join(', ')}`
     }
   })
 
