@@ -19,7 +19,7 @@ import { firstError } from '@/lib/patients/validate'
 const DETAIL_SELECT = `
   *,
   patient:patients(id, patient_id, name, phone, gender, age_years),
-  items:charge_sheet_items(*),
+  items:charge_sheet_items(*, pharmacy_bill:pharmacy_bills!charge_sheet_item_id(id, entry_number, entry_date, external_bill_id)),
   created_by_user:users!created_by(id, username),
   updated_by_user:users!updated_by(id, username)
 `

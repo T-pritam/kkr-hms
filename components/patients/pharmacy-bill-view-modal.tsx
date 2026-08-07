@@ -47,8 +47,13 @@ interface PharmacyBillDetail {
 interface Props {
   isOpen: boolean
   onClose: () => void
-  patientId: string
-  billId: string
+  /**
+   * The bill's own URL — `/api/patients/<id>/pharmacy-bills/<billId>` or
+   * `/api/charge-sheets/<id>/pharmacy-bills/<billId>`. Both return the same
+   * stored bill; only the owner differs.
+   */
+  endpoint: string
+  /** Names the person on the PDF. Falls back to the name on the bill itself. */
   patient?: PatientChargesPatient | null
   onDateChanged?: () => void
 }
@@ -56,7 +61,7 @@ interface Props {
 const money = (n: number) =>
   `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
-export function PharmacyBillViewModal({ isOpen, onClose, patientId, billId, patient, onDateChanged }: Props) {
+export function PharmacyBillViewModal({ isOpen, onClose, endpoint, patient, onDateChanged }: Props) {
   const [data, setData] = useState<PharmacyBillDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -67,7 +72,7 @@ export function PharmacyBillViewModal({ isOpen, onClose, patientId, billId, pati
     setLoading(true)
     setError('')
     try {
-      const res = await fetch(`/api/patients/${patientId}/pharmacy-bills/${billId}`)
+      const res = await fetch(endpoint)
       const json = await res.json()
       if (!res.ok) throw new Error(json?.error || 'Failed to load the bill')
       setData(json)
@@ -77,7 +82,7 @@ export function PharmacyBillViewModal({ isOpen, onClose, patientId, billId, pati
     } finally {
       setLoading(false)
     }
-  }, [patientId, billId])
+  }, [endpoint])
 
   useEffect(() => {
     if (!isOpen) return
@@ -89,7 +94,7 @@ export function PharmacyBillViewModal({ isOpen, onClose, patientId, billId, pati
     setSavingDate(true)
     setError('')
     try {
-      const res = await fetch(`/api/patients/${patientId}/pharmacy-bills/${billId}`, {
+      const res = await fetch(endpoint, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ entry_date: dateDraft }),

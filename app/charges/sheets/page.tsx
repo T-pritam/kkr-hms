@@ -8,9 +8,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { ChargeSheetModal } from '@/components/charges/charge-sheet-modal'
+import { ChargeSheetDownloadModal } from '@/components/charges/charge-sheet-download-modal'
 import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch'
 import { useUser } from '@/hooks/use-user'
-import { printChargeSheet, printChargeSheetToPrinter } from '@/lib/pdf/charge-sheet-pdf'
+import { printChargeSheetToPrinter } from '@/lib/pdf/charge-sheet-pdf'
 
 /**
  * Temporary charge sheets.
@@ -54,6 +55,7 @@ export default function ChargeSheetsPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [downloadSheet, setDownloadSheet] = useState<any | null>(null)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
 
@@ -101,11 +103,13 @@ export default function ChargeSheetsPage() {
     return json.chargeSheet
   }
 
+  // Opens the picker rather than saving straight away: a sheet may carry
+  // pharmacy bills, and those are appended by choice, not automatically.
   const download = async (sheet: ChargeSheet) => {
     setError('')
     setBusyId(sheet.id)
     try {
-      printChargeSheet(await loadSheetDetail(sheet))
+      setDownloadSheet(await loadSheetDetail(sheet))
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -426,6 +430,12 @@ export default function ChargeSheetsPage() {
           setEditingId(null)
         }}
         onSuccess={fetchSheets}
+      />
+
+      <ChargeSheetDownloadModal
+        isOpen={Boolean(downloadSheet)}
+        onClose={() => setDownloadSheet(null)}
+        sheet={downloadSheet}
       />
     </DashboardLayout>
   )

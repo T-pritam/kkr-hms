@@ -24,6 +24,7 @@ import { requireBilling } from '@/lib/billing/authz'
 import { firstError } from '@/lib/patients/validate'
 import { normaliseAddPharmacyBillBody, validateAddPharmacyBillBody } from '@/lib/pharmacy/validate'
 import { fetchBillDetails, resolveExternalBillId } from '@/lib/pharmacy/client'
+import { billColumns, billLabel, insertPharmacyBill } from '@/lib/pharmacy/store'
 import { recalculatePatientBilling } from '@/lib/recalculate-billing'
 
 export async function POST(
@@ -100,15 +101,11 @@ export async function POST(
       )
     }
 
-    const { head, items } = details
-    if (!items.length) {
+    if (!details.items.length) {
       return NextResponse.json({ error: 'That bill has no medicines on it' }, { status: 400 })
     }
 
-    const netAmount = Number(head.net_amount) || 0
-    const entryDate = head.entry_date || new Date().toISOString().slice(0, 10)
-    const entryNumber = head.entry_number || null
-    const label = entryNumber || String(externalId)
+    const columns = billColumns(externalId, details)
 
     const { data: charge, error: chargeError } = await supabase
       .from('patient_charges')
@@ -116,12 +113,12 @@ export async function POST(
         patient_id: patientId,
         patient_billing_id: billingId,
         charge_item_id: null,
-        charge_type: `Pharmacy — ${label}`,
+        charge_type: billLabel(externalId, details),
         billing_mode: 'one_time',
         description: null,
-        amount: netAmount,
+        amount: columns.net_amount,
         qty: 1,
-        charge_date: entryDate,
+        charge_date: columns.entry_date,
         charge_group_id: null,
         created_by: user.id,
         updated_by: user.id,
@@ -132,46 +129,13 @@ export async function POST(
     if (chargeError) throw chargeError
     createdChargeId = charge.id
 
-    const { data: bill, error: billError } = await supabase
-      .from('pharmacy_bills')
-      .insert({
-        patient_id: patientId,
-        patient_charge_id: charge.id,
-        external_bill_id: externalId,
-        entry_number: entryNumber,
-        entry_date: entryDate,
-        invoice_number: head.invoice_number || null,
-        bill_patient_name: head.patient_name || null,
-        doctor_name: head.doctor_name || null,
-        invoice_url: head.invoice_url || null,
-        net_amount: netAmount,
-        gross_total: head.gross_total ?? null,
-        total_gst_value: head.total_gst_value ?? null,
-        total_disc: head.total_disc ?? null,
-        rounding: head.rounding ?? null,
-        raw_response: details,
-        created_by: user.id,
-        updated_by: user.id,
-      })
-      .select()
-      .single()
-
-    if (billError) throw billError
-
-    const itemRows = items.map(it => ({
-      pharmacy_bill_id: bill.id,
-      product_name: it.product_name,
-      batch_number: it.batch_number || null,
-      packing: it.packing || null,
-      sale_quantity: Number(it.sale_quantity) || 1,
-      mrp: it.mrp !== undefined && it.mrp !== null ? Number(it.mrp) : null,
-      gst_percent: it.gst !== undefined && it.gst !== null ? Number(it.gst) : null,
-      gst_value: it.gst_value !== undefined && it.gst_value !== null ? Number(it.gst_value) : null,
-      net_amount: Number(it.net_amount) || 0,
-    }))
-
-    const { error: itemsError } = await supabase.from('pharmacy_bill_items').insert(itemRows)
-    if (itemsError) throw itemsError
+    const bill = await insertPharmacyBill(
+      supabase,
+      { patient_id: patientId, patient_charge_id: charge.id },
+      externalId,
+      details,
+      user.id,
+    )
 
     await recalculatePatientBilling(supabase, billingId)
 

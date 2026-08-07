@@ -6,51 +6,42 @@ import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { docBytes, downloadPdf, mergePdfs, type MergePart } from '@/lib/pdf/merge'
 import {
-  patientChargesFilename, renderPatientCharges, type PatientChargesPatient,
-} from '@/lib/pdf/patient-charges-pdf'
-import { pharmacyBillParts } from '@/lib/pdf/pharmacy-attachments'
+  chargeSheetFilename, renderChargeSheet, type ChargeSheetData,
+} from '@/lib/pdf/charge-sheet-pdf'
+import { pharmacyBillParts, type PharmacyBillRef } from '@/lib/pdf/pharmacy-attachments'
 
 /**
- * Choosing what goes into the downloaded charges statement.
+ * Choosing what goes into the downloaded charge sheet.
  *
- * The patient charges statement is always included. Any pharmacy bills on
- * this patient's charges are ticked individually — same "always included
- * primary + optional checklist, merged into one PDF" pattern as the
- * discharge summary's download modal (components/case-sheet/download-modal.tsx).
+ * The patient-side twin is components/patients/patient-charges-download-modal.tsx,
+ * and the two work the same way: the primary document is always included, any
+ * pharmacy bills on it are ticked individually, and everything comes down as one
+ * merged PDF. Both build their attachment parts with `pharmacyBillParts`.
  *
- * Each ticked bill is fetched in full (with its medicine lines) only at
- * download time, and only for the bills actually picked — this never re-hits
- * SmartPharma360, it reads the copy already stored from when the bill was
- * added.
+ * A walk-in sheet has no patient record, so the bill PDF is headed with whatever
+ * the sheet knows about the person instead.
  */
 
-interface ChargeRow {
-  charge_date: string
-  charge_type: string
-  description?: string | null
-  qty: number
-  amount: number
-  pharmacy_bill?: { id: string; entry_number: string | null; entry_date: string } | null
+interface SheetItem {
+  pharmacy_bill?: PharmacyBillRef | PharmacyBillRef[] | null
 }
 
 interface Props {
   isOpen: boolean
   onClose: () => void
-  patientId: string
-  patient?: PatientChargesPatient | null
-  charges: ChargeRow[]
+  /** The full sheet, lines included — the list rows do not carry them. */
+  sheet: (ChargeSheetData & { id: string; items?: SheetItem[] }) | null
 }
 
-type PharmacyBillRef = NonNullable<ChargeRow['pharmacy_bill']>
-
-const lineTotal = (c: ChargeRow) => Number(c.amount || 0) * (Number(c.qty) || 1)
-
-/** The bills on these charges, narrowed so callers need no `!` assertions. */
-function pharmacyBillsOf(charges: ChargeRow[]): PharmacyBillRef[] {
-  return charges.flatMap(c => (c.pharmacy_bill ? [c.pharmacy_bill] : []))
+/** PostgREST hands an embed back as an array unless it can prove it is to-one. */
+function billsOf(items: SheetItem[] = []): PharmacyBillRef[] {
+  return items.flatMap(item => {
+    const bill = Array.isArray(item.pharmacy_bill) ? item.pharmacy_bill[0] : item.pharmacy_bill
+    return bill ? [bill] : []
+  })
 }
 
-export function PatientChargesDownloadModal({ isOpen, onClose, patientId, patient, charges }: Props) {
+export function ChargeSheetDownloadModal({ isOpen, onClose, sheet }: Props) {
   const [pickedBills, setPickedBills] = useState<Set<string>>(new Set())
   const [building, setBuilding] = useState(false)
   const [error, setError] = useState('')
@@ -63,7 +54,9 @@ export function PatientChargesDownloadModal({ isOpen, onClose, patientId, patien
     setPickedBills(new Set())
   }, [isOpen])
 
-  const pharmacyBills = pharmacyBillsOf(charges)
+  if (!sheet) return null
+
+  const pharmacyBills = billsOf(sheet.items)
 
   const toggle = (id: string) => {
     setPickedBills(prev => {
@@ -80,38 +73,32 @@ export function PatientChargesDownloadModal({ isOpen, onClose, patientId, patien
     setWarning('')
 
     try {
-      const patientForPdf = patient ?? { name: 'Patient', patient_id: null }
-      const pdfData = {
-        patient: patientForPdf,
-        charges: charges.map(c => ({
-          charge_date: c.charge_date,
-          charge_type: c.charge_type || 'Charge',
-          description: c.description,
-          qty: c.qty || 1,
-          amount: lineTotal(c),
-        })),
-      }
+      const subject =
+        sheet.subject_type === 'patient'
+          ? { name: sheet.patient?.name || 'Patient', patient_id: sheet.patient?.patient_id ?? null }
+          : { name: sheet.opd_name || 'Walk-in', patient_id: null }
 
       const parts: MergePart[] = [
-        { label: 'Patient charges', bytes: docBytes(renderPatientCharges(pdfData)) },
+        { label: 'Charge sheet', bytes: docBytes(renderChargeSheet(sheet)) },
       ]
 
       parts.push(
         ...(await pharmacyBillParts(
           pharmacyBills.filter(b => pickedBills.has(b.id)),
-          billId => `/api/patients/${patientId}/pharmacy-bills/${billId}`,
-          patientForPdf,
+          billId => `/api/charge-sheets/${sheet.id}/pharmacy-bills/${billId}`,
+          subject,
         )),
       )
 
+      // Nothing ticked: no merge pass needed at all.
       if (parts.length === 1) {
-        renderPatientCharges(pdfData).save(patientChargesFilename(pdfData))
+        renderChargeSheet(sheet).save(chargeSheetFilename(sheet))
         onClose()
         return
       }
 
       const { bytes, skipped } = await mergePdfs(parts)
-      downloadPdf(bytes, patientChargesFilename(pdfData))
+      downloadPdf(bytes, chargeSheetFilename(sheet))
 
       if (skipped.length > 0) {
         setWarning(`Downloaded, but these could not be read and were left out: ${skipped.join(', ')}`)
@@ -131,7 +118,7 @@ export function PatientChargesDownloadModal({ isOpen, onClose, patientId, patien
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Download patient charges"
+      title={`Download ${sheet.sheet_no}`}
       description="Tick any pharmacy bills to append. Everything selected comes down as one PDF."
       size="lg"
     >
@@ -152,7 +139,7 @@ export function PatientChargesDownloadModal({ isOpen, onClose, patientId, patien
         <div className="flex items-center gap-3 rounded-lg border border-border bg-surface-inset p-3">
           <FileText size={18} className="text-primary shrink-0" />
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-foreground">Patient charges statement</p>
+            <p className="text-sm font-medium text-foreground">Charge sheet {sheet.sheet_no}</p>
             <p className="text-xs text-muted">Always included</p>
           </div>
         </div>
@@ -160,7 +147,7 @@ export function PatientChargesDownloadModal({ isOpen, onClose, patientId, patien
         <div className="space-y-2">
           <h4 className="text-sm font-semibold text-foreground">Pharmacy bills</h4>
           {pharmacyBills.length === 0 ? (
-            <p className="text-sm text-muted">No pharmacy bills on this patient&apos;s charges.</p>
+            <p className="text-sm text-muted">No pharmacy bills on this sheet.</p>
           ) : (
             <ul className="space-y-2">
               {pharmacyBills.map(bill => (

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, Loader2, Plus, Trash2, X } from 'lucide-react'
+import { AlertCircle, Loader2, Pill, Plus, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -10,6 +10,8 @@ import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { PatientSelect, type SelectedPatient } from '@/components/lab/patient-select'
 import { ChargeItemSelect, type ChargeItemOption } from '@/components/charges/charge-item-select'
+import { PharmacyBillAddModal } from '@/components/patients/pharmacy-bill-add-modal'
+import { PharmacyBillViewModal } from '@/components/patients/pharmacy-bill-view-modal'
 import {
   CHARGE_BILLING_MODE_LABELS,
   MAX_CHARGE_DAYS,
@@ -64,6 +66,8 @@ export interface ChargeSheetLine {
   /** per_hour: hours typed against each day, and the days dropped from the range. */
   hours: Record<string, string>
   removed_days: string[]
+  /** Set when this line is a fetched pharmacy bill rather than a typed charge. */
+  pharmacy_bill_id: string | null
 }
 
 interface Props {
@@ -89,6 +93,7 @@ const BLANK_LINE: ChargeSheetLine = {
   to_date: '',
   hours: {},
   removed_days: [],
+  pharmacy_bill_id: null,
 }
 
 /** A line is real once it names something — picked or typed. */
@@ -193,6 +198,9 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<ChargeSheetLine[]>([{ ...BLANK_LINE }])
 
+  const [reloadToken, setReloadToken] = useState(0)
+  const [pharmacyAddOpen, setPharmacyAddOpen] = useState(false)
+  const [pharmacyViewBillId, setPharmacyViewBillId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -255,6 +263,7 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
                 qty: String(i.qty ?? 1),
                 billing_mode: i.billing_mode || 'one_time',
                 service_date: i.service_date ? String(i.service_date).slice(0, 10) : '',
+                pharmacy_bill_id: (Array.isArray(i.pharmacy_bill) ? i.pharmacy_bill[0] : i.pharmacy_bill)?.id ?? null,
               }))
             : [{ ...BLANK_LINE }],
         )
@@ -269,7 +278,7 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
     return () => {
       cancelled = true
     }
-  }, [isOpen, sheetId])
+  }, [isOpen, sheetId, reloadToken])
 
   const updateLine = (index: number, patch: Partial<ChargeSheetLine>) => {
     setLines(prev => {
@@ -398,6 +407,7 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
   const linesReady = filledLines.length > 0 && filledLines.every(lineReady)
 
   return (
+    <>
     <Modal
       isOpen={isOpen}
       onClose={onClose}
@@ -538,12 +548,31 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
           )}
 
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <Label>Lines</Label>
-              <Button type="button" variant="outline" size="sm" onClick={addLine} disabled={saving}>
-                <Plus size={16} className="mr-1" />
-                Add line
-              </Button>
+              <div className="flex gap-2">
+                {/* A pharmacy bill is fetched, not typed, so it cannot be a
+                    normal line — and it needs a saved sheet to hang off. */}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPharmacyAddOpen(true)}
+                  disabled={saving || mode === 'create'}
+                  title={
+                    mode === 'create'
+                      ? 'Create the sheet first, then add a pharmacy bill to it'
+                      : undefined
+                  }
+                >
+                  <Pill size={16} className="mr-1" />
+                  Add pharmacy bill
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={addLine} disabled={saving}>
+                  <Plus size={16} className="mr-1" />
+                  Add line
+                </Button>
+              </div>
             </div>
 
             {/* Column header — desktop only; the mobile layout labels each field
@@ -564,6 +593,9 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
                 // A saved line is one stored day; only a new one enters a range.
                 const ranged = !line.id && isRangeBillingMode(line.billing_mode)
                 const days = ranged ? daysOf(line) : []
+                // A pharmacy line is what SmartPharma360 said it was — nothing
+                // on it is ours to retype, so it is shown rather than edited.
+                const isPharmacy = Boolean(line.pharmacy_bill_id)
 
                 return (
                   <div
@@ -572,12 +604,23 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
                   >
                     <div className={`grid grid-cols-2 ${LINE_GRID_SM} gap-2 items-center`}>
                       <div className="col-span-2 sm:col-span-1">
-                        <ChargeItemSelect
-                          id={`sheet-line-${index}`}
-                          value={line.charge_item_id || ''}
-                          onChange={item => chooseItem(index, item)}
-                          disabled={saving}
-                        />
+                        {isPharmacy ? (
+                          <button
+                            type="button"
+                            onClick={() => setPharmacyViewBillId(line.pharmacy_bill_id)}
+                            className="flex items-center gap-1.5 text-sm text-info hover:underline"
+                          >
+                            <Pill size={14} />
+                            View bill
+                          </button>
+                        ) : (
+                          <ChargeItemSelect
+                            id={`sheet-line-${index}`}
+                            value={line.charge_item_id || ''}
+                            onChange={item => chooseItem(index, item)}
+                            disabled={saving}
+                          />
+                        )}
                       </div>
 
                       <div className="col-span-2 sm:col-span-1">
@@ -585,7 +628,7 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
                           aria-label="Name"
                           value={line.charge_name}
                           onChange={e => updateLine(index, { charge_name: e.target.value })}
-                          disabled={saving}
+                          disabled={saving || isPharmacy}
                           placeholder="What is being charged"
                         />
                         {fieldErrors[`items.${index}.charge_name`] && (
@@ -600,7 +643,7 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
                           aria-label="Description"
                           value={line.description}
                           onChange={e => updateLine(index, { description: e.target.value })}
-                          disabled={saving}
+                          disabled={saving || isPharmacy}
                           placeholder="Note (optional)"
                         />
                       </div>
@@ -613,7 +656,7 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
                         value={line.qty}
                         onFocus={e => e.target.select()}
                         onChange={e => updateLine(index, { qty: e.target.value })}
-                        disabled={saving || (ranged && line.billing_mode === 'per_hour')}
+                        disabled={saving || isPharmacy || (ranged && line.billing_mode === 'per_hour')}
                         className="text-center"
                       />
 
@@ -625,7 +668,7 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
                         value={line.unit_price}
                         onFocus={e => e.target.select()}
                         onChange={e => updateLine(index, { unit_price: e.target.value })}
-                        disabled={saving}
+                        disabled={saving || isPharmacy}
                         className="text-right"
                       />
 
@@ -764,5 +807,32 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
         </form>
       )}
     </Modal>
+
+      {/* Beside the sheet modal rather than inside its form — a bill is fetched
+          and stored on its own, not saved along with the sheet's other edits. */}
+      <PharmacyBillAddModal
+        isOpen={pharmacyAddOpen}
+        onClose={() => setPharmacyAddOpen(false)}
+        onSuccess={() => {
+          setReloadToken(t => t + 1)
+          onSuccess()
+        }}
+        endpoint={`/api/charge-sheets/${sheetId}/pharmacy-bills`}
+      />
+
+      {pharmacyViewBillId && (
+        <PharmacyBillViewModal
+          isOpen={Boolean(pharmacyViewBillId)}
+          onClose={() => setPharmacyViewBillId(null)}
+          endpoint={`/api/charge-sheets/${sheetId}/pharmacy-bills/${pharmacyViewBillId}`}
+          patient={
+            subjectType === 'patient' && patient
+              ? { name: patient.name, patient_id: patient.patient_id ?? null }
+              : { name: opd.name || 'Walk-in', patient_id: null }
+          }
+          onDateChanged={() => setReloadToken(t => t + 1)}
+        />
+      )}
+    </>
   )
 }

@@ -112,6 +112,9 @@ export const SCHEMA: Record<string, string[]> = {
     'invoice_number', 'bill_patient_name', 'doctor_name', 'invoice_url', 'net_amount',
     'gross_total', 'total_gst_value', 'total_disc', 'rounding', 'raw_response',
     'created_at', 'created_by', 'updated_at', 'updated_by',
+    // 20260810000004 — a bill can instead hang off a charge sheet line, which is
+    // how an OPD walk-in (who has no patient row) gets one quoted
+    'charge_sheet_item_id',
   ],
 
   pharmacy_bill_items: [

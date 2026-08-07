@@ -463,16 +463,16 @@ export default function ChargesTab({ patientId, billing, onCreateBilling, patien
         isOpen={pharmacyAddOpen}
         onClose={() => setPharmacyAddOpen(false)}
         onSuccess={fetchCharges}
-        patientId={patientId}
+        endpoint={`/api/patients/${patientId}/pharmacy-bills`}
         billingId={billing?.id ?? null}
+        requiresBilling
       />
 
       {pharmacyViewBillId && (
         <PharmacyBillViewModal
           isOpen={Boolean(pharmacyViewBillId)}
           onClose={() => setPharmacyViewBillId(null)}
-          patientId={patientId}
-          billId={pharmacyViewBillId}
+          endpoint={`/api/patients/${patientId}/pharmacy-bills/${pharmacyViewBillId}`}
           patient={patient}
           onDateChanged={fetchCharges}
         />

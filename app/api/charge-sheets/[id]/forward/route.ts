@@ -24,6 +24,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireBilling } from '@/lib/billing/authz'
 import { recalculatePatientBilling } from '@/lib/recalculate-billing'
+import { copyBillToCharge } from '@/lib/pharmacy/store'
 
 export async function POST(
   request: NextRequest,
@@ -39,7 +40,7 @@ export async function POST(
 
     const { data: sheet, error: sheetError } = await supabase
       .from('charge_sheets')
-      .select('*, items:charge_sheet_items(*)')
+      .select('*, items:charge_sheet_items(*, pharmacy_bill:pharmacy_bills!charge_sheet_item_id(*))')
       .eq('id', id)
       .maybeSingle()
 
@@ -147,6 +148,27 @@ export async function POST(
       .select('id')
 
     if (chargeError) throw chargeError
+
+    /**
+     * Carry any quoted pharmacy bill onto the charge it became.
+     *
+     * PostgREST returns inserted rows in the order they were supplied, so the
+     * nth charge is the nth item — which is how each bill finds its charge.
+     * Copied rather than moved so the forwarded sheet still shows what it
+     * quoted; see copyBillToCharge.
+     */
+    for (const [index, item] of items.entries()) {
+      const quoted = Array.isArray(item.pharmacy_bill) ? item.pharmacy_bill[0] : item.pharmacy_bill
+      const chargeId = charges?.[index]?.id
+      if (!quoted || !chargeId) continue
+
+      await copyBillToCharge(
+        supabase,
+        quoted,
+        { patient_id: sheet.patient_id, patient_charge_id: chargeId },
+        user.id,
+      )
+    }
 
     // Stamped only after the charges are safely written. Marking it forwarded
     // first and then failing would strand the sheet: locked against a second

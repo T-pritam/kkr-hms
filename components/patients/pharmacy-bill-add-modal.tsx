@@ -22,11 +22,26 @@ interface Props {
   isOpen: boolean
   onClose: () => void
   onSuccess: () => void
-  patientId: string
-  billingId: string | null
+  /**
+   * Where to POST the bill id — `/api/patients/<id>/pharmacy-bills` or
+   * `/api/charge-sheets/<id>/pharmacy-bills`. The two store the same bill and
+   * differ only in what owns it, so the form itself is the same either way.
+   */
+  endpoint: string
+  /** Patient charges only: the bill the charge is placed on. */
+  billingId?: string | null
+  /** Set when the caller has no billing record and the form must say so. */
+  requiresBilling?: boolean
 }
 
-export function PharmacyBillAddModal({ isOpen, onClose, onSuccess, patientId, billingId }: Props) {
+export function PharmacyBillAddModal({
+  isOpen,
+  onClose,
+  onSuccess,
+  endpoint,
+  billingId,
+  requiresBilling = false,
+}: Props) {
   const [billId, setBillId] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -37,18 +52,20 @@ export function PharmacyBillAddModal({ isOpen, onClose, onSuccess, patientId, bi
     setError('')
   }, [isOpen])
 
+  const blocked = requiresBilling && !billingId
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!billingId) return
+    if (blocked) return
 
     setSaving(true)
     setError('')
 
     try {
-      const res = await fetch(`/api/patients/${patientId}/pharmacy-bills`, {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bill_id: billId, patient_billing_id: billingId }),
+        body: JSON.stringify({ bill_id: billId, patient_billing_id: billingId ?? null }),
       })
 
       const body = await res.json().catch(() => ({}))
@@ -75,7 +92,7 @@ export function PharmacyBillAddModal({ isOpen, onClose, onSuccess, patientId, bi
           <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button type="submit" form="pharmacy-bill-add-form" disabled={saving || !billId.trim() || !billingId}>
+          <Button type="submit" form="pharmacy-bill-add-form" disabled={saving || !billId.trim() || blocked}>
             {saving && <Loader2 size={16} className="mr-2 animate-spin" />}
             {saving ? 'Fetching bill…' : 'Fetch & add'}
           </Button>
@@ -107,7 +124,7 @@ export function PharmacyBillAddModal({ isOpen, onClose, onSuccess, patientId, bi
           </p>
         </div>
 
-        {!billingId && (
+        {blocked && (
           <p className="text-xs text-destructive">
             This patient has no billing record yet, so a pharmacy bill cannot be added.
           </p>

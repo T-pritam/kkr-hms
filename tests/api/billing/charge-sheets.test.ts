@@ -553,3 +553,83 @@ describe('/api/charge-sheets — forward carries the billing mode', () => {
     })
   })
 })
+
+/**
+ * A pharmacy bill quoted on a sheet has to reach the bill when the sheet is
+ * forwarded — and the sheet has to keep showing what it quoted, because a
+ * forwarded sheet is a historical document. So the bill is copied, not moved.
+ */
+describe('/api/charge-sheets — forwarding a quoted pharmacy bill', () => {
+  const quoteBillOn = (sheetId: string) => {
+    const line = aChargeSheetItem({
+      charge_sheet_id: sheetId,
+      charge_name: 'Pharmacy — SI-KK-26-001561',
+      billing_mode: 'one_time',
+      unit_price: 8160,
+      qty: 1,
+      service_date: '2026-08-05',
+    })
+
+    const [bill] = db.seed('pharmacy_bills', {
+      id: 'pb1',
+      patient_id: null,
+      patient_charge_id: null,
+      charge_sheet_item_id: line.id,
+      external_bill_id: 34074669,
+      entry_number: 'SI-KK-26-001561',
+      entry_date: '2026-08-05',
+      net_amount: 8160,
+    })
+
+    db.seed('pharmacy_bill_items', {
+      id: 'pbi1',
+      pharmacy_bill_id: bill.id,
+      product_name: 'LASIX 4ML INJ',
+      sale_quantity: 1,
+      net_amount: 13.39,
+    })
+
+    return { line, bill }
+  }
+
+  it('copies the bill onto the charge it became, medicines included', async () => {
+    await signInAs('ADMIN')
+    const patient = aPatient({ id: 'p1' })
+    aBilling({ id: 'b1', patient_id: patient.id })
+    const sheet = aChargeSheet({ subject_type: 'patient', patient_id: patient.id })
+    quoteBillOn(sheet.id)
+
+    const { status } = await forward(sheet.id)
+    expect(status).toBe(200)
+
+    const charge = db.rows('patient_charges')[0]
+    const copies = db.rows('pharmacy_bills').filter((b) => b.patient_charge_id === charge.id)
+
+    expect(copies).toHaveLength(1)
+    expect(copies[0]).toMatchObject({
+      patient_id: patient.id,
+      external_bill_id: 34074669,
+      entry_number: 'SI-KK-26-001561',
+    })
+    expect(
+      db.rows('pharmacy_bill_items').filter((i) => i.pharmacy_bill_id === copies[0].id),
+    ).toHaveLength(1)
+  })
+
+  it('leaves the quoted bill on the sheet — it is copied, not moved', async () => {
+    await signInAs('ADMIN')
+    const patient = aPatient({ id: 'p1' })
+    aBilling({ id: 'b1', patient_id: patient.id })
+    const sheet = aChargeSheet({ subject_type: 'patient', patient_id: patient.id })
+    const { line } = quoteBillOn(sheet.id)
+
+    await forward(sheet.id)
+
+    const stillQuoted = db.rows('pharmacy_bills').filter(
+      (b) => b.charge_sheet_item_id === line.id,
+    )
+    expect(stillQuoted).toHaveLength(1)
+    // Two rows for one invoice: the quote and the real charge.
+    expect(db.rows('pharmacy_bills')).toHaveLength(2)
+  })
+})
