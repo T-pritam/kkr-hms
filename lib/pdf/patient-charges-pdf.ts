@@ -19,7 +19,7 @@ import type { AgeSubject } from '@/lib/patients/age'
 import {
   mkLetterheadDoc, minimalPatientBlock, letterheadSectionTitle, letterheadTable, autoPrint,
 } from './letterhead'
-import type { LetterheadMode } from './letterhead'
+import type { LetterheadMode, LetterheadRow } from './letterhead'
 
 export interface PatientChargesRow {
   charge_date: string
@@ -44,6 +44,39 @@ function total(charges: PatientChargesRow[]): number {
   return charges.reduce((sum, c) => sum + Number(c.amount || 0), 0)
 }
 
+/**
+ * Charges grouped under one band per day.
+ *
+ * A twelve-day stay repeated the date on every single line, which is what made
+ * the statement hard to read — four lines of "04/08/2026" say nothing the first
+ * one didn't. The date is printed once, with that day's subtotal, and its
+ * charges follow underneath.
+ *
+ * Newest day first, matching the order the Charges tab shows.
+ */
+export function chargeRowsByDate(charges: PatientChargesRow[]): LetterheadRow[] {
+  const days = new Map<string, PatientChargesRow[]>()
+
+  for (const charge of charges) {
+    const day = String(charge.charge_date || '').slice(0, 10)
+    const bucket = days.get(day)
+    if (bucket) bucket.push(charge)
+    else days.set(day, [charge])
+  }
+
+  const sorted = [...days.entries()].sort((a, b) => b[0].localeCompare(a[0]))
+
+  return sorted.flatMap(([day, rows]): LetterheadRow[] => [
+    { section: fmtDate(day), value: fmt(total(rows)) },
+    ...rows.map(c => [
+      c.charge_type,
+      c.description || '—',
+      String(c.qty || 1),
+      fmt(c.amount),
+    ]),
+  ])
+}
+
 export function renderPatientCharges(data: PatientChargesData, mode: LetterheadMode = 'digital') {
   const h = mkLetterheadDoc(mode)
   const { patient, charges } = data
@@ -65,22 +98,16 @@ export function renderPatientCharges(data: PatientChargesData, mode: LetterheadM
     return h.doc
   }
 
+  // No Date column — the date is a band above each day's charges instead.
   letterheadTable(
     h,
     [
-      { label: 'Date', width: 20 },
-      { label: 'Charge', width: 32 },
-      { label: 'Description', width: 40 },
+      { label: 'Charge', width: 38 },
+      { label: 'Description', width: 46 },
       { label: 'Qty', width: 12, align: 'right' },
-      { label: 'Amount', width: 22, align: 'right' },
+      { label: 'Amount', width: 24, align: 'right' },
     ],
-    charges.map(c => [
-      fmtDate(c.charge_date),
-      c.charge_type,
-      c.description || '—',
-      String(c.qty || 1),
-      fmt(c.amount),
-    ]),
+    chargeRowsByDate(charges),
     { totalLabel: 'TOTAL', totalValue: fmt(total(charges)) },
   )
 

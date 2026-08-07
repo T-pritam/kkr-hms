@@ -41,7 +41,14 @@ interface Props {
   charges: ChargeRow[]
 }
 
+type PharmacyBillRef = NonNullable<ChargeRow['pharmacy_bill']>
+
 const lineTotal = (c: ChargeRow) => Number(c.amount || 0) * (Number(c.qty) || 1)
+
+/** The bills on these charges, narrowed so callers need no `!` assertions. */
+function pharmacyBillsOf(charges: ChargeRow[]): PharmacyBillRef[] {
+  return charges.flatMap(c => (c.pharmacy_bill ? [c.pharmacy_bill] : []))
+}
 
 export function PatientChargesDownloadModal({ isOpen, onClose, patientId, patient, charges }: Props) {
   const [pickedBills, setPickedBills] = useState<Set<string>>(new Set())
@@ -56,7 +63,7 @@ export function PatientChargesDownloadModal({ isOpen, onClose, patientId, patien
     setPickedBills(new Set())
   }, [isOpen])
 
-  const pharmacyRows = charges.filter(c => c.pharmacy_bill)
+  const pharmacyBills = pharmacyBillsOf(charges)
 
   const toggle = (id: string) => {
     setPickedBills(prev => {
@@ -89,9 +96,9 @@ export function PatientChargesDownloadModal({ isOpen, onClose, patientId, patien
         { label: 'Patient charges', bytes: docBytes(renderPatientCharges(pdfData)) },
       ]
 
-      for (const row of pharmacyRows.filter(c => pickedBills.has(c.pharmacy_bill!.id))) {
-        const billId = row.pharmacy_bill!.id
-        const label = `Pharmacy bill ${row.pharmacy_bill!.entry_number || billId}`
+      for (const bill of pharmacyBills.filter(b => pickedBills.has(b.id))) {
+        const billId = bill.id
+        const label = `Pharmacy bill ${bill.entry_number || billId}`
         try {
           const res = await fetch(`/api/patients/${patientId}/pharmacy-bills/${billId}`)
           const detail = await res.json()
@@ -166,24 +173,24 @@ export function PatientChargesDownloadModal({ isOpen, onClose, patientId, patien
 
         <div className="space-y-2">
           <h4 className="text-sm font-semibold text-foreground">Pharmacy bills</h4>
-          {pharmacyRows.length === 0 ? (
+          {pharmacyBills.length === 0 ? (
             <p className="text-sm text-muted">No pharmacy bills on this patient&apos;s charges.</p>
           ) : (
             <ul className="space-y-2">
-              {pharmacyRows.map(row => (
-                <li key={row.pharmacy_bill!.id}>
+              {pharmacyBills.map(bill => (
+                <li key={bill.id}>
                   <label className="flex items-center gap-3 rounded-lg border border-border p-3 cursor-pointer hover:bg-surface-inset">
                     <input
                       type="checkbox"
-                      checked={pickedBills.has(row.pharmacy_bill!.id)}
-                      onChange={() => toggle(row.pharmacy_bill!.id)}
+                      checked={pickedBills.has(bill.id)}
+                      onChange={() => toggle(bill.id)}
                       className="h-4 w-4 accent-[var(--color-primary)]"
                     />
                     <Pill size={16} className="text-muted shrink-0" />
                     <span className="flex-1 min-w-0 text-sm text-foreground truncate">
-                      {row.pharmacy_bill!.entry_number || row.pharmacy_bill!.id}
+                      {bill.entry_number || bill.id}
                       <span className="text-muted ml-2 text-xs">
-                        {new Date(row.pharmacy_bill!.entry_date).toLocaleDateString('en-IN')}
+                        {new Date(bill.entry_date).toLocaleDateString('en-IN')}
                       </span>
                     </span>
                   </label>

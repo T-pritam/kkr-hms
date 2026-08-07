@@ -173,13 +173,26 @@ export interface LetterheadTableColumn {
   align?: 'left' | 'right' | 'center'
 }
 
+/**
+ * A body row: either one cell per column, or a full-width band.
+ *
+ * The band is what stops a date being reprinted on every line of a stay — the
+ * charges statement prints "04 Aug 2026" once with that day's subtotal, then
+ * the day's charges beneath it. It spans the whole table with no column
+ * dividers, so it reads as a heading rather than as data.
+ */
+export type LetterheadRow = string[] | { section: string; value?: string }
+
+const isSection = (row: LetterheadRow): row is { section: string; value?: string } =>
+  !Array.isArray(row)
+
 const TABLE_FONT_SIZE = 9
 const TABLE_LINE_H = 4.2
 
 export function letterheadTable(
   h: H,
   columns: LetterheadTableColumn[],
-  rows: string[][],
+  rows: LetterheadRow[],
   opts: { totalLabel?: string; totalValue?: string } = {},
 ): void {
   const cfg = LETTERHEAD_CONFIG.table
@@ -231,12 +244,35 @@ export function letterheadTable(
     })
   }
 
+  /** A full-width heading band: one bordered cell, no column dividers, with an
+   * optional right-aligned figure (the day's subtotal). */
+  const drawSection = (label: string, value: string, top: number, height: number) => {
+    h.doc.setDrawColor(...BLACK)
+    h.doc.setLineWidth(cfg.borderWeightMm)
+    h.doc.rect(M, top, tableRight - M, height)
+    h.doc.setFont('helvetica', 'bold')
+    h.doc.setFontSize(TABLE_FONT_SIZE)
+    h.doc.setTextColor(...BLACK)
+    const ty = top + height / 2 + TABLE_LINE_H / 2 - 1.4
+    h.doc.text(label, M + cfg.cellPaddingMm, ty)
+    if (value) h.doc.text(value, tableRight - cfg.cellPaddingMm, ty, { align: 'right' })
+  }
+
   const headerCells = wrapRow(columns.map(c => c.label), cfg.headerHeightMm)
   h.checkPage(headerCells.height + cfg.rowHeightMm * 2)
   drawRow(headerCells.lines, h.y, headerCells.height, cfg.headerBold)
   h.y += headerCells.height
 
   for (const row of rows) {
+    if (isSection(row)) {
+      // Kept with at least one following line, so a date band never ends a page
+      // on its own with its charges stranded overleaf.
+      h.checkPage(cfg.rowHeightMm * 2 + 2)
+      drawSection(row.section, row.value || '', h.y, cfg.rowHeightMm)
+      h.y += cfg.rowHeightMm
+      continue
+    }
+
     const cells = wrapRow(row, cfg.rowHeightMm)
     h.checkPage(cells.height + 2)
     drawRow(cells.lines, h.y, cells.height, false)

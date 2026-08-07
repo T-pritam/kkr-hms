@@ -18,13 +18,57 @@ import { M, fmt, fmtDate } from './base'
 import {
   mkLetterheadDoc, minimalPatientBlock, letterheadSectionTitle, letterheadTable, autoPrint,
 } from './letterhead'
-import type { LetterheadMode } from './letterhead'
+import type { LetterheadMode, LetterheadRow } from './letterhead'
 
 export interface ChargeSheetLineData {
   description: string
+  /** Snapshotted catalogue name, split out from the free-text description. */
+  charge_name?: string | null
   unit_price: number | string
   qty: number
   service_date?: string | null
+}
+
+const lineTotal = (item: ChargeSheetLineData) =>
+  (Number(item.unit_price) || 0) * (Number(item.qty) || 1)
+
+/**
+ * Sheet lines grouped under one band per service date.
+ *
+ * A per-day charge on a sheet is written as one line per day, so without this
+ * a five-night stay reprints the same date five times. Undated lines collect
+ * under a single "No date" band rather than being dropped.
+ */
+function sheetRowsByDate(items: ChargeSheetLineData[]): LetterheadRow[] {
+  const days = new Map<string, ChargeSheetLineData[]>()
+
+  for (const item of items) {
+    const day = item.service_date ? String(item.service_date).slice(0, 10) : ''
+    const bucket = days.get(day)
+    if (bucket) bucket.push(item)
+    else days.set(day, [item])
+  }
+
+  // Undated last; dated newest-first, matching the patient charges statement.
+  const sorted = [...days.entries()].sort((a, b) => {
+    if (!a[0]) return 1
+    if (!b[0]) return -1
+    return b[0].localeCompare(a[0])
+  })
+
+  return sorted.flatMap(([day, rows]): LetterheadRow[] => [
+    {
+      section: day ? fmtDate(day) : 'No date',
+      value: fmt(rows.reduce((sum, r) => sum + lineTotal(r), 0)),
+    },
+    ...rows.map(item => [
+      String(item.charge_name || item.description || '—'),
+      String(item.charge_name ? (item.description || '—') : '—'),
+      String(Number(item.qty) || 1),
+      fmt(Number(item.unit_price) || 0),
+      fmt(lineTotal(item)),
+    ]),
+  ])
 }
 
 export interface ChargeSheetData {
@@ -80,22 +124,17 @@ export function renderChargeSheet(data: ChargeSheetData, mode: LetterheadMode = 
   h.doc.text(statusLine, h.pw / 2, h.y, { align: 'center' })
   h.y += 9
 
+  // No Date column — the date is a band above each day's lines instead.
   letterheadTable(
     h,
     [
-      { label: 'Date', width: 20 },
-      { label: 'Description', width: 42 },
+      { label: 'Charge', width: 34 },
+      { label: 'Description', width: 34 },
       { label: 'Qty', width: 12, align: 'right' },
       { label: 'Rate', width: 20, align: 'right' },
       { label: 'Amount', width: 20, align: 'right' },
     ],
-    items.map(item => [
-      item.service_date ? fmtDate(item.service_date) : '—',
-      String(item.description || '—'),
-      String(Number(item.qty) || 1),
-      fmt(Number(item.unit_price) || 0),
-      fmt((Number(item.unit_price) || 0) * (Number(item.qty) || 1)),
-    ]),
+    sheetRowsByDate(items),
     { totalLabel: 'TOTAL', totalValue: fmt(data.total_amount) },
   )
 

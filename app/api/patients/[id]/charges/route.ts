@@ -40,6 +40,23 @@ const LIST_SELECT = `
   pharmacy_bill:pharmacy_bills!patient_charge_id(id, entry_number, entry_date, external_bill_id, invoice_url)
 `
 
+/**
+ * Flattens the embedded pharmacy bill to object-or-null.
+ *
+ * PostgREST decides object vs array from pg_constraint, so before
+ * 20260810000001 added a real UNIQUE constraint this arrived as an array — and
+ * an empty array is truthy, which put the Pharmacy badge on every charge and
+ * left `pharmacy_bill.id` undefined on the one row that had a bill.
+ *
+ * The constraint fixes the shape at source; this keeps the contract with the
+ * client fixed regardless, so a future schema edit cannot quietly bring the
+ * array back.
+ */
+function withOnePharmacyBill<T extends { pharmacy_bill?: unknown }>(row: T) {
+  const bill = row.pharmacy_bill
+  return { ...row, pharmacy_bill: Array.isArray(bill) ? (bill[0] ?? null) : (bill ?? null) }
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -64,7 +81,7 @@ export async function GET(
 
     if (error) throw error
 
-    return NextResponse.json(data)
+    return NextResponse.json((data ?? []).map(withOnePharmacyBill))
   } catch (error) {
     console.error('Error fetching charges:', error)
     return NextResponse.json({ error: 'Failed to fetch charges' }, { status: 500 })
