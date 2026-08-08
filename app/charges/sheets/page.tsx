@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { AlertCircle, Download, Pencil, Plus, Printer, Search, Send, Trash2 } from 'lucide-react'
+import { AlertCircle, Download, Eye, Pencil, Plus, Printer, Search, Send, Trash2 } from 'lucide-react'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { ChargeSheetModal } from '@/components/charges/charge-sheet-modal'
 import { ChargeSheetDownloadModal } from '@/components/charges/charge-sheet-download-modal'
+import { ChargeSheetDetailsModal } from '@/components/charges/charge-sheet-details-modal'
 import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch'
 import { useUser } from '@/hooks/use-user'
 import { printChargeSheetToPrinter } from '@/lib/pdf/charge-sheet-pdf'
@@ -56,6 +57,7 @@ export default function ChargeSheetsPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [downloadSheet, setDownloadSheet] = useState<any | null>(null)
+  const [detailsId, setDetailsId] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
 
@@ -288,6 +290,13 @@ export default function ChargeSheetsPage() {
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-1">
                           <button
+                            onClick={() => setDetailsId(sheet.id)}
+                            aria-label={`View ${sheet.sheet_no}`}
+                            className="p-2 text-muted hover:text-foreground"
+                          >
+                            <Eye size={16} />
+                          </button>
+                          <button
                             onClick={() => download(sheet)}
                             disabled={busyId === sheet.id}
                             aria-label={`Download ${sheet.sheet_no} as PDF`}
@@ -368,6 +377,13 @@ export default function ChargeSheetsPage() {
                   </div>
                   <div className="flex justify-end gap-1">
                     <button
+                      onClick={() => setDetailsId(sheet.id)}
+                      aria-label={`View ${sheet.sheet_no}`}
+                      className="p-2 text-muted hover:text-foreground"
+                    >
+                      <Eye size={16} />
+                    </button>
+                    <button
                       onClick={() => download(sheet)}
                       disabled={busyId === sheet.id}
                       aria-label={`Download ${sheet.sheet_no} as PDF`}
@@ -437,6 +453,16 @@ export default function ChargeSheetsPage() {
         onClose={() => setDownloadSheet(null)}
         sheet={downloadSheet}
       />
+
+      {detailsId && (
+        <ChargeSheetDetailsModal
+          isOpen={Boolean(detailsId)}
+          onClose={() => setDetailsId(null)}
+          sheetId={detailsId}
+          // Already fetched by the details view, so the picker needs no round trip.
+          onDownload={sheet => setDownloadSheet(sheet)}
+        />
+      )}
     </DashboardLayout>
   )
 }

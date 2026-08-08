@@ -11,6 +11,7 @@ import { PharmacyBillAddModal } from '@/components/patients/pharmacy-bill-add-mo
 import { PharmacyBillViewModal } from '@/components/patients/pharmacy-bill-view-modal';
 import { PatientChargesDownloadModal } from '@/components/patients/patient-charges-download-modal';
 import { CHARGE_CATEGORY_LABELS } from '@/lib/billing/constants';
+import { groupByCharge, groupByDate } from '@/lib/billing/group-charges';
 import {
   printPatientCharges, type PatientChargesPatient,
 } from '@/lib/pdf/patient-charges-pdf';
@@ -25,9 +26,10 @@ import {
  *
  * And a per-day service is stored as one row per day, which is what makes a
  * single night repriceable. That is correct but unreadable at a glance — a
- * twelve-day stay is twelve near-identical lines — so the table has two views.
- * "All" is every row as stored. "Grouped" collapses each date-range block into
- * one line with a subtotal, expandable to the days inside it.
+ * twelve-day stay is twelve near-identical lines — so there are two collapsed
+ * views: "By date" gathers a day's charges under it, "By charge" gathers each
+ * date-range block under one line. Both group through lib/billing/group-charges,
+ * which the charge sheet's details view shares.
  *
  * Errors are inline rather than `alert()`, which is what the rest of the app does.
  */
@@ -45,23 +47,15 @@ const money = (n: number) =>
 
 const lineTotal = (charge: any) => Number(charge.amount || 0) * (Number(charge.qty) || 1);
 
-interface Group {
-  key: string;
-  label: string;
-  category: string | null;
-  rows: any[];
-  total: number;
-  /** A real date-range block, as opposed to unrelated rows that share a name. */
-  isBlock: boolean;
-}
-
-interface DayGroup {
-  key: string;
-  /** `YYYY-MM-DD`. */
-  date: string;
-  rows: any[];
-  total: number;
-}
+/** How the shared grouping helpers read one of these rows. */
+const readCharge = (charge: any) => ({
+  date: String(charge.charge_date || ''),
+  label: charge.charge_type || 'Charge',
+  groupId: charge.charge_group_id,
+  itemId: charge.charge_item_id,
+  category: charge.charge_item?.category ?? null,
+  total: lineTotal(charge),
+});
 
 export default function ChargesTab({ patientId, billing, onCreateBilling, patient }: ChargesTabProps) {
   const { user } = useUser();
@@ -147,64 +141,8 @@ export default function ChargesTab({ patientId, billing, onCreateBilling, patien
     })),
   }), [charges, patient]);
 
-  /**
-   * Rows a single date-range entry produced group on `charge_group_id`. Everything
-   * else groups on the catalogue entry, falling back to the stored name so ad-hoc
-   * charges still collect together.
-   */
-  const groups = useMemo<Group[]>(() => {
-    const byKey = new Map<string, Group>();
-
-    for (const charge of charges) {
-      const isBlock = Boolean(charge.charge_group_id);
-      const key = isBlock
-        ? `g:${charge.charge_group_id}`
-        : `i:${charge.charge_item_id || charge.charge_type}`;
-
-      let group = byKey.get(key);
-      if (!group) {
-        group = {
-          key,
-          label: charge.charge_type || 'Charge',
-          category: charge.charge_item?.category ?? null,
-          rows: [],
-          total: 0,
-          isBlock,
-        };
-        byKey.set(key, group);
-      }
-
-      group.rows.push(charge);
-      group.total += lineTotal(charge);
-    }
-
-    return [...byKey.values()];
-  }, [charges]);
-
-  /**
-   * One block per calendar day, newest first.
-   *
-   * A per-day service is stored as one row per day, so a long stay repeated the
-   * same date down the whole table — four lines of "04/08/2026" say nothing the
-   * first one didn't. The date is shown once, with that day's subtotal, and its
-   * charges sit inside it.
-   */
-  const byDate = useMemo<DayGroup[]>(() => {
-    const byDay = new Map<string, DayGroup>();
-
-    for (const charge of charges) {
-      const date = String(charge.charge_date || '').slice(0, 10);
-      let day = byDay.get(date);
-      if (!day) {
-        day = { key: `d:${date}`, date, rows: [], total: 0 };
-        byDay.set(date, day);
-      }
-      day.rows.push(charge);
-      day.total += lineTotal(charge);
-    }
-
-    return [...byDay.values()].sort((a, b) => b.date.localeCompare(a.date));
-  }, [charges]);
+  const groups = useMemo(() => groupByCharge(charges, readCharge), [charges]);
+  const byDate = useMemo(() => groupByDate(charges, readCharge), [charges]);
 
   const toggle = (key: string) => {
     setExpanded((prev) => {
