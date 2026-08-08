@@ -1,10 +1,11 @@
 /**
  * Pharmacy bill PDF — one stored SmartPharma360 invoice.
  *
- * The one document in the app that does *not* print on the clinic letterhead.
- * The pharmacy is a separate trader with its own GSTIN and drug licences, so a
- * bill headed "KKR Diagnostic Centre" would name the wrong seller on what is a
- * tax document; it draws the pharmacy's own header instead.
+ * On the house letterhead, laid out like every other document here: artwork,
+ * patient block, title, table. The pharmacy is a separate trader, so its name,
+ * GSTIN and drug licences print in their own block under the title — the tax
+ * details a bill has to carry, without the page pretending to be a different
+ * business's stationery.
  *
  * There is no GST column. Every MRP the pharmacy sends is already tax-inclusive,
  * so a rate beside it invites the reader to add it on again. The rates are still
@@ -37,41 +38,35 @@ export interface PharmacyBillItemRow {
 }
 
 /**
- * The pharmacy's own letterhead, typed rather than an image.
+ * Who sold the medicines, under the title.
  *
- * Name, address, GSTIN and both drug licence numbers, in the order the
- * pharmacy's printed invoice carries them, closed with a rule so the patient
- * block beneath reads as a separate section.
+ * The letterhead above names the clinic; these are the pharmacy's own
+ * registration details, which a tax document has to carry. Deliberately small
+ * and boxed off — reference matter, not a second letterhead competing with the
+ * first.
  */
-function pharmacyHeader(h: H): void {
+function pharmacyDetails(h: H): void {
   const b = PHARMACY_BRANDING
 
+  h.checkPage(20)
   h.doc.setTextColor(0, 0, 0)
-  h.bold(15)
-  h.doc.text(b.name, h.pw / 2, h.y, { align: 'center' })
-  h.y += 6
 
-  h.normal(8.5)
+  h.bold(9)
+  h.doc.text(b.name, M, h.y)
+  h.y += 4
+
+  h.normal(7.5)
   for (const line of b.addressLines) {
-    h.doc.text(line, h.pw / 2, h.y, { align: 'center' })
-    h.y += 4
+    h.doc.text(line, M, h.y)
+    h.y += 3.4
   }
-  h.doc.text(`Email : ${b.email}`, h.pw / 2, h.y, { align: 'center' })
-  h.y += 5
+  h.doc.text(`Email : ${b.email}`, M, h.y)
+  h.y += 3.4
 
   h.doc.text(`GSTIN : ${b.gstin}`, M, h.y)
-  h.doc.text(b.drugLicences[0] ?? '', h.re, h.y, { align: 'right' })
-  h.y += 4
-  if (b.drugLicences[1]) {
-    h.doc.text(b.drugLicences[1], h.re, h.y, { align: 'right' })
-    h.y += 4
-  }
-
-  h.y += 1
-  h.doc.setDrawColor(0, 0, 0)
-  h.doc.setLineWidth(0.4)
-  h.doc.line(M, h.y, h.re, h.y)
-  h.y += 7
+  const licences = b.drugLicences.join('    ')
+  if (licences) h.doc.text(licences, h.re, h.y, { align: 'right' })
+  h.y += 6
 }
 
 export interface PharmacyBillData {
@@ -84,12 +79,9 @@ export interface PharmacyBillData {
 }
 
 export function renderPharmacyBill(data: PharmacyBillData, mode: LetterheadMode = 'digital') {
-  // No clinic artwork — this bill is the pharmacy's, and says so.
-  const h = mkLetterheadDoc(mode, { background: 'none' })
+  const h = mkLetterheadDoc(mode)
   const { patient, items } = data
   const label = data.entry_number || (data.external_bill_id != null ? String(data.external_bill_id) : '—')
-
-  pharmacyHeader(h)
 
   minimalPatientBlock(h, {
     name: patient.name || 'Patient',
@@ -99,6 +91,8 @@ export function renderPharmacyBill(data: PharmacyBillData, mode: LetterheadMode 
   })
 
   letterheadSectionTitle(h, `PHARMACY BILL — ${label}`)
+
+  pharmacyDetails(h)
 
   if (items.length === 0) {
     h.doc.setFont('helvetica', 'normal')
