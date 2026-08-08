@@ -131,7 +131,7 @@ export function ChargeSheetDetailsModal({ isOpen, onClose, sheetId, onDownload }
       <Modal
         isOpen={isOpen}
         onClose={onClose}
-        size="lg"
+        size="full"
         title={sheet ? `Charge sheet ${sheet.sheet_no}` : 'Charge sheet'}
         description={sheet ? `${who} · an estimate, not a bill` : undefined}
       >
@@ -351,10 +351,13 @@ function SheetLineRow({
 
       <div className="flex items-center gap-3 shrink-0">
         <span className="text-sm text-right">
-          {(line.qty || 1) > 1 && (
-            <span className="text-muted mr-2">
-              {line.qty} {line.billing_mode === 'per_hour' ? 'hrs ×' : '×'}
-            </span>
+          {/* Hours explain an hourly line's total; a per-day row is always one
+              unit of one day, so a "1 ×" there says nothing. */}
+          {line.billing_mode === 'per_hour' ? (
+            <span className="text-muted mr-2">{line.qty || 1} hrs</span>
+          ) : (
+            line.billing_mode !== 'per_day' &&
+            (line.qty || 1) > 1 && <span className="text-muted mr-2">{line.qty} ×</span>
           )}
           <span className="font-medium text-foreground">{money(lineTotal(line))}</span>
         </span>

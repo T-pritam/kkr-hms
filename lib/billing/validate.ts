@@ -413,6 +413,11 @@ export function validateChargeSheet(
       errors[at('unit_price')] = `${label('unit_price')} must be zero or more`
     }
     if (item.qty === null || item.qty < 1) errors[at('qty')] = `${label('qty')} must be at least 1`
+    // A per-hour line keeps its hours in qty, and a day holds 24 of them. The
+    // patient charges route already refuses more; a quote should agree with it.
+    else if (item.billing_mode === 'per_hour' && item.qty > MAX_HOURS_PER_DAY) {
+      errors[at('qty')] = `${label('hours')} cannot be more than ${MAX_HOURS_PER_DAY} in a day`
+    }
     if (item.service_date !== null && !isValidDate(item.service_date)) {
       errors[at('service_date')] = 'Not a valid date'
     }

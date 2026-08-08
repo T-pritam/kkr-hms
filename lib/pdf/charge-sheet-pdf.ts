@@ -19,9 +19,12 @@ import {
   mkLetterheadDoc, minimalPatientBlock, letterheadSectionTitle, letterheadTable, autoPrint,
 } from './letterhead'
 import type { LetterheadMode } from './letterhead'
+import { qtyCell } from './patient-charges-pdf'
 
 export interface ChargeSheetLineData {
   description: string
+  /** Decides whether the quantity is a count, an hours figure, or nothing. */
+  billing_mode?: string | null
   /** Snapshotted catalogue name, split out from the free-text description. */
   charge_name?: string | null
   unit_price: number | string
@@ -64,7 +67,7 @@ function sheetRowsByDate(items: ChargeSheetLineData[]): string[][] {
       index === 0 && day ? fmtDate(day) : '',
       String(item.charge_name || item.description || '—'),
       String(item.charge_name ? (item.description || '—') : '—'),
-      String(Number(item.qty) || 1),
+      qtyCell(item.qty, item.billing_mode),
       fmt(Number(item.unit_price) || 0),
       fmt(lineTotal(item)),
     ]),

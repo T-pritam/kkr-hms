@@ -29,6 +29,7 @@ interface ChargeRow {
   charge_type: string
   description?: string | null
   qty: number
+  billing_mode?: string | null
   amount: number
   pharmacy_bill?: { id: string; entry_number: string | null; entry_date: string } | null
 }
@@ -88,6 +89,7 @@ export function PatientChargesDownloadModal({ isOpen, onClose, patientId, patien
           charge_type: c.charge_type || 'Charge',
           description: c.description,
           qty: c.qty || 1,
+          billing_mode: c.billing_mode,
           amount: lineTotal(c),
         })),
       }

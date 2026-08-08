@@ -178,7 +178,11 @@ export async function POST(
     // One row per day for either range mode, one row otherwise. The group id ties
     // a range's rows together for the collapsed view and for deleting the block.
     //
-    // per_day bills the same units on every day, so the range is expanded here.
+    // per_day writes one unit on each day of the range — a day is one unit of
+    // itself, so the quantity is forced rather than taken from the request. The
+    // form no longer asks for one, and honouring a supplied figure would silently
+    // multiply a whole stay.
+    //
     // per_hour differs by day and arrives already expanded — the form generated a
     // line per day and the desk removed the ones the service was not used on — so
     // the hours on each line become that row's qty.
@@ -187,6 +191,7 @@ export async function POST(
         const groupId = crypto.randomUUID()
         return expandDateRange(values.from_date!, values.to_date!).map(day => ({
           ...shared,
+          qty: 1,
           charge_date: day,
           charge_group_id: groupId,
         }))

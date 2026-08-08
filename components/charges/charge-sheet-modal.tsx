@@ -108,9 +108,9 @@ const money = (n: number) =>
  * template-built `sm:grid-cols-[…]` would never exist in the stylesheet.
  */
 const LINE_GRID =
-  'grid-cols-[132px_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)_52px_84px_84px_28px]'
+  'grid-cols-[132px_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)_86px_88px_88px_28px]'
 const LINE_GRID_SM =
-  'sm:grid-cols-[132px_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)_52px_84px_84px_28px]'
+  'sm:grid-cols-[132px_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)_86px_88px_88px_28px]'
 
 /** Every date from `from` to `to` inclusive, stepped in UTC so a DST boundary
  * never repeats or skips a day. Mirrors expandDateRange in lib/billing/validate.ts. */
@@ -165,10 +165,12 @@ function expandLine(line: ChargeSheetLine, sheetDate: string) {
     ]
   }
 
+  // One unit on each day. Forced rather than carried over, so switching a line
+  // from a one-off "× 3" to a per-day service cannot silently treble a stay.
   return daysOf(line).map(day => ({
     ...base,
     id: null,
-    qty: Number(line.qty) || 1,
+    qty: 1,
     service_date: day,
   }))
 }
@@ -176,11 +178,12 @@ function expandLine(line: ChargeSheetLine, sheetDate: string) {
 /** What a line will add up to, days and hours included. */
 function lineTotal(line: ChargeSheetLine): number {
   const rate = Number(line.unit_price) || 0
-  // per_hour keeps its hours in qty, so only a live per_day range multiplies.
+  // per_hour keeps its hours in qty, so only a live per_day range multiplies —
+  // and it multiplies by days alone, since a day is one unit of itself.
   if (line.id || line.billing_mode !== 'per_day') {
     return rate * (Number(line.qty) || 1)
   }
-  return rate * (Number(line.qty) || 1) * daysOf(line).length
+  return rate * daysOf(line).length
 }
 
 export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props) {
@@ -324,8 +327,9 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
       // Only per_day opens a range; per_hour bills hours against the line's date.
       from_date: mode === 'per_day' && !current.from_date ? sheetDate : current.from_date,
       to_date: mode === 'per_day' && !current.to_date ? sheetDate : current.to_date,
-      // Hours live in qty, so a fresh per-hour line starts at one hour.
-      qty: mode === 'per_hour' && !current.id ? '1' : current.qty,
+      // Hours live in qty, so a fresh per-hour line starts at one hour; a
+      // per-day line has no quantity of its own and is pinned to one unit.
+      qty: !current.id && (mode === 'per_hour' || mode === 'per_day') ? '1' : current.qty,
     })
   }
 
@@ -461,7 +465,7 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      size="xl"
+      size="full"
       title={mode === 'edit' ? 'Edit charge sheet' : 'New charge sheet'}
       description="An estimate. Nothing is billed and no due is created until it is forwarded."
       footer={
@@ -633,7 +637,7 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
               <span>Charge</span>
               <span>Name</span>
               <span>Description</span>
-              <span className="text-center">Qty</span>
+              <span className="text-center">Qty / Hrs</span>
               <span className="text-right">Rate</span>
               <span className="text-right">Amount</span>
               <span />
@@ -715,22 +719,30 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
                         />
                       </div>
 
-                      {/* Per-hour keeps its hours here — the same column, since
-                          the hours are the quantity the hourly rate multiplies. */}
-                      <Input
-                        aria-label={
-                          hourly ? 'Hours' : ranged ? 'Units per day' : 'Quantity'
-                        }
-                        type="number"
-                        min="1"
-                        max={hourly ? MAX_HOURS_PER_DAY : undefined}
-                        step="1"
-                        value={line.qty}
-                        onFocus={e => e.target.select()}
-                        onChange={e => updateLine(index, { qty: e.target.value })}
-                        disabled={saving || isPharmacy}
-                        className="text-center"
-                      />
+                      {/* One column, three meanings. Per-hour keeps its hours
+                          here because the hours are what the rate multiplies,
+                          and the "hrs" suffix says so even on mobile, where the
+                          header row is hidden. A per-day line has no quantity —
+                          it is one unit of one day. */}
+                      {ranged ? (
+                        <span className="text-sm text-muted text-center">—</span>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <Input
+                            aria-label={hourly ? 'Hours' : 'Quantity'}
+                            type="number"
+                            min="1"
+                            max={hourly ? MAX_HOURS_PER_DAY : undefined}
+                            step="1"
+                            value={line.qty}
+                            onFocus={e => e.target.select()}
+                            onChange={e => updateLine(index, { qty: e.target.value })}
+                            disabled={saving || isPharmacy}
+                            className="text-center"
+                          />
+                          {hourly && <span className="text-xs text-muted shrink-0">hrs</span>}
+                        </div>
+                      )}
 
                       <Input
                         aria-label="Rate"

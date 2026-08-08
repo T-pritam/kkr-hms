@@ -137,6 +137,7 @@ export default function ChargesTab({ patientId, billing, onCreateBilling, patien
       charge_type: c.charge_type || 'Charge',
       description: c.description,
       qty: c.qty || 1,
+      billing_mode: c.billing_mode,
       amount: lineTotal(c),
     })),
   }), [charges, patient]);
@@ -462,7 +463,12 @@ function ChargeDetailRow({
         <p className="text-sm font-medium text-foreground">
           {charge.charge_type}
           {bill && <Badge variant="info" className="ml-2">Pharmacy</Badge>}
-          {charge.charge_group_id && <span className="ml-2 text-xs text-muted">per day</span>}
+          {charge.billing_mode === 'per_day' && (
+            <span className="ml-2 text-xs text-muted">per day</span>
+          )}
+          {charge.billing_mode === 'per_hour' && (
+            <span className="ml-2 text-xs text-muted">per hour</span>
+          )}
         </p>
         {showDate && (
           <p className="text-xs text-muted mt-0.5">
@@ -482,7 +488,14 @@ function ChargeDetailRow({
 
       <div className="flex items-center gap-3 shrink-0">
         <span className="text-sm text-right">
-          {(charge.qty || 1) > 1 && <span className="text-muted mr-2">{charge.qty} ×</span>}
+          {/* Hours explain an hourly line's total; a per-day row is always one
+              unit of one day, so a "1 ×" there says nothing. */}
+          {charge.billing_mode === 'per_hour' ? (
+            <span className="text-muted mr-2">{charge.qty || 1} hrs</span>
+          ) : (
+            charge.billing_mode !== 'per_day' &&
+            (charge.qty || 1) > 1 && <span className="text-muted mr-2">{charge.qty} ×</span>
+          )}
           <span className="font-medium text-foreground">{money(lineTotal(charge))}</span>
         </span>
 

@@ -82,6 +82,26 @@ function dayCount(from: string, to: string): number {
   return Math.floor(ms / 86_400_000) + 1
 }
 
+/**
+ * Surfaces a per-hour error where the form can show it.
+ *
+ * The API validates the hours as a list and keys its errors
+ * `hour_lines.0.hours` / `hour_lines.0.charge_date`, because a per-hour entry
+ * used to cover a whole range. The form now sends exactly one day and reads
+ * plain `hours` / `charge_date`, so without this remapping a rejected value
+ * would surface only as the banner and leave the offending box unmarked.
+ */
+function withHourLineErrors(errors: Record<string, string>): Record<string, string> {
+  const out = { ...errors }
+
+  for (const [key, message] of Object.entries(errors)) {
+    const match = /^hour_lines\.\d+\.(hours|charge_date)$/.exec(key)
+    if (match && !out[match[1]]) out[match[1]] = message
+  }
+
+  return out
+}
+
 function Field({
   id,
   label,
@@ -177,11 +197,20 @@ export function ChargeEntryModal({
         ? (item!.billing_mode as 'per_day' | 'per_hour')
         : 'one_time'
 
-  // Only meaningful on create: an edit touches exactly one stored row.
+  // Only meaningful on create: an edit touches exactly one stored row, so it
+  // never asks for a range.
   const isRange = billingMode === 'per_day' && mode === 'create'
-  // Hourly is a single day: one date and the hours used on it. Nothing is
-  // derived from clock times, and a run spanning days is entered a day at a time.
-  const isHourly = billingMode === 'per_hour' && mode === 'create'
+  /**
+   * Hourly is a single day: one date and the hours used on it. Nothing is
+   * derived from clock times, and a run spanning days is entered a day at a time.
+   *
+   * Unlike the range this holds on edit too — a stored per-hour row keeps its
+   * hours in `qty`, and editing it through a box labelled "Quantity" is how you
+   * end up typing units into an hours field.
+   */
+  const isHourly = billingMode === 'per_hour'
+  /** A quantity only means something when the charge is billed once. */
+  const showQty = billingMode === 'one_time'
 
   const chooseItem = (chosen: ChargeItemOption | null) => {
     setItem(chosen)
@@ -210,10 +239,11 @@ export function ChargeEntryModal({
 
   const preview = useMemo(() => {
     const rate = Number(form.amount) || 0
-    const qty = Number(form.qty) || 1
+    // Only a one-off charge carries a quantity; a day is one unit of itself.
+    const qty = showQty ? Number(form.qty) || 1 : 1
     if (isHourly) return { total: rate * hours, rate, qty: 1 }
     return { total: rate * qty * (days || 0), rate, qty }
-  }, [form.amount, form.qty, days, isHourly, hours])
+  }, [form.amount, form.qty, days, isHourly, hours, showQty])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -225,7 +255,9 @@ export function ChargeEntryModal({
       const payload: Record<string, any> = {
         description: form.description || null,
         amount: Number(form.amount),
-        qty: Number(form.qty) || 1,
+        // Per-day is one unit on each of its days and per-hour keeps its hours
+        // here, so neither takes a typed quantity.
+        qty: isHourly ? hours : showQty ? Number(form.qty) || 1 : 1,
       }
 
       if (mode === 'create') {
@@ -262,7 +294,7 @@ export function ChargeEntryModal({
 
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-        if (body?.fieldErrors) setFieldErrors(body.fieldErrors)
+        if (body?.fieldErrors) setFieldErrors(withHourLineErrors(body.fieldErrors))
         throw new Error(body?.error || 'Failed to save the charge')
       }
 
@@ -353,10 +385,16 @@ export function ChargeEntryModal({
           </Field>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className={`grid grid-cols-1 gap-4 ${showQty ? 'sm:grid-cols-2' : ''}`}>
           <Field
             id="charge-amount"
-            label={isRange ? 'Rate per day (₹)' : isHourly ? 'Rate per hour (₹)' : 'Rate (₹)'}
+            label={
+              billingMode === 'per_day'
+                ? 'Rate per day (₹)'
+                : billingMode === 'per_hour'
+                  ? 'Rate per hour (₹)'
+                  : 'Rate (₹)'
+            }
             required
             error={fieldErrors.amount}
             hint={
@@ -379,11 +417,12 @@ export function ChargeEntryModal({
             />
           </Field>
 
-          {/* Hourly has no separate quantity — the hours on each day are it. */}
-          {!isHourly && (
+          {/* Only a one-off charge has a quantity. A per-day charge is one unit
+              on each of its days, and a per-hour charge's quantity is its hours. */}
+          {showQty && (
             <Field
               id="charge-qty"
-              label={isRange ? 'Units per day' : 'Quantity'}
+              label="Quantity"
               required
               error={fieldErrors.qty}
             >
@@ -487,7 +526,7 @@ export function ChargeEntryModal({
                 {isHourly
                   ? `${hours} hour${hours === 1 ? '' : 's'} × ${money(preview.rate)}`
                   : isRange
-                    ? `${days} day${days === 1 ? '' : 's'} × ${preview.qty} × ${money(preview.rate)}`
+                    ? `${days} day${days === 1 ? '' : 's'} × ${money(preview.rate)}`
                     : `${preview.qty} × ${money(preview.rate)}`}
               </span>
               <span className="font-semibold text-foreground">{money(preview.total)}</span>

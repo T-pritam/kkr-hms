@@ -709,3 +709,52 @@ describe('/api/charge-sheets — lines keep their own dates', () => {
     expect(Number(db.find('charge_sheets', (r) => r.status === 'draft')!.total_amount)).toBe(1200)
   })
 })
+
+/**
+ * A per-hour sheet line keeps its hours in qty, and a day holds 24 of them.
+ * The patient charges route already refuses more; a quote has to agree, or a
+ * sheet could be forwarded into charges the charges route would have rejected.
+ */
+describe('/api/charge-sheets — per-hour lines are capped at a day', () => {
+  const hourlyLine = (qty: number) => ({
+    subject_type: 'opd',
+    opd_name: 'Walk-in',
+    items: [
+      {
+        charge_name: 'Oxygen',
+        billing_mode: 'per_hour',
+        unit_price: 200,
+        qty,
+        service_date: '2026-08-04',
+      },
+    ],
+  })
+
+  it('accepts a full day of hours', async () => {
+    await signInAs('RECEPTIONIST')
+    expect((await create(hourlyLine(24))).status).toBe(201)
+  })
+
+  it('refuses more hours than a day holds', async () => {
+    await signInAs('RECEPTIONIST')
+
+    const { status } = await create(hourlyLine(25))
+
+    expect(status).toBe(400)
+    expect(db.count('charge_sheet_items')).toBe(0)
+  })
+
+  /** The ceiling is for hours only — a one-off line may be billed many times. */
+  it('leaves a one-time quantity above 24 alone', async () => {
+    await signInAs('RECEPTIONIST')
+
+    const { status } = await create({
+      subject_type: 'opd',
+      opd_name: 'Walk-in',
+      items: [{ charge_name: 'Gloves', billing_mode: 'one_time', unit_price: 5, qty: 50 }],
+    })
+
+    expect(status).toBe(201)
+    expect(db.rows('charge_sheet_items')[0].qty).toBe(50)
+  })
+})

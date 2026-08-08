@@ -305,7 +305,12 @@ describe('POST /api/patients/[id]/charges — per-day charges', () => {
     expect(db.count('patient_charges')).toBe(1)
   })
 
-  it('multiplies the daily total by qty per day', async () => {
+  /**
+   * A day is one unit of itself, so "units per day" is not a thing any more —
+   * the form stopped asking, and the route stops honouring a figure a client
+   * sends. Without this a stray qty would silently multiply a whole stay.
+   */
+  it('bills one unit per day, ignoring any quantity sent', async () => {
     await signInAs('NURSE')
     aBilling({ id: 'b1', patient_id: 'p1', base_charge: 0 })
     const item = perDayItem()
@@ -319,10 +324,11 @@ describe('POST /api/patients/[id]/charges — per-day charges', () => {
       to_date: '2026-08-02',
     })
 
-    // 2 days x 2 units x 5000
+    expect(db.rows('patient_charges').every((r) => r.qty === 1)).toBe(true)
+    // 2 days x 5000, not 2 days x 2 units x 5000
     expect(
       Number(db.find('patient_billing', (r) => r.id === 'b1')!.patient_charges_total),
-    ).toBe(20000)
+    ).toBe(10000)
   })
 
   it('refuses a range that ends before it starts', async () => {

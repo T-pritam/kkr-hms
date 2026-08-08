@@ -26,6 +26,8 @@ export interface PatientChargesRow {
   charge_type: string
   description?: string | null
   qty: number
+  /** Decides whether the quantity is a count, an hours figure, or nothing. */
+  billing_mode?: string | null
   amount: number
 }
 
@@ -38,6 +40,20 @@ export interface PatientChargesPatient extends AgeSubject {
 export interface PatientChargesData {
   patient: PatientChargesPatient
   charges: PatientChargesRow[]
+}
+
+/**
+ * What the Qty column says for a line.
+ *
+ * A quantity only means something on a one-off charge. A per-day row is one
+ * unit of one day, so "1" there is noise; a per-hour row's quantity is really
+ * its hours, and saying so is what stops a ₹1,200 oxygen line looking arbitrary.
+ */
+export function qtyCell(qty: number | null | undefined, billingMode?: string | null): string {
+  const n = Number(qty) || 1
+  if (billingMode === 'per_hour') return `${n} hrs`
+  if (billingMode === 'per_day') return ''
+  return String(n)
 }
 
 function total(charges: PatientChargesRow[]): number {
@@ -72,7 +88,7 @@ export function chargeRowsByDate(charges: PatientChargesRow[]): string[][] {
       index === 0 ? fmtDate(day) : '',
       c.charge_type,
       c.description || '—',
-      String(c.qty || 1),
+      qtyCell(c.qty, c.billing_mode),
       fmt(c.amount),
     ]),
   )
