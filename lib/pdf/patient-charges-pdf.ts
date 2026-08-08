@@ -19,7 +19,7 @@ import type { AgeSubject } from '@/lib/patients/age'
 import {
   mkLetterheadDoc, minimalPatientBlock, letterheadSectionTitle, letterheadTable, autoPrint,
 } from './letterhead'
-import type { LetterheadMode, LetterheadRow } from './letterhead'
+import type { LetterheadMode } from './letterhead'
 
 export interface PatientChargesRow {
   charge_date: string
@@ -45,16 +45,17 @@ function total(charges: PatientChargesRow[]): number {
 }
 
 /**
- * Charges grouped under one band per day.
+ * Charges in date order, with the date said once per day.
  *
  * A twelve-day stay repeated the date on every single line, which is what made
- * the statement hard to read — four lines of "04/08/2026" say nothing the first
- * one didn't. The date is printed once, with that day's subtotal, and its
- * charges follow underneath.
+ * the statement hard to read. Banding each day with its own subtotal fixed the
+ * repetition but replaced it with a page of running totals nobody asked for, so
+ * this is the middle ground: an ordinary Date column, filled on the first charge
+ * of a day and left blank for the rest, and one total at the very bottom.
  *
- * Newest day first, matching the order the Charges tab shows.
+ * Oldest day first — a bill reads forwards through the stay.
  */
-export function chargeRowsByDate(charges: PatientChargesRow[]): LetterheadRow[] {
+export function chargeRowsByDate(charges: PatientChargesRow[]): string[][] {
   const days = new Map<string, PatientChargesRow[]>()
 
   for (const charge of charges) {
@@ -64,17 +65,17 @@ export function chargeRowsByDate(charges: PatientChargesRow[]): LetterheadRow[] 
     else days.set(day, [charge])
   }
 
-  const sorted = [...days.entries()].sort((a, b) => b[0].localeCompare(a[0]))
+  const sorted = [...days.entries()].sort((a, b) => a[0].localeCompare(b[0]))
 
-  return sorted.flatMap(([day, rows]): LetterheadRow[] => [
-    { section: fmtDate(day), value: fmt(total(rows)) },
-    ...rows.map(c => [
+  return sorted.flatMap(([day, rows]) =>
+    rows.map((c, index) => [
+      index === 0 ? fmtDate(day) : '',
       c.charge_type,
       c.description || '—',
       String(c.qty || 1),
       fmt(c.amount),
     ]),
-  ])
+  )
 }
 
 export function renderPatientCharges(data: PatientChargesData, mode: LetterheadMode = 'digital') {
@@ -98,14 +99,14 @@ export function renderPatientCharges(data: PatientChargesData, mode: LetterheadM
     return h.doc
   }
 
-  // No Date column — the date is a band above each day's charges instead.
   letterheadTable(
     h,
     [
-      { label: 'Charge', width: 38 },
-      { label: 'Description', width: 46 },
-      { label: 'Qty', width: 12, align: 'right' },
-      { label: 'Amount', width: 24, align: 'right' },
+      { label: 'Date', width: 22 },
+      { label: 'Charge', width: 34 },
+      { label: 'Description', width: 38 },
+      { label: 'Qty', width: 10, align: 'right' },
+      { label: 'Amount', width: 22, align: 'right' },
     ],
     chargeRowsByDate(charges),
     { totalLabel: 'TOTAL', totalValue: fmt(total(charges)) },
