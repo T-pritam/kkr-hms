@@ -180,6 +180,14 @@ describe('validatePatientCharge — per_hour', () => {
     expect(hourly([{ charge_date: '2026-08-04', hours: 2.5 }]).ok).toBe(false)
   })
 
+  /** A day holds 24 hours; more is a typo, and an expensive one since the
+   * hours are the quantity the hourly rate multiplies. */
+  it('rejects more than 24 hours against one day', () => {
+    expect(hourly([{ charge_date: '2026-08-04', hours: 24 }]).ok).toBe(true)
+    expect(hourly([{ charge_date: '2026-08-04', hours: 25 }]).ok).toBe(false)
+    expect(hourly([{ charge_date: '2026-08-04', hours: 72 }]).ok).toBe(false)
+  })
+
   it('rejects an invalid date', () => {
     expect(hourly([{ charge_date: '2026-02-31', hours: 3 }]).ok).toBe(false)
     expect(hourly([{ charge_date: 'yesterday', hours: 3 }]).ok).toBe(false)

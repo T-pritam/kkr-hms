@@ -18,6 +18,7 @@ import {
   CHARGE_SHEET_SUBJECTS,
   FIELD_LABELS,
   MAX_CHARGE_DAYS,
+  MAX_HOURS_PER_DAY,
 } from './constants'
 import type { FieldErrors } from '@/lib/case-sheet/types'
 
@@ -255,6 +256,11 @@ export function validatePatientCharge(
         errors[`hour_lines.${index}.hours`] = `${label('hours')} must be a whole number`
       } else if (line.hours < 1) {
         errors[`hour_lines.${index}.hours`] = `${label('hours')} must be at least 1`
+      } else if (line.hours > MAX_HOURS_PER_DAY) {
+        // A day does not contain more than 24 hours. Without this a mistyped
+        // "72" bills three days of oxygen against one date.
+        errors[`hour_lines.${index}.hours`] =
+          `${label('hours')} cannot be more than ${MAX_HOURS_PER_DAY} in a day`
       }
     })
 

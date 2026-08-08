@@ -84,6 +84,15 @@ export type ChargeSheetStatus = (typeof CHARGE_SHEET_STATUSES)[number]
  */
 export const MAX_CHARGE_DAYS = 180
 
+/**
+ * The most hours one per-hour charge may claim against a single day.
+ *
+ * A day does not contain more than 24 hours, so a larger figure is always a
+ * typo — and an expensive one, since the hours are the quantity the rate is
+ * multiplied by.
+ */
+export const MAX_HOURS_PER_DAY = 24
+
 /** Human labels for the validators, so a 400 names the field the way the form does. */
 export const FIELD_LABELS: Record<string, string> = {
   name: 'Name',
