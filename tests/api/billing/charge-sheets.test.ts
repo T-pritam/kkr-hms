@@ -633,3 +633,79 @@ describe('/api/charge-sheets — forwarding a quoted pharmacy bill', () => {
     expect(db.rows('pharmacy_bills')).toHaveLength(2)
   })
 })
+
+/**
+ * A sheet used to pin every line to one sheet-wide date, so an estimate could
+ * not span a stay. Lines now carry their own date, and the reconcile must keep
+ * each one rather than flattening them back together.
+ */
+describe('/api/charge-sheets — lines keep their own dates', () => {
+  it('stores a different date per line', async () => {
+    await signInAs('RECEPTIONIST')
+
+    const { status } = await create({
+      subject_type: 'opd',
+      opd_name: 'Walk-in',
+      items: [
+        { charge_name: 'Room Charges', unit_price: 3000, qty: 1, service_date: '2026-08-01' },
+        { charge_name: 'Oxygen', unit_price: 200, qty: 6, service_date: '2026-08-02' },
+        { charge_name: 'Dressing', unit_price: 150, qty: 1, service_date: '2026-08-03' },
+      ],
+    })
+
+    expect(status).toBe(201)
+    expect(db.rows('charge_sheet_items').map((r) => r.service_date).sort()).toEqual([
+      '2026-08-01',
+      '2026-08-02',
+      '2026-08-03',
+    ])
+  })
+
+  it('keeps the dates through an edit that changes only one line', async () => {
+    await signInAs('RECEPTIONIST')
+    const sheet = aChargeSheet()
+    const first = aChargeSheetItem({
+      charge_sheet_id: sheet.id, charge_name: 'Room', unit_price: 3000, qty: 1,
+      service_date: '2026-08-01',
+    })
+    const second = aChargeSheetItem({
+      charge_sheet_id: sheet.id, charge_name: 'Oxygen', unit_price: 200, qty: 6,
+      service_date: '2026-08-02',
+    })
+
+    await update(sheet.id, {
+      items: [
+        { id: first.id, charge_name: 'Room', unit_price: 3500, qty: 1, service_date: '2026-08-01' },
+        { id: second.id, charge_name: 'Oxygen', unit_price: 200, qty: 6, service_date: '2026-08-02' },
+      ],
+    })
+
+    const rows = db.rows('charge_sheet_items')
+    expect(rows).toHaveLength(2)
+    expect(rows.map((r) => r.service_date).sort()).toEqual(['2026-08-01', '2026-08-02'])
+    expect(Number(db.find('charge_sheet_items', (r) => r.id === first.id)!.unit_price)).toBe(3500)
+  })
+
+  /** Hours ride in qty, so a per-hour quote is one dated line like any other. */
+  it('stores a per-hour line as one day with its hours as the quantity', async () => {
+    await signInAs('RECEPTIONIST')
+
+    await create({
+      subject_type: 'opd',
+      opd_name: 'Walk-in',
+      items: [
+        {
+          charge_name: 'Oxygen', billing_mode: 'per_hour',
+          unit_price: 200, qty: 6, service_date: '2026-08-04',
+        },
+      ],
+    })
+
+    expect(db.rows('charge_sheet_items')[0]).toMatchObject({
+      billing_mode: 'per_hour',
+      qty: 6,
+      service_date: '2026-08-04',
+    })
+    expect(Number(db.find('charge_sheets', (r) => r.status === 'draft')!.total_amount)).toBe(1200)
+  })
+})

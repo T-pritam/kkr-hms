@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, Loader2, Pill, Plus, Trash2, X } from 'lucide-react'
+import { AlertCircle, Loader2, Pill, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -15,7 +15,7 @@ import { PharmacyBillViewModal } from '@/components/patients/pharmacy-bill-view-
 import {
   CHARGE_BILLING_MODE_LABELS,
   MAX_CHARGE_DAYS,
-  isRangeBillingMode,
+  MAX_HOURS_PER_DAY,
 } from '@/lib/billing/constants'
 
 /**
@@ -27,20 +27,20 @@ import {
  * and the API clears whichever side is unused so the two can never both be set.
  *
  * Otherwise a sheet quotes exactly what the Charges tab bills, so it offers the
- * same things — only the layout differs. A catalogue entry's `billing_mode` was
- * being read and thrown away here, which is why Room, Oxygen and Nebulizer got
- * no date range on a sheet: picking one of those now opens a range beneath the
- * line, and a per-hour one opens the hours-per-day list, both expanding into one
- * stored line per day exactly as the patient form does.
+ * same things — only the layout differs. Picking a per-day item opens a range
+ * beneath the line, which expands into one stored line per day; a per-hour item
+ * bills its hours against the line's own date, the hours living in the quantity
+ * column because that is what the hourly rate multiplies.
  *
  * The name and the note about it are two fields, not one box doing both jobs —
  * again matching patient charges, where a line that says "Dressing" can also
  * say why.
  *
- * The sheet-level date is the default for a plain one-time line; a line that
- * came from a range carries its own day. Lines are reconciled by id on save
- * rather than replaced wholesale, because a pharmacy bill hangs off a line and
- * would otherwise be destroyed by editing any other row.
+ * Every line carries its own date, so one sheet can span several days; the
+ * sheet-level date at the top is only the default a new line starts from.
+ * Lines are reconciled by id on save rather than replaced wholesale, because a
+ * pharmacy bill hangs off a line and would otherwise be destroyed by editing
+ * any other row.
  *
  * The last row grows a fresh blank one the moment it gets its first content —
  * typed or picked — so adding a charge is "keep typing", not "click Add line,
@@ -63,8 +63,7 @@ export interface ChargeSheetLine {
   /** Range entry, only ever set on a line that has not been saved yet. */
   from_date: string
   to_date: string
-  /** per_hour: hours typed against each day, and the days dropped from the range. */
-  hours: Record<string, string>
+  /** per_day: the days dropped from the chosen range before saving. */
   removed_days: string[]
   /** Set when this line is a fetched pharmacy bill rather than a typed charge. */
   pharmacy_bill_id: string | null
@@ -91,7 +90,6 @@ const BLANK_LINE: ChargeSheetLine = {
   service_date: '',
   from_date: '',
   to_date: '',
-  hours: {},
   removed_days: [],
   pharmacy_bill_id: null,
 }
@@ -109,9 +107,10 @@ const money = (n: number) =>
  * Tailwind generates classes by scanning the source for literal strings, so a
  * template-built `sm:grid-cols-[…]` would never exist in the stylesheet.
  */
-const LINE_GRID = 'grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_56px_88px_88px_28px]'
+const LINE_GRID =
+  'grid-cols-[132px_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)_52px_84px_84px_28px]'
 const LINE_GRID_SM =
-  'sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_56px_88px_88px_28px]'
+  'sm:grid-cols-[132px_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)_52px_84px_84px_28px]'
 
 /** Every date from `from` to `to` inclusive, stepped in UTC so a DST boundary
  * never repeats or skips a day. Mirrors expandDateRange in lib/billing/validate.ts. */
@@ -151,7 +150,9 @@ function expandLine(line: ChargeSheetLine, sheetDate: string) {
     billing_mode: line.billing_mode,
   }
 
-  const ranged = !line.id && isRangeBillingMode(line.billing_mode)
+  // Only per_day spans a range. per_hour is one day with its hours as the qty,
+  // exactly as the patient form enters it.
+  const ranged = !line.id && line.billing_mode === 'per_day'
 
   if (!ranged) {
     return [
@@ -167,11 +168,7 @@ function expandLine(line: ChargeSheetLine, sheetDate: string) {
   return daysOf(line).map(day => ({
     ...base,
     id: null,
-    // per_hour bills the hours typed against that day; per_day bills the units.
-    qty:
-      line.billing_mode === 'per_hour'
-        ? Number(line.hours[day]) || 0
-        : Number(line.qty) || 1,
+    qty: Number(line.qty) || 1,
     service_date: day,
   }))
 }
@@ -179,17 +176,24 @@ function expandLine(line: ChargeSheetLine, sheetDate: string) {
 /** What a line will add up to, days and hours included. */
 function lineTotal(line: ChargeSheetLine): number {
   const rate = Number(line.unit_price) || 0
-  if (line.id || !isRangeBillingMode(line.billing_mode)) {
+  // per_hour keeps its hours in qty, so only a live per_day range multiplies.
+  if (line.id || line.billing_mode !== 'per_day') {
     return rate * (Number(line.qty) || 1)
-  }
-  if (line.billing_mode === 'per_hour') {
-    return daysOf(line).reduce((sum, day) => sum + rate * (Number(line.hours[day]) || 0), 0)
   }
   return rate * (Number(line.qty) || 1) * daysOf(line).length
 }
 
 export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props) {
-  const mode: 'create' | 'edit' = sheetId ? 'edit' : 'create'
+  /**
+   * The sheet being edited, which is not always the one the parent opened.
+   *
+   * Adding a pharmacy bill needs a sheet to attach it to, and on a brand-new
+   * sheet there is none — so pressing that button saves a draft first and
+   * carries on against it. Holding the id here rather than in the parent means
+   * that switch does not remount the form and lose what has been typed.
+   */
+  const [activeSheetId, setActiveSheetId] = useState<string | null>(sheetId ?? null)
+  const mode: 'create' | 'edit' = activeSheetId ? 'edit' : 'create'
 
   const [subjectType, setSubjectType] = useState<'patient' | 'opd'>('patient')
   const [patient, setPatient] = useState<SelectedPatient | null>(null)
@@ -207,11 +211,15 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   useEffect(() => {
+    setActiveSheetId(sheetId ?? null)
+  }, [isOpen, sheetId])
+
+  useEffect(() => {
     if (!isOpen) return
     setError('')
     setFieldErrors({})
 
-    if (!sheetId) {
+    if (!activeSheetId) {
       setSubjectType('patient')
       setPatient(null)
       setOpd({ name: '', phone: '', age: '', gender: '' })
@@ -226,7 +234,7 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
 
     const load = async () => {
       try {
-        const res = await fetch(`/api/charge-sheets/${sheetId}`)
+        const res = await fetch(`/api/charge-sheets/${activeSheetId}`)
         const json = await res.json()
         if (!res.ok) throw new Error(json?.error || 'Failed to load the charge sheet')
         if (cancelled) return
@@ -278,7 +286,7 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
     return () => {
       cancelled = true
     }
-  }, [isOpen, sheetId, reloadToken])
+  }, [isOpen, activeSheetId, reloadToken])
 
   const updateLine = (index: number, patch: Partial<ChargeSheetLine>) => {
     setLines(prev => {
@@ -290,7 +298,7 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
       // one, must not spawn extra rows.
       const isLastRow = index === prev.length - 1
       if (isLastRow && wasBlank && !isBlank(next[index])) {
-        next.push({ ...BLANK_LINE })
+        next.push({ ...BLANK_LINE, service_date: sheetDate })
       }
 
       return next
@@ -301,10 +309,11 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
     const current = lines[index]
     // A saved line keeps the mode it was quoted under; only a new line takes the
     // catalogue's current one.
+    const picked = item?.billing_mode
     const mode = current.id
       ? current.billing_mode
-      : isRangeBillingMode(item?.billing_mode)
-        ? (item!.billing_mode as 'per_day' | 'per_hour')
+      : picked === 'per_day' || picked === 'per_hour'
+        ? picked
         : 'one_time'
 
     updateLine(index, {
@@ -312,12 +321,16 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
       charge_name: item ? item.name : current.charge_name,
       unit_price: item ? String(item.default_price ?? '') : current.unit_price,
       billing_mode: mode,
-      from_date: isRangeBillingMode(mode) && !current.from_date ? sheetDate : current.from_date,
-      to_date: isRangeBillingMode(mode) && !current.to_date ? sheetDate : current.to_date,
+      // Only per_day opens a range; per_hour bills hours against the line's date.
+      from_date: mode === 'per_day' && !current.from_date ? sheetDate : current.from_date,
+      to_date: mode === 'per_day' && !current.to_date ? sheetDate : current.to_date,
+      // Hours live in qty, so a fresh per-hour line starts at one hour.
+      qty: mode === 'per_hour' && !current.id ? '1' : current.qty,
     })
   }
 
-  const addLine = () => setLines(prev => [...prev, { ...BLANK_LINE }])
+  const addLine = () =>
+    setLines(prev => [...prev, { ...BLANK_LINE, service_date: sheetDate }])
 
   const removeLine = (index: number) =>
     setLines(prev => (prev.length > 1 ? prev.filter((_, i) => i !== index) : prev))
@@ -339,6 +352,48 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
     [filledLines, sheetDate],
   )
 
+  /**
+   * Writes the sheet and returns its id, creating it when there isn't one yet.
+   *
+   * Separate from the submit handler because adding a pharmacy bill needs the
+   * same write without closing the form.
+   */
+  const persist = async (): Promise<string> => {
+    const payload: Record<string, any> = {
+      subject_type: subjectType,
+      notes: notes || null,
+      items: expandedItems,
+    }
+
+    if (subjectType === 'patient') {
+      payload.patient_id = patient?.id ?? null
+    } else {
+      payload.opd_name = opd.name
+      payload.opd_phone = opd.phone || null
+      payload.opd_age = opd.age || null
+      payload.opd_gender = opd.gender || null
+    }
+
+    const res = await fetch(
+      activeSheetId ? `/api/charge-sheets/${activeSheetId}` : '/api/charge-sheets',
+      {
+        method: activeSheetId ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      },
+    )
+
+    const body = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      if (body?.fieldErrors) setFieldErrors(body.fieldErrors)
+      throw new Error(body?.error || 'Failed to save the charge sheet')
+    }
+
+    const id: string = body?.chargeSheet?.id ?? activeSheetId
+    setActiveSheetId(id)
+    return id
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setSaving(true)
@@ -346,38 +401,32 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
     setFieldErrors({})
 
     try {
-      const payload: Record<string, any> = {
-        subject_type: subjectType,
-        notes: notes || null,
-        items: expandedItems,
-      }
-
-      if (subjectType === 'patient') {
-        payload.patient_id = patient?.id ?? null
-      } else {
-        payload.opd_name = opd.name
-        payload.opd_phone = opd.phone || null
-        payload.opd_age = opd.age || null
-        payload.opd_gender = opd.gender || null
-      }
-
-      const res = await fetch(
-        mode === 'edit' ? `/api/charge-sheets/${sheetId}` : '/api/charge-sheets',
-        {
-          method: mode === 'edit' ? 'PATCH' : 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        },
-      )
-
-      const body = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        if (body?.fieldErrors) setFieldErrors(body.fieldErrors)
-        throw new Error(body?.error || 'Failed to save the charge sheet')
-      }
-
+      await persist()
       onSuccess()
       onClose()
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  /**
+   * A bill attaches to a saved sheet, so an unsaved one is saved as a draft
+   * first. Nothing is lost if that fails — the dialog simply does not open.
+   */
+  const openPharmacyAdd = async () => {
+    if (activeSheetId) {
+      setPharmacyAddOpen(true)
+      return
+    }
+
+    setSaving(true)
+    setError('')
+    try {
+      await persist()
+      onSuccess()
+      setPharmacyAddOpen(true)
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -388,20 +437,21 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
   const subjectReady = subjectType === 'patient' ? !!patient : !!opd.name.trim()
 
   /**
-   * A ranged line must actually resolve to days, and a per-hour one to hours on
-   * every day left in — otherwise saving quietly writes nothing for that line,
-   * or writes a day billed for zero hours.
+   * A per-day range must resolve to at least one day, or saving quietly writes
+   * nothing for that line. A per-hour line must carry hours within a real day.
    */
   const lineReady = (line: ChargeSheetLine) => {
     if (Number(line.unit_price) < 0) return false
-    if (line.id || !isRangeBillingMode(line.billing_mode)) return true
+
+    if (!line.id && line.billing_mode === 'per_hour') {
+      const hours = Number(line.qty)
+      if (!(hours >= 1 && hours <= MAX_HOURS_PER_DAY)) return false
+    }
+
+    if (line.id || line.billing_mode !== 'per_day') return true
 
     const days = daysOf(line)
-    if (days.length === 0 || days.length > MAX_CHARGE_DAYS) return false
-    if (line.billing_mode === 'per_hour') {
-      return days.every(day => Number(line.hours[day]) >= 1)
-    }
-    return true
+    return days.length > 0 && days.length <= MAX_CHARGE_DAYS
   }
 
   const linesReady = filledLines.length > 0 && filledLines.every(lineReady)
@@ -476,7 +526,7 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="sheet-date">Date</Label>
+              <Label htmlFor="sheet-date">Default date</Label>
               <Input
                 id="sheet-date"
                 type="date"
@@ -484,6 +534,7 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
                 onChange={e => setSheetDate(e.target.value)}
                 disabled={saving}
               />
+              <p className="text-xs text-muted">New lines start here; each line can differ.</p>
             </div>
           </div>
 
@@ -557,11 +608,11 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => setPharmacyAddOpen(true)}
-                  disabled={saving || mode === 'create'}
+                  onClick={openPharmacyAdd}
+                  disabled={saving || !subjectReady || !linesReady}
                   title={
-                    mode === 'create'
-                      ? 'Create the sheet first, then add a pharmacy bill to it'
+                    !subjectReady || !linesReady
+                      ? 'Fill in the sheet first — it is saved as a draft before the bill is added'
                       : undefined
                   }
                 >
@@ -578,6 +629,7 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
             {/* Column header — desktop only; the mobile layout labels each field
                 on its own line instead, where a header row would just repeat. */}
             <div className={`hidden sm:grid ${LINE_GRID} gap-2 px-1 text-xs font-medium text-muted uppercase`}>
+              <span>Date</span>
               <span>Charge</span>
               <span>Name</span>
               <span>Description</span>
@@ -590,8 +642,10 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
             <div className="space-y-2">
               {lines.map((line, index) => {
                 const removable = lines.length > 1
-                // A saved line is one stored day; only a new one enters a range.
-                const ranged = !line.id && isRangeBillingMode(line.billing_mode)
+                // A saved line is one stored day; only a new per-day one enters
+                // a range. Per-hour bills its hours against the line's own date.
+                const ranged = !line.id && line.billing_mode === 'per_day'
+                const hourly = !line.id && line.billing_mode === 'per_hour'
                 const days = ranged ? daysOf(line) : []
                 // A pharmacy line is what SmartPharma360 said it was — nothing
                 // on it is ours to retype, so it is shown rather than edited.
@@ -603,6 +657,19 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
                     className="rounded-lg border border-border bg-surface-inset p-2 sm:p-1.5 space-y-2"
                   >
                     <div className={`grid grid-cols-2 ${LINE_GRID_SM} gap-2 items-center`}>
+                      {/* A ranged line takes its dates from the range below, so
+                          its own date box would contradict them. */}
+                      <div className="col-span-2 sm:col-span-1">
+                        <Input
+                          aria-label="Date"
+                          type="date"
+                          value={ranged ? '' : line.service_date}
+                          onChange={e => updateLine(index, { service_date: e.target.value })}
+                          disabled={saving || isPharmacy || ranged}
+                          placeholder={ranged ? 'From the range' : undefined}
+                        />
+                      </div>
+
                       <div className="col-span-2 sm:col-span-1">
                         {isPharmacy ? (
                           <button
@@ -648,15 +715,20 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
                         />
                       </div>
 
+                      {/* Per-hour keeps its hours here — the same column, since
+                          the hours are the quantity the hourly rate multiplies. */}
                       <Input
-                        aria-label={line.billing_mode === 'per_day' ? 'Units per day' : 'Quantity'}
+                        aria-label={
+                          hourly ? 'Hours' : ranged ? 'Units per day' : 'Quantity'
+                        }
                         type="number"
                         min="1"
+                        max={hourly ? MAX_HOURS_PER_DAY : undefined}
                         step="1"
                         value={line.qty}
                         onFocus={e => e.target.select()}
                         onChange={e => updateLine(index, { qty: e.target.value })}
-                        disabled={saving || isPharmacy || (ranged && line.billing_mode === 'per_hour')}
+                        disabled={saving || isPharmacy}
                         className="text-center"
                       />
 
@@ -694,7 +766,7 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
                       <div className="border-t border-input-border pt-2 space-y-2">
                         <div className="flex flex-wrap items-end gap-2">
                           <span className="text-xs font-medium text-muted uppercase pb-2.5">
-                            {CHARGE_BILLING_MODE_LABELS[line.billing_mode]}
+                            {CHARGE_BILLING_MODE_LABELS.per_day}
                           </span>
                           <div className="space-y-1">
                             <Label htmlFor={`from-${index}`} className="text-xs">From</Label>
@@ -727,50 +799,6 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
                           </span>
                         </div>
 
-                        {line.billing_mode === 'per_hour' && days.length > 0 && (
-                          <ul className="rounded-md border border-border divide-y divide-input-border max-h-44 overflow-y-auto">
-                            {days.map(day => (
-                              <li key={day} className="flex items-center gap-3 px-3 py-1.5">
-                                <span className="text-sm text-foreground flex-1 min-w-0">
-                                  {new Date(`${day}T00:00:00`).toLocaleDateString('en-IN', {
-                                    weekday: 'short',
-                                    day: '2-digit',
-                                    month: 'short',
-                                  })}
-                                </span>
-                                <Input
-                                  type="number"
-                                  min="1"
-                                  step="1"
-                                  aria-label={`Hours on ${day}`}
-                                  className="w-24 h-9"
-                                  placeholder="hrs"
-                                  value={line.hours[day] ?? ''}
-                                  onFocus={e => e.target.select()}
-                                  onChange={e =>
-                                    updateLine(index, {
-                                      hours: { ...line.hours, [day]: e.target.value },
-                                    })
-                                  }
-                                  disabled={saving}
-                                />
-                                <button
-                                  type="button"
-                                  aria-label={`Remove ${day}`}
-                                  className="text-muted hover:text-destructive shrink-0"
-                                  onClick={() =>
-                                    updateLine(index, {
-                                      removed_days: [...line.removed_days, day],
-                                    })
-                                  }
-                                  disabled={saving}
-                                >
-                                  <X size={16} />
-                                </button>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
 
                         {line.removed_days.length > 0 && (
                           <p className="text-xs text-muted">
@@ -817,14 +845,14 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
           setReloadToken(t => t + 1)
           onSuccess()
         }}
-        endpoint={`/api/charge-sheets/${sheetId}/pharmacy-bills`}
+        endpoint={`/api/charge-sheets/${activeSheetId}/pharmacy-bills`}
       />
 
       {pharmacyViewBillId && (
         <PharmacyBillViewModal
           isOpen={Boolean(pharmacyViewBillId)}
           onClose={() => setPharmacyViewBillId(null)}
-          endpoint={`/api/charge-sheets/${sheetId}/pharmacy-bills/${pharmacyViewBillId}`}
+          endpoint={`/api/charge-sheets/${activeSheetId}/pharmacy-bills/${pharmacyViewBillId}`}
           patient={
             subjectType === 'patient' && patient
               ? { name: patient.name, patient_id: patient.patient_id ?? null }
