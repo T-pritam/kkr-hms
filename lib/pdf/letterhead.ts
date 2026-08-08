@@ -72,9 +72,22 @@ function drawBackground(doc: jsPDF): void {
   }
 }
 
+export interface LetterheadDocOptions {
+  /**
+   * Printed in place of the artwork's own name — "PHARMACY" on a pharmacy bill.
+   *
+   * Passed here rather than drawn by the caller because the artwork is repainted
+   * on every page break, and only this constructor sees those.
+   */
+  name?: string
+}
+
 /** Portrait A4 doc handle. `mode: 'print'` omits the letterhead background —
  * see the module doc comment. */
-export function mkLetterheadDoc(mode: LetterheadMode = 'digital'): H {
+export function mkLetterheadDoc(
+  mode: LetterheadMode = 'digital',
+  { name }: LetterheadDocOptions = {},
+): H {
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
   const pw = doc.internal.pageSize.getWidth()
   const ph = doc.internal.pageSize.getHeight()
@@ -87,7 +100,11 @@ export function mkLetterheadDoc(mode: LetterheadMode = 'digital'): H {
 
   const bold = (s: number) => { doc.setFont('helvetica', 'bold'); doc.setFontSize(s) }
   const normal = (s: number) => { doc.setFont('helvetica', 'normal'); doc.setFontSize(s) }
-  const paintBackground = () => { if (mode === 'digital') drawBackground(doc) }
+  const paintBackground = () => {
+    if (mode !== 'digital') return
+    drawBackground(doc)
+    if (name) drawLetterheadName(doc, name)
+  }
   const checkPage = (needed = 10) => {
     if (y + needed > bottom) {
       doc.addPage()
@@ -109,16 +126,16 @@ export function mkLetterheadDoc(mode: LetterheadMode = 'digital'): H {
  * letterhead JPEG, so the only way to change it is to paint the phrase out and
  * write over it — see LETTERHEAD_NAME_PX for why that is safe to do.
  *
- * Only worth calling on a document whose background is actually drawn; on the
- * 'print' copy there is no artwork to correct, and a white box would be the only
- * thing that landed on the pre-printed page.
+ * Private, and applied by `paintBackground` rather than by the caller: the
+ * artwork is redrawn on every page break, so a name applied once would be
+ * correct on page one and wrong on every page after it.
  */
-export function overprintLetterheadName(h: H, name: string): void {
+function drawLetterheadName(doc: jsPDF, name: string): void {
   const g = LETTERHEAD_NAME_PX
   const sx = PAGE_W / LETTERHEAD_PX.imageWidth
 
-  h.doc.setFillColor(255, 255, 255)
-  h.doc.rect(
+  doc.setFillColor(255, 255, 255)
+  doc.rect(
     g.maskLeft * sx,
     g.maskTop * PX_TO_MM,
     (g.maskRight - g.maskLeft) * sx,
@@ -126,13 +143,13 @@ export function overprintLetterheadName(h: H, name: string): void {
     'F',
   )
 
-  h.doc.setFont('helvetica', 'bold')
-  h.doc.setFontSize(LETTERHEAD_NAME_SIZE_PT)
-  h.doc.setTextColor(...LETTERHEAD_NAME_TEAL)
-  h.doc.text(name, g.textLeft * sx, g.baseline * PX_TO_MM)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(LETTERHEAD_NAME_SIZE_PT)
+  doc.setTextColor(...LETTERHEAD_NAME_TEAL)
+  doc.text(name, g.textLeft * sx, g.baseline * PX_TO_MM)
 
   // Left as the letterhead found it, so callers need not know it was touched.
-  h.doc.setTextColor(0, 0, 0)
+  doc.setTextColor(0, 0, 0)
 }
 
 /** Hands the browser straight to its print dialog. Most documents pass the

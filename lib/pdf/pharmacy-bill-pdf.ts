@@ -24,8 +24,7 @@
 import { M, fmt, fmtDate } from './base'
 import { formatAgeSex } from '@/lib/patients/age'
 import {
-  mkLetterheadDoc, minimalPatientBlock, letterheadSectionTitle, letterheadTable,
-  overprintLetterheadName, autoPrint,
+  mkLetterheadDoc, minimalPatientBlock, letterheadSectionTitle, letterheadTable, autoPrint,
 } from './letterhead'
 import type { PatientChargesPatient } from './patient-charges-pdf'
 
@@ -49,9 +48,9 @@ export interface PharmacyBillData {
 }
 
 export function renderPharmacyBill(data: PharmacyBillData) {
-  const h = mkLetterheadDoc('digital')
-  overprintLetterheadName(h, 'PHARMACY')
-
+  // The name rides on the doc rather than being drawn here, so a bill that runs
+  // to a second page carries it there too.
+  const h = mkLetterheadDoc('digital', { name: 'PHARMACY' })
   const { patient, items } = data
   const label = data.entry_number || (data.external_bill_id != null ? String(data.external_bill_id) : '—')
 
