@@ -47,31 +47,3 @@ export const BRANDING: Branding = {
 export function contactLine(b: Branding = BRANDING): string {
   return [b.address, b.phone && `Ph: ${b.phone}`, b.email].filter(Boolean).join('  •  ')
 }
-
-/**
- * The pharmacy is a separate business from the diagnostic centre.
- *
- * A pharmacy bill printed on the diagnostic centre's letterhead names the wrong
- * trader on a tax document, so that one document draws this header instead of
- * the letterhead artwork. Values transcribed from the pharmacy's own printed
- * invoice; edit here if the registration details change.
- */
-export interface PharmacyBranding {
-  name: string
-  addressLines: string[]
-  email: string
-  gstin: string
-  /** Drug licence numbers, as printed on the pharmacy's invoice. */
-  drugLicences: string[]
-}
-
-export const PHARMACY_BRANDING: PharmacyBranding = {
-  name: 'K.K.R PHARMACY',
-  addressLines: [
-    'D.NO : 18-1-34/B, 2ND FLOOR',
-    'OPP : KGH OP GATE, MAHARANIPETA, VISAKHAPATNAM - 530002',
-  ],
-  email: 'KKRHOSPITAL9@GMAIL.COM',
-  gstin: '37ALNPK8815D1ZV',
-  drugLicences: ['FORM 20 : AP/03/01/2020-12835', 'FORM 21 : AP/03/01/2020-12836'],
-}

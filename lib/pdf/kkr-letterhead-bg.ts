@@ -18,3 +18,33 @@ export const LETTERHEAD_PX = {
   headerRuleY: 215,
   footerBandStartY: 1553,
 }
+
+/**
+ * The "DIAGNOSTIC CENTRE" line, measured so a document can print its own name there.
+ *
+ * The words are part of the JPEG, not text, so the only way to change them is to
+ * paint over them. The band behind them is flat white and nothing else lives in
+ * it: "KKR" ends at y=144, the header rule starts at y=213, and the phone block
+ * starts at x=805, so the mask below clears the phrase and touches none of them.
+ */
+export const LETTERHEAD_NAME_PX = {
+  maskLeft: 226,
+  maskRight: 800,
+  maskTop: 147,
+  maskBottom: 209,
+  textLeft: 228,
+  baseline: 202,
+}
+
+/** The teal the artwork letters its name in. */
+export const LETTERHEAD_NAME_TEAL: [number, number, number] = [0, 150, 140]
+
+/**
+ * Point size at which Helvetica Bold matches the artwork's cap height.
+ *
+ * Measured, not derived: computing it from Helvetica's nominal cap-height ratio
+ * gave text 11% too tall, which crowded "KKR" above it. At 31.7pt the cap height,
+ * baseline, left edge and the gap under "KKR" all land within a pixel of the
+ * original. Re-measure if the artwork is ever replaced.
+ */
+export const LETTERHEAD_NAME_SIZE_PT = 31.7

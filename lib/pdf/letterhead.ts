@@ -34,7 +34,13 @@
 import jsPDF from 'jspdf'
 import { M, C } from './base'
 import type { H } from './base'
-import { KKR_LETTERHEAD_BG_DATA_URI, LETTERHEAD_PX } from './kkr-letterhead-bg'
+import {
+  KKR_LETTERHEAD_BG_DATA_URI,
+  LETTERHEAD_NAME_PX,
+  LETTERHEAD_NAME_SIZE_PT,
+  LETTERHEAD_NAME_TEAL,
+  LETTERHEAD_PX,
+} from './kkr-letterhead-bg'
 import { LETTERHEAD_CONFIG } from './letterhead-config'
 
 export type LetterheadMode = 'digital' | 'print'
@@ -95,8 +101,42 @@ export function mkLetterheadDoc(mode: LetterheadMode = 'digital'): H {
   return { doc, get y() { return y }, set y(v) { y = v }, pw, ph, cw, re: M + cw, bold, normal, checkPage }
 }
 
-/** Renders in 'print' mode, then hands the browser straight to its print
- * dialog — for printing onto the pre-printed letterhead paper stock. */
+/**
+ * Prints `name` where the artwork says "DIAGNOSTIC CENTRE".
+ *
+ * The pharmacy is a separate trader, and its bill is a tax document, so it must
+ * not go out under the diagnostic centre's name. The name is baked into the
+ * letterhead JPEG, so the only way to change it is to paint the phrase out and
+ * write over it — see LETTERHEAD_NAME_PX for why that is safe to do.
+ *
+ * Only worth calling on a document whose background is actually drawn; on the
+ * 'print' copy there is no artwork to correct, and a white box would be the only
+ * thing that landed on the pre-printed page.
+ */
+export function overprintLetterheadName(h: H, name: string): void {
+  const g = LETTERHEAD_NAME_PX
+  const sx = PAGE_W / LETTERHEAD_PX.imageWidth
+
+  h.doc.setFillColor(255, 255, 255)
+  h.doc.rect(
+    g.maskLeft * sx,
+    g.maskTop * PX_TO_MM,
+    (g.maskRight - g.maskLeft) * sx,
+    (g.maskBottom - g.maskTop) * PX_TO_MM,
+    'F',
+  )
+
+  h.doc.setFont('helvetica', 'bold')
+  h.doc.setFontSize(LETTERHEAD_NAME_SIZE_PT)
+  h.doc.setTextColor(...LETTERHEAD_NAME_TEAL)
+  h.doc.text(name, g.textLeft * sx, g.baseline * PX_TO_MM)
+
+  // Left as the letterhead found it, so callers need not know it was touched.
+  h.doc.setTextColor(0, 0, 0)
+}
+
+/** Hands the browser straight to its print dialog. Most documents pass the
+ * 'print' copy, drawn without artwork for the pre-printed paper stock. */
 export function autoPrint(doc: jsPDF): void {
   doc.autoPrint()
   const url = doc.output('bloburl')

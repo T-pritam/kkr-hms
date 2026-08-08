@@ -2,10 +2,14 @@
  * Pharmacy bill PDF — one stored SmartPharma360 invoice.
  *
  * On the house letterhead, laid out like every other document here: artwork,
- * patient block, title, table. The pharmacy is a separate trader, so its name,
- * GSTIN and drug licences print in their own block under the title — the tax
- * details a bill has to carry, without the page pretending to be a different
- * business's stationery.
+ * patient block, title, table. The one difference is the name: the pharmacy is
+ * a separate trader, so the letterhead's "DIAGNOSTIC CENTRE" is painted out and
+ * "PHARMACY" printed in its place — see `overprintLetterheadName`.
+ *
+ * This is also the one document with no separate print copy. The others are
+ * printed onto pre-printed stationery, but that stationery carries the wrong
+ * trader's name for a pharmacy bill, so this one always draws its own header
+ * and goes onto plain paper.
  *
  * There is no GST column. Every MRP the pharmacy sends is already tax-inclusive,
  * so a rate beside it invites the reader to add it on again. The rates are still
@@ -19,13 +23,11 @@
 
 import { M, fmt, fmtDate } from './base'
 import { formatAgeSex } from '@/lib/patients/age'
-import { PHARMACY_BRANDING } from './branding'
 import {
-  mkLetterheadDoc, minimalPatientBlock, letterheadSectionTitle, letterheadTable, autoPrint,
+  mkLetterheadDoc, minimalPatientBlock, letterheadSectionTitle, letterheadTable,
+  overprintLetterheadName, autoPrint,
 } from './letterhead'
-import type { LetterheadMode } from './letterhead'
 import type { PatientChargesPatient } from './patient-charges-pdf'
-import type { H } from './base'
 
 export interface PharmacyBillItemRow {
   product_name: string
@@ -37,38 +39,6 @@ export interface PharmacyBillItemRow {
   net_amount: number | string
 }
 
-/**
- * Who sold the medicines, under the title.
- *
- * The letterhead above names the clinic; these are the pharmacy's own
- * registration details, which a tax document has to carry. Deliberately small
- * and boxed off — reference matter, not a second letterhead competing with the
- * first.
- */
-function pharmacyDetails(h: H): void {
-  const b = PHARMACY_BRANDING
-
-  h.checkPage(20)
-  h.doc.setTextColor(0, 0, 0)
-
-  h.bold(9)
-  h.doc.text(b.name, M, h.y)
-  h.y += 4
-
-  h.normal(7.5)
-  for (const line of b.addressLines) {
-    h.doc.text(line, M, h.y)
-    h.y += 3.4
-  }
-  h.doc.text(`Email : ${b.email}`, M, h.y)
-  h.y += 3.4
-
-  h.doc.text(`GSTIN : ${b.gstin}`, M, h.y)
-  const licences = b.drugLicences.join('    ')
-  if (licences) h.doc.text(licences, h.re, h.y, { align: 'right' })
-  h.y += 6
-}
-
 export interface PharmacyBillData {
   patient: PatientChargesPatient
   entry_number?: string | null
@@ -78,8 +48,10 @@ export interface PharmacyBillData {
   items: PharmacyBillItemRow[]
 }
 
-export function renderPharmacyBill(data: PharmacyBillData, mode: LetterheadMode = 'digital') {
-  const h = mkLetterheadDoc(mode)
+export function renderPharmacyBill(data: PharmacyBillData) {
+  const h = mkLetterheadDoc('digital')
+  overprintLetterheadName(h, 'PHARMACY')
+
   const { patient, items } = data
   const label = data.entry_number || (data.external_bill_id != null ? String(data.external_bill_id) : '—')
 
@@ -91,8 +63,6 @@ export function renderPharmacyBill(data: PharmacyBillData, mode: LetterheadMode 
   })
 
   letterheadSectionTitle(h, `PHARMACY BILL — ${label}`)
-
-  pharmacyDetails(h)
 
   if (items.length === 0) {
     h.doc.setFont('helvetica', 'normal')
@@ -134,11 +104,11 @@ export function pharmacyBillFilename(data: PharmacyBillData): string {
 }
 
 export function generatePharmacyBillPDF(data: PharmacyBillData): void {
-  renderPharmacyBill(data, 'digital').save(pharmacyBillFilename(data))
+  renderPharmacyBill(data).save(pharmacyBillFilename(data))
 }
 
-/** Renders the print (no-background) copy and sends it straight to the
- * browser's print dialog, for the pre-printed letterhead paper. */
+/** Sends the same document to the browser's print dialog. Unlike the other
+ * documents there is no letterhead-less variant — see the module comment. */
 export function printPharmacyBill(data: PharmacyBillData): void {
-  autoPrint(renderPharmacyBill(data, 'print'))
+  autoPrint(renderPharmacyBill(data))
 }
