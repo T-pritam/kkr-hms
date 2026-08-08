@@ -66,22 +66,41 @@ function drawBackground(doc: jsPDF): void {
   }
 }
 
+export interface LetterheadDocOptions {
+  /**
+   * `'kkr'` paints the clinic's letterhead artwork. `'none'` leaves the page
+   * blank and uses plain margins, for a document that must carry different
+   * branding — the pharmacy bill names a different trader, and printing it
+   * under the diagnostic centre's letterhead would misstate who sold the goods.
+   */
+  background?: 'kkr' | 'none'
+}
+
 /** Portrait A4 doc handle. `mode: 'print'` omits the letterhead background —
  * see the module doc comment. */
-export function mkLetterheadDoc(mode: LetterheadMode = 'digital'): H {
+export function mkLetterheadDoc(
+  mode: LetterheadMode = 'digital',
+  { background = 'kkr' }: LetterheadDocOptions = {},
+): H {
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
   const pw = doc.internal.pageSize.getWidth()
   const ph = doc.internal.pageSize.getHeight()
   const cw = pw - M * 2
 
   const printCfg = LETTERHEAD_CONFIG.print
-  const top = mode === 'print' ? LETTERHEAD_TOP + printCfg.topOffsetMm : LETTERHEAD_TOP
-  const bottom = mode === 'print' ? LETTERHEAD_BOTTOM + printCfg.bottomOffsetMm : LETTERHEAD_BOTTOM
+  // With no artwork there is no header rule or footer band to clear, so the
+  // usable area is the whole page inside the ordinary margin.
+  const artTop = mode === 'print' ? LETTERHEAD_TOP + printCfg.topOffsetMm : LETTERHEAD_TOP
+  const artBottom = mode === 'print' ? LETTERHEAD_BOTTOM + printCfg.bottomOffsetMm : LETTERHEAD_BOTTOM
+  const top = background === 'none' ? M : artTop
+  const bottom = background === 'none' ? ph - M : artBottom
   let y = top
 
   const bold = (s: number) => { doc.setFont('helvetica', 'bold'); doc.setFontSize(s) }
   const normal = (s: number) => { doc.setFont('helvetica', 'normal'); doc.setFontSize(s) }
-  const paintBackground = () => { if (mode === 'digital') drawBackground(doc) }
+  const paintBackground = () => {
+    if (background === 'kkr' && mode === 'digital') drawBackground(doc)
+  }
   const checkPage = (needed = 10) => {
     if (y + needed > bottom) {
       doc.addPage()

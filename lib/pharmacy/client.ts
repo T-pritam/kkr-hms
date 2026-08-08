@@ -178,6 +178,10 @@ export interface PharmacyBillItem {
   gst: number | string | null
   gst_value: number | string | null
   net_amount: number | string
+  hsn_code?: string | null
+  mfg?: string | null
+  expiry?: string | null
+  schedule_type?: string | null
   [key: string]: unknown
 }
 

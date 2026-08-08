@@ -47,6 +47,8 @@ export function billLabel(externalId: number, details: BillDetails): string {
 export function billItemRows(pharmacyBillId: string, items: PharmacyBillItem[]) {
   const num = (v: unknown) => (v === undefined || v === null ? null : Number(v))
 
+  const text = (v: unknown) => (v === undefined || v === null || v === '' ? null : String(v))
+
   return items.map(it => ({
     pharmacy_bill_id: pharmacyBillId,
     product_name: it.product_name,
@@ -57,6 +59,13 @@ export function billItemRows(pharmacyBillId: string, items: PharmacyBillItem[]) 
     gst_percent: num(it.gst),
     gst_value: num(it.gst_value),
     net_amount: Number(it.net_amount) || 0,
+    // Stored but mostly not printed — they came in the same payload, and
+    // fetching a bill again just to read them would be a call to somebody
+    // else's site for data we already had.
+    hsn_code: text(it.hsn_code),
+    mfg: text(it.mfg),
+    expiry: text(it.expiry),
+    schedule_type: text(it.schedule_type),
   }))
 }
 

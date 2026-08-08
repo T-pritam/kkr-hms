@@ -36,6 +36,10 @@ const details = {
       gst: 5,
       gst_value: 0.64,
       net_amount: 13.39,
+      hsn_code: '30049099',
+      mfg: 'SON',
+      expiry: '2028-10',
+      schedule_type: 'H',
     },
   ],
 } as any
@@ -91,7 +95,25 @@ describe('billItemRows', () => {
       gst_percent: 5,
       gst_value: 0.64,
       net_amount: 13.39,
+      hsn_code: '30049099',
+      mfg: 'SON',
+      expiry: '2028-10',
+      schedule_type: 'H',
     })
+  })
+
+  /** Only the expiry is printed, but all four arrive in the same payload and
+   * re-fetching a bill to get them later would be a call we are avoiding. */
+  it('keeps the fields the bill carries but does not print', () => {
+    const row = billItemRows('b1', details.items)[0]
+    expect(row.hsn_code).toBe('30049099')
+    expect(row.mfg).toBe('SON')
+    expect(row.schedule_type).toBe('H')
+  })
+
+  it('stores a blank schedule as null, not an empty string', () => {
+    const unscheduled = [{ ...details.items[0], schedule_type: '' }]
+    expect(billItemRows('b1', unscheduled as any)[0].schedule_type).toBeNull()
   })
 
   /** MRP arrives as a string; storing it as one would break every sum. */

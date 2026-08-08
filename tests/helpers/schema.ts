@@ -120,6 +120,8 @@ export const SCHEMA: Record<string, string[]> = {
   pharmacy_bill_items: [
     'id', 'pharmacy_bill_id', 'product_name', 'batch_number', 'packing', 'sale_quantity',
     'mrp', 'gst_percent', 'gst_value', 'net_amount', 'created_at',
+    // 20260811000002 — the rest of what the pharmacy says about a medicine
+    'hsn_code', 'mfg', 'expiry', 'schedule_type',
   ],
 
   pharmacy_api_sessions: ['scope', 'access_token', 'expires_at', 'updated_at'],

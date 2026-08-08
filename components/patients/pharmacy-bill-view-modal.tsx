@@ -24,10 +24,9 @@ interface PharmacyBillItem {
   product_name: string
   batch_number: string | null
   packing: string | null
+  expiry: string | null
   sale_quantity: number
   mrp: number | null
-  gst_percent: number | null
-  gst_value: number | null
   net_amount: number
 }
 
@@ -187,11 +186,12 @@ export function PharmacyBillViewModal({ isOpen, onClose, endpoint, patient, onDa
             <table className="w-full text-sm">
               <thead className="bg-surface-inset">
                 <tr>
-                  {['Medicine', 'Batch', 'Unit', 'Qty', 'Rate', 'GST %', 'Net Amount'].map((h, i) => (
+                  {['Medicine', 'Batch', 'Pack', 'Expiry', 'Qty', 'MRP', 'Amount'].map((h, i) => (
                     <th
                       key={h}
+                      // Qty onwards are figures; Medicine/Batch/Pack/Expiry are not.
                       className={`px-3 py-2 text-xs font-medium text-foreground whitespace-nowrap ${
-                        i >= 3 ? 'text-right' : 'text-left'
+                        i >= 4 ? 'text-right' : 'text-left'
                       }`}
                     >
                       {h}
@@ -205,12 +205,10 @@ export function PharmacyBillViewModal({ isOpen, onClose, endpoint, patient, onDa
                     <td className="px-3 py-2 text-foreground">{item.product_name}</td>
                     <td className="px-3 py-2 text-muted whitespace-nowrap">{item.batch_number || '—'}</td>
                     <td className="px-3 py-2 text-muted whitespace-nowrap">{item.packing || '—'}</td>
+                    <td className="px-3 py-2 text-muted whitespace-nowrap">{item.expiry || '—'}</td>
                     <td className="px-3 py-2 text-foreground text-right">{item.sale_quantity}</td>
                     <td className="px-3 py-2 text-foreground text-right whitespace-nowrap">
                       {item.mrp != null ? money(item.mrp) : '—'}
-                    </td>
-                    <td className="px-3 py-2 text-foreground text-right">
-                      {item.gst_percent != null ? item.gst_percent : '—'}
                     </td>
                     <td className="px-3 py-2 text-foreground text-right font-medium whitespace-nowrap">
                       {money(item.net_amount)}
