@@ -1,29 +1,24 @@
 /**
- * Attaching a pharmacy bill to a patient's charges.
+ * Attaching an already-fetched pharmacy bill to a patient's charges.
  *
- * This is the *only* place in the app that ever talks to SmartPharma360. It
- * resolves whatever id the desk typed (a numeric bill id, or an entry number
- * that needs one lookup to resolve), fetches the bill exactly once, and
- * writes three things: the charge itself (so it goes through every existing
- * billing code path unchanged), the bill header, and its medicine lines.
- * After this call returns, nothing about this bill ever touches
- * SmartPharma360 again — the view, the PDF, and the date correction all read
- * from our own tables.
+ * The bill arrives parked by /api/pharmacy-bills/preview, where the desk saw it
+ * and confirmed it was the right invoice. This route writes it — the charge
+ * itself (so it goes through every existing billing code path unchanged), the
+ * bill header, and its medicine lines — from that same fetch. Nothing here
+ * calls SmartPharma360, and nothing about the bill touches it again afterwards:
+ * the view, the PDF and the date correction all read our own tables.
  *
- * Three ways this can legitimately fail before anything is written: the
- * billing record doesn't belong to this patient (same ownership check the
- * regular charges route makes), the bill id doesn't resolve to exactly one
- * SmartPharma360 invoice, or that invoice has already been attached
- * (external_bill_id is globally unique — the same real bill must not be
- * billed twice).
+ * Three ways this can legitimately fail before anything is written: the billing
+ * record doesn't belong to this patient (same ownership check the regular
+ * charges route makes), the preview has expired, or the invoice was billed by
+ * somebody else between the preview and the save.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireBilling } from '@/lib/billing/authz'
-import { firstError } from '@/lib/patients/validate'
-import { normaliseAddPharmacyBillBody, validateAddPharmacyBillBody } from '@/lib/pharmacy/validate'
-import { fetchBillDetails, resolveExternalBillId } from '@/lib/pharmacy/client'
+import { validatePharmacyBillDate } from '@/lib/pharmacy/validate'
+import { consumePreview, findBilledCopy } from '@/lib/pharmacy/preview'
 import { billColumns, billLabel, insertPharmacyBill } from '@/lib/pharmacy/store'
 import { recalculatePatientBilling } from '@/lib/recalculate-billing'
 
@@ -42,16 +37,21 @@ export async function POST(
     const { id: patientId } = await params
     const body = await request.json().catch(() => ({}))
 
-    const values = normaliseAddPharmacyBillBody(body)
-    const check = validateAddPharmacyBillBody(values)
-    if (!check.ok) {
+    const previewToken = String(body.preview_token || '').trim()
+    if (!previewToken) {
       return NextResponse.json(
-        { error: firstError(check.errors), fieldErrors: check.errors },
+        { error: 'Fetch the bill before saving it', fieldErrors: { preview_token: 'Required' } },
         { status: 400 }
       )
     }
 
-    const billingId = values.patient_billing_id!
+    const billingId = String(body.patient_billing_id || '').trim()
+    if (!billingId) {
+      return NextResponse.json(
+        { error: 'A billing record is required', fieldErrors: { patient_billing_id: 'Required' } },
+        { status: 400 }
+      )
+    }
 
     // The bill must be this patient's — same guard as the regular charges
     // route, and for the same reason: supplying someone else's billing id
@@ -69,43 +69,40 @@ export async function POST(
       )
     }
 
-    let externalId: number
-    try {
-      externalId = await resolveExternalBillId(supabase, values.bill_id!)
-    } catch (err: any) {
-      return NextResponse.json({ error: err.message || 'Bill not found' }, { status: 404 })
+    // The payload was fetched when the desk asked to see it; this is the same
+    // fetch, not another one.
+    const preview = await consumePreview(supabase, previewToken)
+    if (!preview) {
+      return NextResponse.json(
+        { error: 'That preview has expired — fetch the bill again' },
+        { status: 409 }
+      )
     }
 
-    // The same real invoice must never be attached twice — check before
-    // spending a call on retail_sale_details.
-    const { data: existing } = await supabase
-      .from('pharmacy_bills')
-      .select('id')
-      .eq('external_bill_id', externalId)
-      .maybeSingle()
+    const { external_bill_id: externalId, details } = preview
 
-    if (existing) {
+    // Re-checked after the preview: another desk may have billed it meanwhile.
+    if (await findBilledCopy(supabase, externalId)) {
       return NextResponse.json(
         { error: 'This pharmacy bill has already been added' },
         { status: 409 }
       )
     }
 
-    let details
-    try {
-      details = await fetchBillDetails(supabase, externalId)
-    } catch (err: any) {
-      return NextResponse.json(
-        { error: err.message || 'Could not fetch that bill from the pharmacy system' },
-        { status: 502 }
-      )
+    // The bill date is the one field the desk may correct before saving.
+    let entryDate: string | null = null
+    if (body.entry_date !== undefined) {
+      const dateCheck = validatePharmacyBillDate(body.entry_date)
+      if (!dateCheck.ok) {
+        return NextResponse.json(
+          { error: Object.values(dateCheck.errors)[0], fieldErrors: dateCheck.errors },
+          { status: 400 }
+        )
+      }
+      entryDate = dateCheck.value
     }
 
-    if (!details.items.length) {
-      return NextResponse.json({ error: 'That bill has no medicines on it' }, { status: 400 })
-    }
-
-    const columns = billColumns(externalId, details)
+    const columns = { ...billColumns(externalId, details), ...(entryDate ? { entry_date: entryDate } : {}) }
 
     const { data: charge, error: chargeError } = await supabase
       .from('patient_charges')
@@ -135,6 +132,7 @@ export async function POST(
       externalId,
       details,
       user.id,
+      { entry_date: columns.entry_date },
     )
 
     await recalculatePatientBilling(supabase, billingId)

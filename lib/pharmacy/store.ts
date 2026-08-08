@@ -73,7 +73,9 @@ export function billItemRows(pharmacyBillId: string, items: PharmacyBillItem[]) 
  * Inserts the bill and its medicines against an owner that already exists.
  *
  * `owner` is exactly one of the two columns; the CHECK constraint refuses
- * anything else. Returns the created bill row.
+ * anything else. `overrides` carries the one field the desk may correct before
+ * saving — the bill date — so the stored row and the charge it produced agree.
+ * Returns the created bill row.
  */
 export async function insertPharmacyBill(
   supabase: SupabaseClient,
@@ -81,12 +83,14 @@ export async function insertPharmacyBill(
   externalId: number,
   details: BillDetails,
   userId: string,
+  overrides: { entry_date?: string } = {},
 ) {
   const { data: bill, error: billError } = await supabase
     .from('pharmacy_bills')
     .insert({
       ...owner,
       ...billColumns(externalId, details),
+      ...overrides,
       created_by: userId,
       updated_by: userId,
     })

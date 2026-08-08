@@ -11,18 +11,20 @@
  * why `pharmacy_bills.patient_id` is nullable — a quoted bill has no patient
  * until the sheet is forwarded and a real charge is created from it.
  *
- * Unlike the patient side there is no "already added" guard on the invoice
- * number. A quote is not money: the same invoice may legitimately be quoted on
- * several sheets, and the partial unique index only stops it being *billed*
- * twice.
+ * Unlike the patient side, quoting an invoice already quoted elsewhere is fine.
+ * A quote is not money: the same invoice may legitimately appear on several
+ * sheets, and the partial unique index only stops it being *billed* twice. Only
+ * a repeat on *this* sheet is refused, since that would double the total.
+ *
+ * The bill arrives already fetched, parked by the preview route — saving one
+ * costs no further call to SmartPharma360.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireBilling } from '@/lib/billing/authz'
-import { firstError } from '@/lib/patients/validate'
-import { normaliseAddPharmacyBillBody, validateAddPharmacyBillBody } from '@/lib/pharmacy/validate'
-import { fetchBillDetails, resolveExternalBillId } from '@/lib/pharmacy/client'
+import { validatePharmacyBillDate } from '@/lib/pharmacy/validate'
+import { consumePreview } from '@/lib/pharmacy/preview'
 import { billColumns, billLabel, insertPharmacyBill } from '@/lib/pharmacy/store'
 
 export async function POST(
@@ -40,13 +42,10 @@ export async function POST(
     const { id: sheetId } = await params
     const body = await request.json().catch(() => ({}))
 
-    // The sheet supplies the owner, so patient_billing_id is not part of this
-    // shape — only the bill id is required.
-    const billId = normaliseAddPharmacyBillBody(body).bill_id
-    const check = validateAddPharmacyBillBody({ bill_id: billId, patient_billing_id: 'n/a' })
-    if (!check.ok) {
+    const previewToken = String(body.preview_token || '').trim()
+    if (!previewToken) {
       return NextResponse.json(
-        { error: firstError(check.errors), fieldErrors: check.errors },
+        { error: 'Fetch the bill before saving it', fieldErrors: { preview_token: 'Required' } },
         { status: 400 }
       )
     }
@@ -66,15 +65,20 @@ export async function POST(
       )
     }
 
-    let externalId: number
-    try {
-      externalId = await resolveExternalBillId(supabase, billId!)
-    } catch (err: any) {
-      return NextResponse.json({ error: err.message || 'Bill not found' }, { status: 404 })
+    // The payload was fetched when the desk asked to see it; this is the same
+    // fetch, not another one.
+    const preview = await consumePreview(supabase, previewToken)
+    if (!preview) {
+      return NextResponse.json(
+        { error: 'That preview has expired — fetch the bill again' },
+        { status: 409 }
+      )
     }
 
+    const { external_bill_id: externalId, details } = preview
+
     // Only refuse a bill already quoted on *this* sheet — quoting the same
-    // invoice on someone else's sheet is legitimate.
+    // invoice on someone else's sheet is legitimate, and a quote is not money.
     const { data: sheetLines } = await supabase
       .from('charge_sheet_items')
       .select('id, pharmacy_bill:pharmacy_bills!charge_sheet_item_id(external_bill_id)')
@@ -92,21 +96,20 @@ export async function POST(
       )
     }
 
-    let details
-    try {
-      details = await fetchBillDetails(supabase, externalId)
-    } catch (err: any) {
-      return NextResponse.json(
-        { error: err.message || 'Could not fetch that bill from the pharmacy system' },
-        { status: 502 }
-      )
+    // The bill date is the one field the desk may correct before saving.
+    let entryDate: string | null = null
+    if (body.entry_date !== undefined) {
+      const dateCheck = validatePharmacyBillDate(body.entry_date)
+      if (!dateCheck.ok) {
+        return NextResponse.json(
+          { error: Object.values(dateCheck.errors)[0], fieldErrors: dateCheck.errors },
+          { status: 400 }
+        )
+      }
+      entryDate = dateCheck.value
     }
 
-    if (!details.items.length) {
-      return NextResponse.json({ error: 'That bill has no medicines on it' }, { status: 400 })
-    }
-
-    const columns = billColumns(externalId, details)
+    const columns = { ...billColumns(externalId, details), ...(entryDate ? { entry_date: entryDate } : {}) }
 
     const { data: line, error: lineError } = await supabase
       .from('charge_sheet_items')
@@ -134,6 +137,7 @@ export async function POST(
       externalId,
       details,
       user.id,
+      { entry_date: columns.entry_date },
     )
 
     await retotalSheet(supabase, sheetId, user.id)

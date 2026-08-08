@@ -126,6 +126,10 @@ export const SCHEMA: Record<string, string[]> = {
 
   pharmacy_api_sessions: ['scope', 'access_token', 'expires_at', 'updated_at'],
 
+  // 20260811000001 — a fetched bill held between preview and save, so
+  // confirming one costs no second call to the pharmacy's API
+  pharmacy_bill_previews: ['token', 'external_bill_id', 'payload', 'created_at', 'created_by'],
+
   case_sheet_doctors: [
     'id', 'case_sheet_id', 'doctor_id', 'doctor_name', 'doctor_specialist', 'display_order',
     'created_at',
