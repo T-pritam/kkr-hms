@@ -230,6 +230,7 @@ export function anInstallment(overrides: Row = {}): Row {
     transaction_reference: null,
     remarks: null,
     created_by: null,
+    ledger_transaction_id: null,
     ...overrides,
   })[0]
 }

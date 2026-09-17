@@ -7,6 +7,13 @@
 
 /* --- Light Mode (default) --- */
 :root {
+  /* Without this, a native control (the date-input calendar icon and its
+     popup) always renders in the browser's light-scheme colors regardless of
+     which theme is active — in dark mode that icon draws dark-on-dark against
+     surface-inset and looks unclickable/invisible, which is why date fields
+     read as "stuck" even though the input works. */
+  color-scheme: light;
+
   --background: #f8fafc;
   --foreground: #0f172a;
 
@@ -79,6 +86,8 @@
 
 /* --- Dark Mode --- */
 .dark {
+  color-scheme: dark;
+
   --background: #030712;
   --foreground: #f1f5f9;
 

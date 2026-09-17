@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { verifyAuth } from '@/lib/auth/verify';
-import { assertLedgerDateOpen } from '@/lib/ledger/closure';
+import { assertLedgerDateOpen, getActiveClosures } from '@/lib/ledger/closure';
 import { createLedgerTransaction } from '@/lib/ledger/transactions';
 
 export async function GET(
@@ -30,14 +30,35 @@ export async function GET(
       .select(`
         *,
         users!created_by(id, username),
-        updated_by_user:users!updated_by(id, username)
+        updated_by_user:users!updated_by(id, username),
+        ledger_transaction:daily_ledger_transactions!ledger_transaction_id(status)
       `)
       .eq('patient_billing_id', billingId)
       .order('installment_number', { ascending: true });
 
     if (error) throw error;
 
-    return NextResponse.json(data);
+    // A payment can no longer be edited/deleted once either fact is true: its
+    // own date has been closed, or an admin has already verified the ledger
+    // credit it created — "settled", in the word staff actually use, day to
+    // day, well before the whole day gets closed. Neither is a property of the
+    // installment row itself, so both are decorated on here rather than left
+    // for the client to work out.
+    const dates = (data ?? []).map((row) => row.payment_date).filter(Boolean);
+    let decorated = data ?? [];
+
+    if (dates.length > 0) {
+      const minDate = dates.reduce((a, b) => (a < b ? a : b));
+      const maxDate = dates.reduce((a, b) => (a > b ? a : b));
+      const closures = await getActiveClosures(supabase, minDate, maxDate);
+      decorated = decorated.map((row) => ({
+        ...row,
+        day_closed: closures.has(row.payment_date),
+        ledger_verified: row.ledger_transaction?.status === 'verified',
+      }));
+    }
+
+    return NextResponse.json(decorated);
   } catch (error) {
     console.error('Error fetching installments:', error);
     return NextResponse.json(
@@ -148,6 +169,16 @@ export async function POST(
           { error: result.error, ...(result.code ? { code: result.code } : {}) },
           { status: result.status }
         );
+      }
+
+      // Link the two rows so later reads/writes can ask "has this payment been
+      // verified" directly, instead of matching by date + amount.
+      const ledgerTransactionId = result.rows[0]?.id;
+      if (ledgerTransactionId) {
+        await supabase
+          .from('patient_billing_installments')
+          .update({ ledger_transaction_id: ledgerTransactionId })
+          .eq('id', data.id);
       }
     }
 

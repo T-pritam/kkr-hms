@@ -217,6 +217,9 @@ export const SCHEMA: Record<string, string[]> = {
   patient_billing_installments: [
     'id', 'patient_billing_id', 'installment_number', 'amount', 'payment_date', 'payment_method',
     'transaction_reference', 'remarks', 'created_at', 'created_by', 'updated_at', 'updated_by',
+    // 20260918000001 — links the payment to the ledger credit it created, so
+    // "has this been verified" can be asked directly instead of guessed at.
+    'ledger_transaction_id',
   ],
 
   patient_case_sheets: [

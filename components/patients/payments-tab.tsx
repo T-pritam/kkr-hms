@@ -19,7 +19,7 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
-    amount: 0,
+    amount: '',
     payment_date: new Date().toISOString().split('T')[0],
     payment_method: 'cash',
     transaction_reference: '',
@@ -50,11 +50,13 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
     setLoading(true);
 
     try {
+      const payload = { ...formData, amount: parseFloat(formData.amount) || 0 };
+
       if (editingId) {
         const response = await fetch(`/api/patients/${patientId}/installments/${editingId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(formData),
+          body: JSON.stringify(payload),
         });
 
         if (response.ok) {
@@ -68,7 +70,7 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            ...formData,
+            ...payload,
             patient_billing_id: billing.id,
           }),
         });
@@ -91,7 +93,7 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
   const handleEdit = (installment: any) => {
     setEditingId(installment.id);
     setFormData({
-      amount: parseFloat(installment.amount),
+      amount: String(installment.amount ?? ''),
       payment_date: installment.payment_date,
       payment_method: installment.payment_method,
       transaction_reference: installment.transaction_reference || '',
@@ -124,7 +126,7 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
     setShowForm(false);
     setEditingId(null);
     setFormData({
-      amount: 0,
+      amount: '',
       payment_date: new Date().toISOString().split('T')[0],
       payment_method: 'cash',
       transaction_reference: '',
@@ -133,12 +135,17 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
     });
   };
 
+  // A payment is locked once either fact is true: its day has been closed, or
+  // an admin has already verified the ledger credit it created ("settled",
+  // the word staff actually use — usually well before the day itself closes).
+  // Editing or deleting it here would silently disagree with that, so the
+  // same two rules the server enforces gate the buttons too.
+  const isLocked = (installment: any) => installment.day_closed || installment.ledger_verified;
+
   const canEditOrDelete = (installment: any) => {
-    console.log('Checking permissions for installment:', user?.role, user?.id);
+    if (isLocked(installment)) return false;
     return user?.role === 'ADMIN' || installment.created_by === user?.id;
   };
-
-  console.log(user)
 
   if (!billing) {
     return (
@@ -184,8 +191,9 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
                 required
                 step="0.01"
                 min="0.01"
+                placeholder="0.00"
                 value={formData.amount}
-                onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) })}
+                onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
                 className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
               />
             </div>
@@ -316,7 +324,7 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
                       ₹{parseFloat(installment.amount).toFixed(2)}
                     </td>
                     <td className="px-4 py-3 text-center">
-                      {canEditOrDelete(installment) && (
+                      {canEditOrDelete(installment) ? (
                         <div className="flex justify-center gap-2">
                           <Button
                             size="sm"
@@ -337,7 +345,14 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
                             <Trash2 size={16} />
                           </Button>
                         </div>
-                      )}
+                      ) : isLocked(installment) ? (
+                        <span
+                          className="px-1.5 py-1 rounded text-xs bg-surface-inset text-muted"
+                          title={installment.day_closed ? 'This day has been closed' : 'This payment has been verified'}
+                        >
+                          🔒
+                        </span>
+                      ) : null}
                     </td>
                   </tr>
                 ))}
@@ -398,7 +413,7 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
                 {installment.remarks && (
                   <p className="text-xs text-muted line-clamp-2">{installment.remarks}</p>
                 )}
-                {canEditOrDelete(installment) && (
+                {canEditOrDelete(installment) ? (
                   <div className="flex gap-3 pt-2 border-t border-input-border">
                     <button
                       onClick={() => handleEdit(installment)}
@@ -413,7 +428,16 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
                       <Trash2 size={14} /> Delete
                     </button>
                   </div>
-                )}
+                ) : isLocked(installment) ? (
+                  <div className="pt-2 border-t border-input-border">
+                    <span
+                      className="text-xs text-muted inline-flex items-center gap-1"
+                      title={installment.day_closed ? 'This day has been closed' : 'This payment has been verified'}
+                    >
+                      🔒 {installment.day_closed ? 'Day closed' : 'Verified'}
+                    </span>
+                  </div>
+                ) : null}
               </div>
             ))}
             <div className="bg-surface-inset rounded-lg p-4 flex justify-between items-center">

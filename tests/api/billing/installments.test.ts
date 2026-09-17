@@ -87,6 +87,43 @@ describe('GET /api/patients/[id]/installments', () => {
 
     expect((await list('p1', { billing_id: 'b1' })).status).toBe(500)
   })
+
+  /**
+   * Whether a payment can still be edited depends on its own date, not on
+   * anything about the row — so the list decorates each one with that fact
+   * rather than making the client work it out itself.
+   */
+  it('flags each installment with whether its own day has been closed', async () => {
+    await signInAs('NURSE')
+    anInstallment({ id: 'i1', patient_billing_id: 'b1', payment_date: '2026-03-12' })
+    anInstallment({ id: 'i2', patient_billing_id: 'b1', payment_date: TODAY })
+    aClosure({ closure_date: '2026-03-12' })
+
+    const { body } = await list('p1', { billing_id: 'b1' })
+
+    expect(body.find((i: any) => i.id === 'i1').day_closed).toBe(true)
+    expect(body.find((i: any) => i.id === 'i2').day_closed).toBe(false)
+  })
+
+  /**
+   * Staff call a payment "settled" once an admin has verified the ledger
+   * credit it created — usually well before the day itself is closed, which
+   * is why this is asked separately from day_closed.
+   */
+  it('flags each installment with whether its linked ledger entry has been verified', async () => {
+    await signInAs('NURSE')
+    aTransaction({ id: 't1', source: 'patient', status: 'verified' })
+    aTransaction({ id: 't2', source: 'patient', status: 'pending' })
+    anInstallment({ id: 'i1', patient_billing_id: 'b1', ledger_transaction_id: 't1' })
+    anInstallment({ id: 'i2', patient_billing_id: 'b1', ledger_transaction_id: 't2' })
+    anInstallment({ id: 'i3', patient_billing_id: 'b1', ledger_transaction_id: null })
+
+    const { body } = await list('p1', { billing_id: 'b1' })
+
+    expect(body.find((i: any) => i.id === 'i1').ledger_verified).toBe(true)
+    expect(body.find((i: any) => i.id === 'i2').ledger_verified).toBe(false)
+    expect(body.find((i: any) => i.id === 'i3').ledger_verified).toBe(false)
+  })
 })
 
 describe('POST /api/patients/[id]/installments', () => {
@@ -241,6 +278,34 @@ describe('POST /api/patients/[id]/installments — ledger side effect', () => {
     })
   })
 
+  /**
+   * The only way to later ask "has this payment been verified" is if the
+   * installment remembers which ledger row it created.
+   */
+  it('links the installment to the ledger credit it just created', async () => {
+    await signInAs('RECEPTIONIST')
+    aBilling({ id: 'b1', patient_id: 'p1' })
+
+    await create('p1', {
+      patient_billing_id: 'b1',
+      amount: 5000,
+      create_ledger_entry: true,
+    })
+
+    const installment = db.rows('patient_billing_installments')[0]
+    const transaction = db.rows('daily_ledger_transactions')[0]
+    expect(installment.ledger_transaction_id).toBe(transaction.id)
+  })
+
+  it('leaves the installment unlinked when no ledger entry is requested', async () => {
+    await signInAs('RECEPTIONIST')
+    aBilling({ id: 'b1' })
+
+    await create('p1', { patient_billing_id: 'b1', amount: 5000 })
+
+    expect(db.rows('patient_billing_installments')[0].ledger_transaction_id).toBeUndefined()
+  })
+
   it('falls back to a generic description if the patient cannot be found', async () => {
     await signInAs('RECEPTIONIST')
     aBilling({ id: 'b1', patient_id: 'missing-patient' })
@@ -356,6 +421,66 @@ describe('PATCH /api/patients/[id]/installments/[installmentId]', () => {
   })
 
   /**
+   * A payment on a day an admin has already closed is reconciled — editing it
+   * here would silently disagree with that closure, the same rule creating a
+   * new entry on a closed day already enforces.
+   */
+  it('refuses to edit a payment whose day has been closed', async () => {
+    await signInAs('ADMIN')
+    aBilling({ id: 'b1' })
+    anInstallment({ id: 'i1', patient_billing_id: 'b1', amount: 1000, payment_date: '2026-03-12' })
+    aClosure({ closure_date: '2026-03-12' })
+
+    const { status, body } = await edit('p1', 'i1', { amount: 2500 })
+
+    expect(status).toBe(409)
+    expect(body.code).toBe('LEDGER_DAY_CLOSED')
+    expect(db.find('patient_billing_installments', (r) => r.id === 'i1')!.amount).toBe(1000)
+  })
+
+  it('refuses to move a payment onto a day that has been closed', async () => {
+    await signInAs('ADMIN')
+    aBilling({ id: 'b1' })
+    anInstallment({ id: 'i1', patient_billing_id: 'b1', amount: 1000, payment_date: TODAY })
+    aClosure({ closure_date: '2026-03-12' })
+
+    const { status, body } = await edit('p1', 'i1', { amount: 1000, payment_date: '2026-03-12' })
+
+    expect(status).toBe(409)
+    expect(body.code).toBe('LEDGER_DAY_CLOSED')
+    expect(db.find('patient_billing_installments', (r) => r.id === 'i1')!.payment_date).toBe(TODAY)
+  })
+
+  /**
+   * Staff call this "settled" — an admin has verified the ledger credit the
+   * payment created, which routinely happens well before the day is closed.
+   */
+  it('refuses to edit a payment whose ledger entry has been verified', async () => {
+    await signInAs('ADMIN')
+    aBilling({ id: 'b1' })
+    aTransaction({ id: 't1', source: 'patient', status: 'verified' })
+    anInstallment({ id: 'i1', patient_billing_id: 'b1', amount: 1000, ledger_transaction_id: 't1' })
+
+    const { status, body } = await edit('p1', 'i1', { amount: 2500 })
+
+    expect(status).toBe(409)
+    expect(body.code).toBe('LEDGER_ENTRY_VERIFIED')
+    expect(db.find('patient_billing_installments', (r) => r.id === 'i1')!.amount).toBe(1000)
+  })
+
+  it('still lets a pending (unverified) payment be edited', async () => {
+    await signInAs('ADMIN')
+    aBilling({ id: 'b1' })
+    aTransaction({ id: 't1', source: 'patient', status: 'pending' })
+    anInstallment({ id: 'i1', patient_billing_id: 'b1', amount: 1000, ledger_transaction_id: 't1' })
+
+    const { status } = await edit('p1', 'i1', { amount: 2500 })
+
+    expect(status).toBe(200)
+    expect(db.find('patient_billing_installments', (r) => r.id === 'i1')!.amount).toBe(2500)
+  })
+
+  /**
    * Known defect — see BUGS.md #21. The ledger credit written when the installment was
    * created is never revisited, so the ledger and the billing record now disagree, and
    * nothing links the two rows for a later repair.
@@ -409,6 +534,32 @@ describe('DELETE /api/patients/[id]/installments/[installmentId]', () => {
     anInstallment({ id: 'i1', patient_billing_id: 'b1', created_by: 'someone-else' })
 
     expect((await remove('p1', 'i1')).status).toBe(403)
+    expect(db.count('patient_billing_installments')).toBe(1)
+  })
+
+  it('refuses to delete a payment whose day has been closed', async () => {
+    await signInAs('ADMIN')
+    aBilling({ id: 'b1' })
+    anInstallment({ id: 'i1', patient_billing_id: 'b1', amount: 1000, payment_date: '2026-03-12' })
+    aClosure({ closure_date: '2026-03-12' })
+
+    const { status, body } = await remove('p1', 'i1')
+
+    expect(status).toBe(409)
+    expect(body.code).toBe('LEDGER_DAY_CLOSED')
+    expect(db.count('patient_billing_installments')).toBe(1)
+  })
+
+  it('refuses to delete a payment whose ledger entry has been verified', async () => {
+    await signInAs('ADMIN')
+    aBilling({ id: 'b1' })
+    aTransaction({ id: 't1', source: 'patient', status: 'verified' })
+    anInstallment({ id: 'i1', patient_billing_id: 'b1', amount: 1000, ledger_transaction_id: 't1' })
+
+    const { status, body } = await remove('p1', 'i1')
+
+    expect(status).toBe(409)
+    expect(body.code).toBe('LEDGER_ENTRY_VERIFIED')
     expect(db.count('patient_billing_installments')).toBe(1)
   })
 
