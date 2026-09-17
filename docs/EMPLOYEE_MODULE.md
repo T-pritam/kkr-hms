@@ -26,8 +26,7 @@ changed is presentation, attribution, and one security hole that was agreed to.
 
 ## The advance log
 
-`/employees/advances` — a month across all staff, and **the one employee screen
-reception can open**.
+`/employees/advances` — a month across all staff.
 
 ```
 Month  ▾   Employee ▾   Designation ▾   Search        [ Excel ] [ PDF ]
@@ -139,7 +138,7 @@ glyph.
 
 | Capability | Roles |
 |---|---|
-| Read the advance log | Admin, Doctor, **Receptionist** |
+| Read the advance log | **Admin, Doctor** |
 | Pay an advance | **Admin, Doctor** |
 | Employee records · payroll · settle | **Admin, Doctor** |
 

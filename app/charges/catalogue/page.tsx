@@ -10,6 +10,7 @@ import { Select } from '@/components/ui/select'
 import { ChargeItemFormModal, type ChargeItem } from '@/components/charges/charge-item-form-modal'
 import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch'
 import { useUser } from '@/hooks/use-user'
+import { hasBillingCapability } from '@/lib/billing/authz'
 import {
   CHARGE_BILLING_MODE_LABELS,
   CHARGE_CATEGORIES,
@@ -20,9 +21,9 @@ import {
  * The price list.
  *
  * Modelled on app/lab/tests/page.tsx, which is the same kind of screen: master
- * data that only an admin may change but everyone needs to see. Writes are hidden
- * rather than merely rejected for non-admins — offering a button that always
- * 403s is worse than not offering it.
+ * data everyone needs to see but only some roles may change. Writes are hidden
+ * rather than merely rejected for a role that can't — offering a button that
+ * always 403s is worse than not offering it.
  */
 
 const money = (n: number) =>
@@ -30,7 +31,7 @@ const money = (n: number) =>
 
 export default function ChargeCataloguePage() {
   const { user } = useUser()
-  const isAdmin = user?.role === 'ADMIN'
+  const canWrite = hasBillingCapability(user?.role, 'charge-catalogue:write')
 
   const [items, setItems] = useState<ChargeItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -111,7 +112,7 @@ export default function ChargeCataloguePage() {
               expand into one line per day when placed on a patient.
             </p>
           </div>
-          {isAdmin && (
+          {canWrite && (
             <Button onClick={() => openEditor(null)} className="w-full sm:w-auto">
               <Plus className="mr-2" size={18} />
               New Charge
@@ -184,7 +185,7 @@ export default function ChargeCataloguePage() {
                         {h}
                       </th>
                     ))}
-                    {isAdmin && (
+                    {canWrite && (
                       <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">
                         Actions
                       </th>
@@ -231,7 +232,7 @@ export default function ChargeCataloguePage() {
                           {item.is_active ? 'Available' : 'Retired'}
                         </Badge>
                       </td>
-                      {isAdmin && (
+                      {canWrite && (
                         <td className="px-4 py-3 text-right">
                           <div className="flex justify-end gap-1">
                             <button
@@ -287,7 +288,7 @@ export default function ChargeCataloguePage() {
                       )}
                     </span>
                   </div>
-                  {isAdmin && (
+                  {canWrite && (
                     <div className="flex justify-end gap-1">
                       <button
                         onClick={() => openEditor(item)}

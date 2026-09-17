@@ -31,7 +31,8 @@ export async function GET(
         visit_purpose:visit_purposes(id, code, name),
         patient:patients(id, patient_id, name),
         created_by_user:users!created_by(id, username),
-        updated_by_user:users!updated_by(id, username)
+        updated_by_user:users!updated_by(id, username),
+        settled_by_user:users!settled_by(id, username)
       `)
       .eq('patient_billing_id', billingId)
       // BUGS.md #25 — this listing omitted the filter that sync and the billing
@@ -60,6 +61,10 @@ export async function POST(
     const authResult = await verifyAuth(request);
     if (!authResult.isValid || !authResult.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    if (authResult.user.role !== 'ADMIN') {
+      return NextResponse.json({ error: 'Only admins can create settlements' }, { status: 403 });
     }
 
     const supabase = await createClient();
@@ -124,6 +129,7 @@ export async function PATCH(
       payment_method: body.payment_method,
       transaction_reference: body.transaction_reference,
       updated_by: authResult.user.id,
+      settled_by: authResult.user.id,
     };
 
     const { data, error } = await supabase

@@ -28,11 +28,10 @@ import {
  * `GET /api/employees/advances` has existed all along and returned very nearly
  * this data — and nothing ever called it. Until now the only way to see an
  * advance was one employee, one month, behind a row click on the payroll
- * screen, which reception cannot reach.
+ * screen.
  *
- * This is the one employee screen reception can open. It is read-only for
- * everyone: paying an advance still happens from the salary page, behind
- * `advance:write`.
+ * It is read-only for everyone: paying an advance still happens from the
+ * salary page, behind `advance:write`.
  */
 
 interface AdvanceRow {
@@ -110,9 +109,7 @@ export default function AdvanceLogPage() {
     return () => clearTimeout(timer)
   }, [search])
 
-  // The employee picker. Reception can read the register through this endpoint
-  // only in aggregate — the list itself needs `employee:read`, so a failure
-  // here simply leaves the filter empty rather than breaking the page.
+  // The employee picker.
   useEffect(() => {
     fetch('/api/employees?status=all', { credentials: 'include' })
       .then(res => (res.ok ? res.json() : null))

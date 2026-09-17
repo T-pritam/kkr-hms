@@ -7,10 +7,10 @@
  * at all (#49). This is the same `requireX(request, capability)` shape as
  * lib/doctors/authz.ts and lib/case-sheet/authz.ts.
  *
- * The split that matters is between *placing* a charge and *pricing* one. Putting
- * a charge on a patient is desk work — reception does it all day, and it is
- * visible and reversible. Editing the catalogue sets what everything costs for
- * everyone, and settling money out of the hospital is final. Those are admin.
+ * The split that matters is between *placing* a charge and *settling* money.
+ * Putting a charge on a patient, and maintaining the catalogue it comes from,
+ * is desk work — reception does both, and both are visible and reversible.
+ * Settling money out of the hospital is final. That stays admin.
  */
 
 import type { NextRequest, NextResponse } from 'next/server'
@@ -44,10 +44,9 @@ export const BILLING_CAPABILITIES: Record<BillingCapability, UserRole[]> = {
   // charge:write — reception routinely looks up and attaches these.
   'pharmacy-charge:write': BILLERS,
 
-  // The price list. One edit here changes what every future charge costs, so it
-  // is admin only — same reasoning as app/api/lab-tests/route.ts, which calls
-  // itself "the price list and clinical config".
-  'charge-catalogue:write': ['ADMIN'],
+  // The price list. Reception maintains it day to day — new charges, price
+  // corrections — the same desk that already places charges from it.
+  'charge-catalogue:write': ['ADMIN', 'RECEPTIONIST'],
 
   // A quote is not money. Reception raises these for walk-ins.
   'charge-sheet:write': BILLERS,

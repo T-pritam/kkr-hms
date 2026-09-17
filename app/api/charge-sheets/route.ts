@@ -28,7 +28,8 @@ const LIST_SELECT = `
   id, sheet_no, subject_type, patient_id, opd_name, opd_phone, opd_age, opd_gender,
   status, total_amount, notes, forwarded_at, forwarded_billing_id, created_at, updated_at,
   patient:patients(id, patient_id, name, phone),
-  created_by_user:users!created_by(id, username)
+  created_by_user:users!created_by(id, username),
+  updated_by_user:users!updated_by(id, username)
 `
 
 export async function GET(request: NextRequest) {

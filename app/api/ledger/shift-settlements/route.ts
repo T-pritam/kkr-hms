@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { verifyToken, getAccessToken, getRefreshToken, setAuthCookies, generateAccessToken, generateRefreshToken } from '@/lib/auth/jwt'
 import { recordAudit } from '@/lib/audit/log'
+import { isLedgerDateClosed } from '@/lib/ledger/closure'
 
 /**
  * Shift settlements — recording that an operator handed their cash over.
@@ -10,14 +11,19 @@ import { recordAudit } from '@/lib/audit/log'
  * shift with closing the financial day and did real damage doing it:
  *
  *   * It wrote nothing durable. The only trace of a settlement was every one of
- *     that operator's rows flipping to status = 'day_closed' — and their notes
- *     being overwritten with "Marked as paid", destroying whatever had been
- *     recorded against each entry.
+ *     that operator's rows flipping to status = 'day_closed' — a fabricated
+ *     status no other code recognised — and their notes being overwritten with
+ *     "Marked as paid", destroying whatever had been recorded against each entry.
  *   * Because the create guard read that status, one operator settling their
  *     shift locked the whole date for every colleague, permanently.
  *
- * A settlement now writes one row here and touches no transaction at all. The
- * date's lock lives in `daily_ledger_closures` and is the admin's separate,
+ * A settlement writes one row here, and now also marks *this employee's own*
+ * transactions for *this date* `verified` — the same `status`/`verified_by`/
+ * `verified_at` fields `PUT /api/ledger/transactions/[id]/status` sets, nothing
+ * more. That is a narrower, safer version of the old coupling: one legitimate
+ * status value, scoped to one employee's own rows, with `notes`/`amount`/
+ * `description` never touched. The date's lock is still a separate thing —
+ * `daily_ledger_closures` is untouched here, and remains the admin's separate,
  * deliberate act.
  */
 
@@ -215,6 +221,30 @@ export async function POST(request: NextRequest) {
       },
       actor: { id: payload.userId, role: payload.role }
     })
+
+    // Reception's own Daily Ledger, and the Finances Transactions tab, were
+    // showing these same rows as "pending" after their shift was settled here —
+    // verification and shift settlement are different facts, but nothing had
+    // ever answered the verification side for them. A settled shift is exactly
+    // the moment an admin has looked at that cash, so carry it over — for this
+    // employee's own rows on this date only, and only when the date is still
+    // open (verifying is blocked on a closed date, and shift settlement is
+    // deliberately allowed to run after a close, so this step just quietly
+    // skips rather than failing the settlement).
+    if (!(await isLedgerDateClosed(supabase, settlement_date))) {
+      const unverifiedIds = transactions.filter((t: any) => t.status !== 'verified').map((t: any) => t.id)
+
+      if (unverifiedIds.length > 0) {
+        await supabase
+          .from('daily_ledger_transactions')
+          .update({
+            status: 'verified',
+            verified_at: new Date().toISOString(),
+            verified_by: payload.userId,
+          })
+          .in('id', unverifiedIds)
+      }
+    }
 
     return NextResponse.json({
       success: true,

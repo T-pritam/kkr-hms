@@ -64,6 +64,8 @@ export const SCHEMA: Record<string, string[]> = {
     'given_by',
     // 20260808000005 — settlements are per purpose, not per doctor
     'visit_purpose_id',
+    // 20260812000001 — who marked it settled, distinct from who last edited it
+    'settled_by',
   ],
 
   doctors: [

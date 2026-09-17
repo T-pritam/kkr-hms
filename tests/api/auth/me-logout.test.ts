@@ -3,10 +3,11 @@
  */
 
 import { describe, it, expect } from 'vitest'
+import type { NextResponse } from 'next/server'
 import { GET as me } from '@/app/api/auth/me/route'
 import { POST as logout } from '@/app/api/auth/logout/route'
 import { call } from '../../helpers/request'
-import { signInAs, signOut, expiredToken, tamperedToken } from '../../helpers/auth'
+import { signInAs, signOut, signInWithRefreshTokenOnly, expiredToken, tamperedToken } from '../../helpers/auth'
 import { cookieJar } from '../../helpers/cookie-jar'
 
 describe('GET /api/auth/me', () => {
@@ -56,6 +57,46 @@ describe('GET /api/auth/me', () => {
     const { body } = await call(me, 'GET', '/api/auth/me')
 
     expect(Object.keys(body.user)).toEqual(['id', 'email', 'role'])
+  })
+
+  /**
+   * `UserContext` fetches this once on mount and never retries, so an access
+   * token that has expired mid-session used to leave every role-gated button
+   * hidden until a hard reload happened to land after the *next* request had
+   * already refreshed the cookie via middleware. This route now does that
+   * refresh itself, falling back to the refresh token before giving up.
+   */
+  it('refreshes an expired access token from a still-valid refresh token, rather than 401ing', async () => {
+    const { refreshToken } = await signInAs('RECEPTIONIST', { userId: 'u-recep', email: 'r@hms.test' })
+    cookieJar.set('accessToken', await expiredToken('RECEPTIONIST'))
+    cookieJar.set('refreshToken', refreshToken)
+
+    const { status, body, response } = await call(me, 'GET', '/api/auth/me')
+
+    expect(status).toBe(200)
+    expect(body.user).toEqual({ id: 'u-recep', email: 'r@hms.test', role: 'RECEPTIONIST' })
+
+    const refreshed = (response as NextResponse).cookies.get('accessToken')
+    expect(refreshed?.value).toEqual(expect.any(String))
+  })
+
+  it('also self-heals when the access token cookie is simply gone, not just expired', async () => {
+    await signInWithRefreshTokenOnly('DOCTOR', { userId: 'u-doc' })
+
+    const { status, body } = await call(me, 'GET', '/api/auth/me')
+
+    expect(status).toBe(200)
+    expect(body.user).toMatchObject({ id: 'u-doc', role: 'DOCTOR' })
+  })
+
+  it('still refuses when neither token is valid', async () => {
+    cookieJar.set('accessToken', await expiredToken('ADMIN'))
+    cookieJar.set('refreshToken', await expiredToken('ADMIN', 'refresh'))
+
+    const { status, body } = await call(me, 'GET', '/api/auth/me')
+
+    expect(status).toBe(401)
+    expect(body.error).toBe('Invalid token')
   })
 
   /**

@@ -10,8 +10,7 @@ import { safeSearch } from '@/lib/api/query'
  * This endpoint already existed and returned very nearly the right data — and
  * **nothing in the app called it**. The only way to see an advance was one
  * employee, one month, behind a row click on the salary page. It now backs
- * `/employees/advances`, the month-wise log across all staff, which is the one
- * employee screen reception can reach.
+ * `/employees/advances`, the month-wise log across all staff.
  *
  * The cap on how much may be advanced is *not* enforced here, exactly as
  * before. That rule lives in lib/salary-advance-validation.ts and is applied by
@@ -74,10 +73,8 @@ function subtotals(rows: AdvanceRow[]) {
 
 export async function GET(request: NextRequest) {
   try {
-    // Reception is included in `advance:read` and nothing else in this module.
     const auth = await requireEmployee(request, 'advance:read')
     if (auth.response) return auth.response
-    const isReceptionist = auth.user.role === 'RECEPTIONIST'
 
     const params = request.nextUrl.searchParams
     const monthYear = params.get('month_year')
@@ -131,16 +128,6 @@ export async function GET(request: NextRequest) {
         (r.remarks || '').toLowerCase().includes(search) ||
         (r.given_by || '').toLowerCase().includes(search)
       )
-    }
-
-    // Reception reads this log for the advance amounts, not what they're a
-    // fraction of — strip base_salary before it reaches subtotals() or the
-    // response, same redaction as the salary list and the validation route.
-    if (isReceptionist) {
-      rows = rows.map(r => ({
-        ...r,
-        employee: r.employee ? { ...r.employee, base_salary: undefined } : r.employee,
-      }))
     }
 
     const amounts = rows.map(r => Number.parseFloat(String(r.amount)) || 0)

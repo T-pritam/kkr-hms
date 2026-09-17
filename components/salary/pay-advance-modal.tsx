@@ -43,8 +43,6 @@ interface PayAdvanceModalProps {
 }
 
 interface ValidationData {
-  // Null for a Receptionist: the API withholds every rupee figure for that
-  // role, so these fields are absent rather than merely hidden in the UI.
   max_allowed_advance: number | null
   can_add_advance: boolean
   validation_message: string | null
@@ -151,9 +149,6 @@ export function PayAdvanceModal({
       return
     }
 
-    // Reception gets no cap to compare against — the server still enforces
-    // it on submit, this is just the early client-side hint that's
-    // unavailable for that role.
     if (validation.max_allowed_advance != null && numAmount > validation.max_allowed_advance) {
       setAmountError(`Advance cannot exceed ${inr(validation.max_allowed_advance)}`)
       return

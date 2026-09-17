@@ -13,6 +13,7 @@ import { ChargeSheetDetailsModal } from '@/components/charges/charge-sheet-detai
 import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch'
 import { useUser } from '@/hooks/use-user'
 import { printChargeSheetToPrinter } from '@/lib/pdf/charge-sheet-pdf'
+import { UpdatedStamp } from '@/components/ui/updated-stamp'
 
 /**
  * Temporary charge sheets.
@@ -33,6 +34,9 @@ interface ChargeSheet {
   status: 'draft' | 'forwarded' | 'cancelled'
   total_amount: number
   created_at: string
+  updated_at: string
+  created_by_user: { id: string; username: string } | null
+  updated_by_user: { id: string; username: string } | null
 }
 
 const money = (n: number) =>
@@ -47,6 +51,7 @@ const STATUS_VARIANT: Record<string, 'success' | 'warning' | 'outline'> = {
 export default function ChargeSheetsPage() {
   const { user } = useUser()
   const isAdmin = user?.role === 'ADMIN'
+  const canModify = (sheet: ChargeSheet) => isAdmin || sheet.created_by_user?.id === user?.id
 
   const [sheets, setSheets] = useState<ChargeSheet[]>([])
   const [loading, setLoading] = useState(true)
@@ -269,6 +274,8 @@ export default function ChargeSheetsPage() {
                         <div className="text-xs text-muted">
                           {new Date(sheet.created_at).toLocaleDateString()}
                         </div>
+                        <div className="text-xs text-muted">by {sheet.created_by_user?.username || 'Unknown'}</div>
+                        <UpdatedStamp by={sheet.updated_by_user?.username} at={sheet.updated_at} />
                       </td>
                       <td className="px-4 py-3">
                         <div className="text-foreground">{subjectOf(sheet)}</div>
@@ -315,16 +322,18 @@ export default function ChargeSheetsPage() {
 
                           {sheet.status === 'draft' && (
                             <>
-                              <button
-                                onClick={() => {
-                                  setEditingId(sheet.id)
-                                  setModalOpen(true)
-                                }}
-                                aria-label={`Edit ${sheet.sheet_no}`}
-                                className="p-2 text-muted hover:text-foreground"
-                              >
-                                <Pencil size={16} />
-                              </button>
+                              {canModify(sheet) && (
+                                <button
+                                  onClick={() => {
+                                    setEditingId(sheet.id)
+                                    setModalOpen(true)
+                                  }}
+                                  aria-label={`Edit ${sheet.sheet_no}`}
+                                  className="p-2 text-muted hover:text-foreground"
+                                >
+                                  <Pencil size={16} />
+                                </button>
+                              )}
 
                               {/* Only a registered patient has a bill to forward into. */}
                               {isAdmin && sheet.subject_type === 'patient' && (
@@ -339,13 +348,15 @@ export default function ChargeSheetsPage() {
                                 </button>
                               )}
 
-                              <button
-                                onClick={() => remove(sheet)}
-                                aria-label={`Delete ${sheet.sheet_no}`}
-                                className="p-2 text-muted hover:text-destructive"
-                              >
-                                <Trash2 size={16} />
-                              </button>
+                              {canModify(sheet) && (
+                                <button
+                                  onClick={() => remove(sheet)}
+                                  aria-label={`Delete ${sheet.sheet_no}`}
+                                  className="p-2 text-muted hover:text-destructive"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              )}
                             </>
                           )}
                         </div>
@@ -375,6 +386,8 @@ export default function ChargeSheetsPage() {
                     </span>
                     <span className="text-foreground">{money(sheet.total_amount)}</span>
                   </div>
+                  <div className="text-xs text-muted">by {sheet.created_by_user?.username || 'Unknown'}</div>
+                  <UpdatedStamp by={sheet.updated_by_user?.username} at={sheet.updated_at} />
                   <div className="flex justify-end gap-1">
                     <button
                       onClick={() => setDetailsId(sheet.id)}
@@ -401,16 +414,18 @@ export default function ChargeSheetsPage() {
                     </button>
                     {sheet.status === 'draft' && (
                       <>
-                        <button
-                          onClick={() => {
-                            setEditingId(sheet.id)
-                            setModalOpen(true)
-                          }}
-                          aria-label={`Edit ${sheet.sheet_no}`}
-                          className="p-2 text-muted hover:text-foreground"
-                        >
-                          <Pencil size={16} />
-                        </button>
+                        {canModify(sheet) && (
+                          <button
+                            onClick={() => {
+                              setEditingId(sheet.id)
+                              setModalOpen(true)
+                            }}
+                            aria-label={`Edit ${sheet.sheet_no}`}
+                            className="p-2 text-muted hover:text-foreground"
+                          >
+                            <Pencil size={16} />
+                          </button>
+                        )}
                         {isAdmin && sheet.subject_type === 'patient' && (
                           <button
                             onClick={() => forward(sheet)}
@@ -421,13 +436,15 @@ export default function ChargeSheetsPage() {
                             <Send size={16} />
                           </button>
                         )}
-                        <button
-                          onClick={() => remove(sheet)}
-                          aria-label={`Delete ${sheet.sheet_no}`}
-                          className="p-2 text-muted hover:text-destructive"
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                        {canModify(sheet) && (
+                          <button
+                            onClick={() => remove(sheet)}
+                            aria-label={`Delete ${sheet.sheet_no}`}
+                            className="p-2 text-muted hover:text-destructive"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
                       </>
                     )}
                   </div>

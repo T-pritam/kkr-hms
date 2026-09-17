@@ -1,14 +1,14 @@
 /**
- * The salary advance log — /api/employees/advances and the routes reception can reach.
+ * The salary advance log — /api/employees/advances and the payroll routes.
  *
  * Two things this file exists to hold in place.
  *
- * **The role split.** Reception can read the log and nothing else in the module.
- * They must not be able to pay an advance, and they must not be able to see the
- * staff register or payroll. Before this work `POST /api/employees/[id]/salary/
- * advances` and its validation sibling had **no role check at all** — they
- * verified the token, never read `payload.role`, and went straight to work, so
- * any signed-in user could pay an advance out of anyone's salary.
+ * **The role split.** Only ADMIN and DOCTOR can read or write anything in this
+ * module — the staff register, payroll figures, the advance log, paying an
+ * advance out. Before this work `POST /api/employees/[id]/salary/advances` and
+ * its validation sibling had **no role check at all** — they verified the
+ * token, never read `payload.role`, and went straight to work, so any
+ * signed-in user could pay an advance out of anyone's salary.
  *
  * **Attribution.** `given_by` (who handed over the cash, free text) and
  * `created_by` (who was at the keyboard) are separate answers to separate
@@ -57,7 +57,7 @@ describe('advance log — who can see it', () => {
     expect((await log()).status).toBe(401)
   })
 
-  it.each(['ADMIN', 'DOCTOR', 'RECEPTIONIST'] as const)('lets %s read the log', async (role) => {
+  it.each(['ADMIN', 'DOCTOR'] as const)('lets %s read the log', async (role) => {
     await signInAs(role)
     expect((await log()).status).toBe(200)
   })
@@ -69,21 +69,21 @@ describe('advance log — who can see it', () => {
     expect((await validation('e1')).status).toBe(403)
   })
 
-  it('lets RECEPTIONIST read the advance limits the log quotes', async () => {
+  it('forbids RECEPTIONIST from reading the log or the advance limits it quotes', async () => {
     await signInAs('RECEPTIONIST')
     anEmployee({ id: 'e1', base_salary: 27000 })
 
-    expect((await validation('e1')).status).toBe(200)
+    expect((await log()).status).toBe(403)
+    expect((await validation('e1')).status).toBe(403)
   })
 })
 
 describe('advance log — who can pay one', () => {
   /**
    * The hole this closes. Both of these returned 200/201 for every signed-in
-   * role, including a lab technician. Reception was later let back in
-   * deliberately (advance:write) because they hand the cash over themselves.
+   * role, including a lab technician.
    */
-  it.each(['LAB_TECHNICIAN', 'NURSE'] as const)(
+  it.each(['LAB_TECHNICIAN', 'NURSE', 'RECEPTIONIST'] as const)(
     'forbids %s from paying an advance',
     async (role) => {
       await signInAs(role)
@@ -97,7 +97,7 @@ describe('advance log — who can pay one', () => {
     },
   )
 
-  it.each(['ADMIN', 'DOCTOR', 'RECEPTIONIST'] as const)('lets %s pay an advance', async (role) => {
+  it.each(['ADMIN', 'DOCTOR'] as const)('lets %s pay an advance', async (role) => {
     await signInAs(role)
     anEmployee({ id: 'e1', base_salary: 27000 })
 
@@ -164,18 +164,18 @@ describe('advance attribution', () => {
 
 describe('GET /api/employees/advances — the log', () => {
   it('requires a month', async () => {
-    await signInAs('RECEPTIONIST')
+    await signInAs('ADMIN')
     const { status } = await call(listAdvances, 'GET', '/api/employees/advances', { query: {} })
     expect(status).toBe(400)
   })
 
   it('rejects a malformed month', async () => {
-    await signInAs('RECEPTIONIST')
+    await signInAs('ADMIN')
     expect((await log({ month_year: 'August' })).status).toBe(400)
   })
 
   it('returns the month, and only the month', async () => {
-    await signInAs('RECEPTIONIST')
+    await signInAs('ADMIN')
     anEmployee({ id: 'e1', name: 'Ramesh' })
     anAdvance({ employee_id: 'e1', amount: 5000, month_year: THIS_MONTH })
     anAdvance({ employee_id: 'e1', amount: 9999, month_year: '2020-01' })
@@ -200,25 +200,8 @@ describe('GET /api/employees/advances — the log', () => {
     expect(body.by_employee[1]).toMatchObject({ total: 5000, count: 2, base_salary: 27000 })
   })
 
-  /**
-   * Reception reads this log for the advance amounts, never for what they are
-   * a fraction of — the subtotals still add up, the salaries are gone.
-   */
-  it('keeps the subtotals but strips base_salary for RECEPTIONIST', async () => {
-    await signInAs('RECEPTIONIST')
-    anEmployee({ id: 'e1', name: 'Ramesh', base_salary: 27000 })
-    anAdvance({ employee_id: 'e1', amount: 2000, month_year: THIS_MONTH })
-    anAdvance({ employee_id: 'e1', amount: 3000, month_year: THIS_MONTH })
-
-    const { body } = await log()
-
-    expect(body.by_employee[0]).toMatchObject({ name: 'Ramesh', total: 5000, count: 2 })
-    expect(body.by_employee[0].base_salary).toBeFalsy()
-    expect(body.data.every((r: any) => !r.employee?.base_salary)).toBe(true)
-  })
-
   it('reports the figures the KPI strip shows', async () => {
-    await signInAs('RECEPTIONIST')
+    await signInAs('ADMIN')
     anEmployee({ id: 'e1' })
     anEmployee({ id: 'e2' })
     anAdvance({ employee_id: 'e1', amount: 2000, month_year: THIS_MONTH })
@@ -235,7 +218,7 @@ describe('GET /api/employees/advances — the log', () => {
   })
 
   it('reports zeroes rather than NaN for an empty month', async () => {
-    await signInAs('RECEPTIONIST')
+    await signInAs('ADMIN')
 
     const { status, body } = await log()
 
@@ -246,7 +229,7 @@ describe('GET /api/employees/advances — the log', () => {
   })
 
   it('filters to one employee', async () => {
-    await signInAs('RECEPTIONIST')
+    await signInAs('ADMIN')
     anEmployee({ id: 'e1' })
     anEmployee({ id: 'e2' })
     anAdvance({ employee_id: 'e1', amount: 2000, month_year: THIS_MONTH })
@@ -259,7 +242,7 @@ describe('GET /api/employees/advances — the log', () => {
   })
 
   it('filters by designation', async () => {
-    await signInAs('RECEPTIONIST')
+    await signInAs('ADMIN')
     anEmployee({ id: 'e1', designation: 'Nurse' })
     anEmployee({ id: 'e2', designation: 'Wardboy' })
     anAdvance({ employee_id: 'e1', amount: 2000, month_year: THIS_MONTH })
@@ -271,7 +254,7 @@ describe('GET /api/employees/advances — the log', () => {
   })
 
   it('filters by a date range inside the month', async () => {
-    await signInAs('RECEPTIONIST')
+    await signInAs('ADMIN')
     anEmployee({ id: 'e1' })
     anAdvance({ employee_id: 'e1', amount: 2000, month_year: THIS_MONTH, date_given: `${THIS_MONTH}-02` })
     anAdvance({ employee_id: 'e1', amount: 7000, month_year: THIS_MONTH, date_given: `${THIS_MONTH}-20` })
@@ -282,7 +265,7 @@ describe('GET /api/employees/advances — the log', () => {
   })
 
   it('searches name, remarks and given_by', async () => {
-    await signInAs('RECEPTIONIST')
+    await signInAs('ADMIN')
     anEmployee({ id: 'e1', name: 'Ramesh' })
     anEmployee({ id: 'e2', name: 'Suresh' })
     anAdvance({ employee_id: 'e1', amount: 2000, month_year: THIS_MONTH, remarks: 'Festival' })
@@ -295,7 +278,7 @@ describe('GET /api/employees/advances — the log', () => {
 
   /** A remark like "Advance (urgent), see note" must not corrupt the filter. */
   it('does not let punctuation in the search break the query', async () => {
-    await signInAs('RECEPTIONIST')
+    await signInAs('ADMIN')
     anEmployee({ id: 'e1' })
     anAdvance({ employee_id: 'e1', month_year: THIS_MONTH })
 
@@ -303,7 +286,7 @@ describe('GET /api/employees/advances — the log', () => {
   })
 
   it('reports the previous month for the change figure', async () => {
-    await signInAs('RECEPTIONIST')
+    await signInAs('ADMIN')
     anEmployee({ id: 'e1' })
     anAdvance({ employee_id: 'e1', amount: 5000, month_year: THIS_MONTH })
     anAdvance({ employee_id: 'e1', amount: 4000, month_year: '2026-02' })

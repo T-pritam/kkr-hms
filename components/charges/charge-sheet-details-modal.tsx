@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { PharmacyBillViewModal } from '@/components/patients/pharmacy-bill-view-modal'
+import { UpdatedStamp } from '@/components/ui/updated-stamp'
 import { groupByCharge, groupByDate } from '@/lib/billing/group-charges'
 
 /**
@@ -44,6 +45,9 @@ interface SheetDetail {
   total_amount: number | string
   notes?: string | null
   items?: SheetLine[]
+  created_by_user?: { username?: string } | null
+  updated_by_user?: { username?: string } | null
+  updated_at?: string | null
 }
 
 interface Props {
@@ -149,13 +153,17 @@ export function ChargeSheetDetailsModal({ isOpen, onClose, sheetId, onDownload }
             )}
 
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <Badge variant={STATUS_VARIANT[sheet.status] ?? 'outline'}>
-                {sheet.status === 'draft'
-                  ? 'Draft — not billed'
-                  : sheet.status === 'forwarded'
-                    ? 'Forwarded to billing'
-                    : 'Cancelled'}
-              </Badge>
+              <div>
+                <Badge variant={STATUS_VARIANT[sheet.status] ?? 'outline'}>
+                  {sheet.status === 'draft'
+                    ? 'Draft — not billed'
+                    : sheet.status === 'forwarded'
+                      ? 'Forwarded to billing'
+                      : 'Cancelled'}
+                </Badge>
+                <p className="text-xs text-muted mt-1">by {sheet.created_by_user?.username || 'Unknown'}</p>
+                <UpdatedStamp by={sheet.updated_by_user?.username} at={sheet.updated_at} />
+              </div>
 
               <div className="flex items-center gap-2">
                 <div className="inline-flex rounded-lg border border-border overflow-hidden">

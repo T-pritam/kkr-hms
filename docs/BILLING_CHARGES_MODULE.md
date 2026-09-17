@@ -81,7 +81,7 @@ reprice a visit that has already happened.
 
 | Screen | Path | Who |
 |---|---|---|
-| Charge Catalogue | `/charges/catalogue` | Everyone reads; ADMIN writes |
+| Charge Catalogue | `/charges/catalogue` | Everyone reads; ADMIN and reception write |
 | Charge Sheets | `/charges/sheets` | Reception raises; ADMIN forwards |
 | Patient → Charges tab | `/patients/[id]` | Reception, nurse, doctor, admin |
 | Patient → Doctor Visits tab | `/patients/[id]` | Same |
@@ -148,7 +148,7 @@ one.
 |---|---|---|
 | `charge:read` | everyone | Every tab in the patient record shows a bill |
 | `charge:write` | admin, doctor, nurse, reception | Desk work; visible and reversible |
-| `charge-catalogue:write` | admin | One edit changes what everything costs |
+| `charge-catalogue:write` | admin, reception | Same desk that places charges from it |
 | `charge-sheet:write` | admin, doctor, nurse, reception | A quote is not money |
 | `charge-sheet:forward` | admin | The moment a quote creates a due |
 | `billing:write` | admin | The package and the settled flags |

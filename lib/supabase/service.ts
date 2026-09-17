@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { resilientFetch } from './resilient-fetch'
 
 /**
  * Creates a Supabase client with the service role key.
@@ -14,6 +15,7 @@ export function createServiceClient() {
         autoRefreshToken: false,
         persistSession: false,
       },
+      global: { fetch: resilientFetch },
     }
   )
 }

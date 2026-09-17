@@ -11,7 +11,7 @@ import {
 import { call } from '../../helpers/request'
 import { signInAs, signOut } from '../../helpers/auth'
 import { db } from '../../helpers/fake-supabase'
-import { aBilling, anInstallment, aTransaction, aClosure, aUser } from '../../helpers/seed'
+import { aBilling, aPatient, anInstallment, aTransaction, aClosure, aUser } from '../../helpers/seed'
 import { TODAY } from '../../setup'
 
 const list = (patientId: string, query = {}) =>
@@ -212,6 +212,7 @@ describe('POST /api/patients/[id]/installments', () => {
 describe('POST /api/patients/[id]/installments — ledger side effect', () => {
   it('writes a matching credit into the daily ledger when asked', async () => {
     await signInAs('RECEPTIONIST', { userId: 'u-recep' })
+    aPatient({ id: 'p1', patient_id: '12/26', name: 'Ramesh Kumar' })
     aBilling({ id: 'b1', patient_id: 'p1' })
 
     await create('p1', {
@@ -232,10 +233,25 @@ describe('POST /api/patients/[id]/installments — ledger side effect', () => {
       payment_mode: 'upi',
       reference_number: 'UPI-123',
       patient_id: 'p1',
-      description: 'Patient installment payment #1',
+      // Identifies the patient rather than the installment count — the
+      // source/patient_id columns already say "patient, and an installment".
+      description: '12/26 Ramesh Kumar',
       status: 'pending',
       created_by: 'u-recep',
     })
+  })
+
+  it('falls back to a generic description if the patient cannot be found', async () => {
+    await signInAs('RECEPTIONIST')
+    aBilling({ id: 'b1', patient_id: 'missing-patient' })
+
+    await create('missing-patient', {
+      patient_billing_id: 'b1',
+      amount: 5000,
+      create_ledger_entry: true,
+    })
+
+    expect(db.rows('daily_ledger_transactions')[0].description).toBe('Patient installment payment #1')
   })
 
   it('writes no ledger entry unless create_ledger_entry is set', async () => {

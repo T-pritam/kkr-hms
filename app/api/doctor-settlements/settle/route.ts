@@ -94,12 +94,14 @@ async function settleSingleSettlement(
       settlement_notes: body.settlement_notes || null,
       settlement_type: body.settlement_type || 'regular',
       updated_by: userId,
+      settled_by: userId,
     })
     .eq('id', body.settlement_id)
     .select(`
       *,
       doctor:doctors(id, name, specialist),
-      patient:patients(id, patient_id, name)
+      patient:patients(id, patient_id, name),
+      settled_by_user:users!settled_by(id, username)
     `)
     .single();
 
@@ -175,12 +177,14 @@ async function settleMultipleSettlements(
         settlement_notes: body.settlement_notes || null,
         settlement_type: body.settlement_type || 'regular',
         updated_by: userId,
+        settled_by: userId,
       })
       .eq('id', settlement.id)
       .select(`
         *,
         doctor:doctors(id, name, specialist),
-        patient:patients(id, patient_id, name)
+        patient:patients(id, patient_id, name),
+        settled_by_user:users!settled_by(id, username)
       `);
   });
 

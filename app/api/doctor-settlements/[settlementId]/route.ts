@@ -86,6 +86,7 @@ export async function PUT(
           settled: false,
           settlement_date: null,
           settlement_amount: null,
+          settled_by: null,
           updated_by: authResult.user.id,
           updated_at: new Date().toISOString(),
         })
@@ -160,6 +161,7 @@ export async function PUT(
 
       if (body.settled === true) {
         updateData.settlement_date = body.settlement_date || new Date().toISOString();
+        updateData.settled_by = authResult.user.id;
 
         if (body.settlement_amount === undefined && updateData.amount_per_visit !== undefined) {
           updateData.settlement_amount = Math.floor(updateData.amount_per_visit * effectiveVisitCount);
@@ -169,6 +171,7 @@ export async function PUT(
         updateData.settlement_amount = null;
         updateData.payment_method = null;
         updateData.transaction_reference = null;
+        updateData.settled_by = null;
       }
     }
 
@@ -219,7 +222,8 @@ export async function PUT(
         visit_purpose:visit_purposes(id, code, name),
         patient:patients(id, name),
         created_by_user:users!created_by(id, username),
-        updated_by_user:users!updated_by(id, username)
+        updated_by_user:users!updated_by(id, username),
+        settled_by_user:users!settled_by(id, username)
       `)
       .single();
 

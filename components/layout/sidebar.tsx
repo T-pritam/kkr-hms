@@ -81,13 +81,11 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
     {
       name: 'Employees',
       icon: UsersRound,
-      // Reception sees this group for the advance log and salary list (figures
-      // redacted there); Employee Details, the full HR register, stays ADMIN-only.
-      roles: ['ADMIN', 'DOCTOR', 'RECEPTIONIST'],
+      roles: ['ADMIN', 'DOCTOR'],
       submenu: [
         { name: 'Employee Details', href: '/employees/details', roles: ['ADMIN'] },
-        { name: 'Employee Salary', href: '/employees/salary', roles: ['ADMIN', 'DOCTOR', 'RECEPTIONIST'] },
-        { name: 'Advance Log', href: '/employees/advances', roles: ['ADMIN', 'DOCTOR', 'RECEPTIONIST'] },
+        { name: 'Employee Salary', href: '/employees/salary', roles: ['ADMIN', 'DOCTOR'] },
+        { name: 'Advance Log', href: '/employees/advances', roles: ['ADMIN', 'DOCTOR'] },
       ],
     },
     {

@@ -21,8 +21,8 @@
  * signed-in user, a lab technician included, could pay an advance out of any
  * employee's salary and read their payroll figures. `advance:write` closes that.
  *
- * `advance:read` is the one deliberate widening: reception gets the month-wise
- * advance log, and nothing else in the module.
+ * Reception has no capability in this module at all — no employee records, no
+ * salary figures, no advance log, no paying an advance out.
  */
 
 import type { NextRequest, NextResponse } from 'next/server'
@@ -43,18 +43,6 @@ export type EmployeeCapability =
 /** What the existing guard actually admits, kept as-is. */
 const PAYROLL: UserRole[] = ['ADMIN', 'DOCTOR']
 
-/** Payroll, plus reception for the advance log and paying advances out. */
-const ADVANCE_READERS: UserRole[] = ['ADMIN', 'DOCTOR', 'RECEPTIONIST']
-const ADVANCE_WRITERS: UserRole[] = ['ADMIN', 'DOCTOR', 'RECEPTIONIST']
-
-/**
- * The employee list, salary-figures redacted. Reception can see who exists
- * and how much they've drawn this month (to decide whether to hand over more
- * cash) without seeing `salary:read` — base/calculated/final salary stay
- * PAYROLL-only. The redaction itself happens in the route handler, not here.
- */
-const SALARY_LISTERS: UserRole[] = ['ADMIN', 'DOCTOR', 'RECEPTIONIST']
-
 export const EMPLOYEE_CAPABILITIES: Record<EmployeeCapability, UserRole[]> = {
   // Staff records.
   'employee:read':   PAYROLL,
@@ -66,15 +54,14 @@ export const EMPLOYEE_CAPABILITIES: Record<EmployeeCapability, UserRole[]> = {
   'salary:write':    PAYROLL,
   'salary:settle':   PAYROLL,
 
-  // The employee-salary list, with figures stripped for reception.
-  'salary:list':     SALARY_LISTERS,
+  // The employee-salary list.
+  'salary:list':     PAYROLL,
 
-  // Reading the advance log — reception hands the cash over and is asked for
-  // the log more than anyone.
-  'advance:read':    ADVANCE_READERS,
+  // Reading the advance log.
+  'advance:read':    PAYROLL,
 
-  // Paying one out — reception does this directly now too.
-  'advance:write':   ADVANCE_WRITERS,
+  // Paying one out.
+  'advance:write':   PAYROLL,
 }
 
 export interface EmployeeUser {

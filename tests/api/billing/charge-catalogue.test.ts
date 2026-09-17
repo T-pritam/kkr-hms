@@ -1,8 +1,9 @@
 /**
  * /api/charge-items — the charge catalogue.
  *
- * This is the price list, so writes are ADMIN only for the same reason
- * /api/lab-tests is. Reads are open: every charge form in the app needs the list.
+ * This is the price list. Reception maintains it day to day, same as the desk
+ * that places charges from it — ADMIN and RECEPTIONIST can write; everyone
+ * else only reads.
  *
  * The two behaviours worth pinning down are `billing_mode`, which decides whether
  * a charge asks for one date or a range, and the retire-don't-destroy rule — a
@@ -56,7 +57,7 @@ describe('/api/charge-items — authorisation', () => {
   )
 
   /** One edit here changes what every future charge costs. */
-  it.each(['DOCTOR', 'NURSE', 'RECEPTIONIST', 'LAB_TECHNICIAN'] as const)(
+  it.each(['DOCTOR', 'NURSE', 'LAB_TECHNICIAN'] as const)(
     'refuses to let %s change the price list',
     async (role) => {
       await signInAs(role)
@@ -65,6 +66,18 @@ describe('/api/charge-items — authorisation', () => {
       expect((await create(VALID)).status).toBe(403)
       expect((await update(item.id, { default_price: 1 })).status).toBe(403)
       expect((await remove(item.id)).status).toBe(403)
+    },
+  )
+
+  it.each(['ADMIN', 'RECEPTIONIST'] as const)(
+    'lets %s create, price and retire catalogue entries',
+    async (role) => {
+      await signInAs(role)
+      const item = aChargeItem()
+
+      expect((await create(VALID)).status).toBe(201)
+      expect((await update(item.id, { default_price: 1 })).status).toBe(200)
+      expect((await remove(item.id)).status).toBe(200)
     },
   )
 })

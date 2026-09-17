@@ -120,6 +120,15 @@ export async function POST(
     // to the same validation and the same closed-day rule as every other entry —
     // this path used to insert straight into the table and skip both.
     if (body.create_ledger_entry) {
+      // The description used to read "Patient installment payment #1" — true,
+      // but useless on the ledger, which already says `source: 'patient'` and
+      // links the row to this patient. What it actually needs is which patient.
+      const { data: patient } = await supabase
+        .from('patients')
+        .select('patient_id, name')
+        .eq('id', patientId)
+        .single();
+
       const result = await createLedgerTransaction(supabase, {
         transaction_date: ledgerDate,
         transaction_type: 'credit',
@@ -128,7 +137,7 @@ export async function POST(
         payment_mode: body.payment_method || 'cash',
         reference_number: body.transaction_reference,
         patient_id: patientId,
-        description: `Patient installment payment #${nextInstallmentNumber}`,
+        description: patient ? `${patient.patient_id} ${patient.name}` : `Patient installment payment #${nextInstallmentNumber}`,
         notes: body.remarks,
         created_by: authResult.user.id,
       });

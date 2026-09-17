@@ -63,6 +63,32 @@ describe('patient settlements — authentication and roles', () => {
 
     expect(settlementRow('s1').settled).toBe(false)
   })
+
+  /**
+   * This route had no role check at all — any signed-in user, reception
+   * included, could create a priced settlement row directly, even though the
+   * UI only ever reaches this feature through create-manual and /sync, both
+   * ADMIN-gated, and even though this same file's PATCH (settle) was already
+   * correctly restricted.
+   */
+  it.each(['DOCTOR', 'NURSE', 'RECEPTIONIST', 'LAB_TECHNICIAN'] as const)(
+    'refuses %s creating a settlement directly',
+    async (role) => {
+      await signInAs(role)
+      aDoctor({ id: 'd1' })
+
+      const { status, body } = await create('p1', {
+        patient_billing_id: 'b1',
+        doctor_id: 'd1',
+        visit_count: 3,
+        amount_per_visit: 1500,
+      })
+
+      expect(status).toBe(403)
+      expect(body.error).toBe('Only admins can create settlements')
+      expect(db.count('doctor_visit_settlements')).toBe(0)
+    },
+  )
 })
 
 describe('GET /api/patients/[id]/settlements', () => {

@@ -10,7 +10,6 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await requireEmployee(request, 'salary:list')
     if (auth.response) return auth.response
-    const isReceptionist = auth.user.role === 'RECEPTIONIST'
 
     const searchParams = request.nextUrl.searchParams
     const monthYear = searchParams.get('month_year')
@@ -82,19 +81,6 @@ export async function GET(request: NextRequest) {
       // Use base_salary from salary_payments if record exists, otherwise from employees
       const baseSalary = salaryRecord?.base_salary || emp.base_salary
 
-      // Reception can see who exists and what's already been advanced this
-      // month, never the salary figures behind that advance.
-      if (isReceptionist) {
-        const { base_salary: _baseSalary, ...empWithoutSalary } = emp
-        return {
-          ...empWithoutSalary,
-          salary_record: null,
-          advances: empAdvances,
-          advance_count: empAdvances.length,
-          total_advance: totalAdvance
-        }
-      }
-
       return {
         ...emp,
         base_salary: baseSalary,
@@ -116,9 +102,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: employeesWithSalary || [],
-      // The KPI strip aggregates final_salary across every employee — a
-      // bigger leak than any single row, so reception gets none of it.
-      summary: isReceptionist ? null : {
+      summary: {
         total_advances_paid: totalAdvancesPaid,
         need_to_settle: needToSettle,
         settled_amount: settledAmount,

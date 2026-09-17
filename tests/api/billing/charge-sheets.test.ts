@@ -231,8 +231,8 @@ describe('/api/charge-sheets — list and read', () => {
 
 describe('/api/charge-sheets — edit and discard', () => {
   it('replaces the lines and re-totals', async () => {
-    await signInAs('RECEPTIONIST')
-    const sheet = aChargeSheet({ total_amount: 500 })
+    await signInAs('RECEPTIONIST', { userId: 'u-reception' })
+    const sheet = aChargeSheet({ total_amount: 500, created_by: 'u-reception' })
     aChargeSheetItem({ charge_sheet_id: sheet.id, unit_price: 500, qty: 1 })
 
     const { status } = await update(sheet.id, {
@@ -245,8 +245,8 @@ describe('/api/charge-sheets — edit and discard', () => {
   })
 
   it('cancels a draft', async () => {
-    await signInAs('RECEPTIONIST')
-    const sheet = aChargeSheet()
+    await signInAs('RECEPTIONIST', { userId: 'u-reception' })
+    const sheet = aChargeSheet({ created_by: 'u-reception' })
 
     await update(sheet.id, { status: 'cancelled' })
 
@@ -254,8 +254,8 @@ describe('/api/charge-sheets — edit and discard', () => {
   })
 
   it('deletes a draft outright', async () => {
-    await signInAs('RECEPTIONIST')
-    const sheet = aChargeSheet()
+    await signInAs('RECEPTIONIST', { userId: 'u-reception' })
+    const sheet = aChargeSheet({ created_by: 'u-reception' })
 
     expect((await remove(sheet.id)).status).toBe(200)
     expect(db.count('charge_sheets')).toBe(0)
@@ -268,6 +268,35 @@ describe('/api/charge-sheets — edit and discard', () => {
 
     expect((await update(sheet.id, { notes: 'x' })).status).toBe(409)
     expect((await remove(sheet.id)).status).toBe(409)
+    expect(db.count('charge_sheets')).toBe(1)
+  })
+
+  it('lets the creator edit and delete their own draft sheet', async () => {
+    await signInAs('RECEPTIONIST', { userId: 'u-reception' })
+    const sheet = aChargeSheet({ created_by: 'u-reception' })
+
+    expect((await update(sheet.id, { notes: 'own sheet' })).status).toBe(200)
+    expect((await remove(sheet.id)).status).toBe(200)
+  })
+
+  it('lets an admin edit or delete someone else’s draft sheet', async () => {
+    await signInAs('ADMIN')
+    const sheet = aChargeSheet({ created_by: 'someone-else' })
+
+    expect((await update(sheet.id, { notes: 'admin override' })).status).toBe(200)
+  })
+
+  it('refuses to edit or delete a draft sheet the caller did not create', async () => {
+    await signInAs('RECEPTIONIST', { userId: 'u-reception' })
+    const sheet = aChargeSheet({ created_by: 'someone-else' })
+
+    const editResult = await update(sheet.id, { notes: 'not mine' })
+    expect(editResult.status).toBe(403)
+    expect(editResult.body.error).toBe('Forbidden')
+
+    const deleteResult = await remove(sheet.id)
+    expect(deleteResult.status).toBe(403)
+    expect(deleteResult.body.error).toBe('Forbidden')
     expect(db.count('charge_sheets')).toBe(1)
   })
 })
@@ -410,8 +439,8 @@ describe('/api/charge-sheets — forwarding into billing', () => {
  */
 describe('/api/charge-sheets — line reconciliation', () => {
   it('keeps the id of a line the client still knows about', async () => {
-    await signInAs('RECEPTIONIST')
-    const sheet = aChargeSheet({ total_amount: 500 })
+    await signInAs('RECEPTIONIST', { userId: 'u-reception' })
+    const sheet = aChargeSheet({ total_amount: 500, created_by: 'u-reception' })
     const line = aChargeSheetItem({ charge_sheet_id: sheet.id, unit_price: 500, qty: 1 })
 
     const { status } = await update(sheet.id, {
@@ -428,8 +457,8 @@ describe('/api/charge-sheets — line reconciliation', () => {
   })
 
   it('deletes only the lines actually dropped', async () => {
-    await signInAs('RECEPTIONIST')
-    const sheet = aChargeSheet()
+    await signInAs('RECEPTIONIST', { userId: 'u-reception' })
+    const sheet = aChargeSheet({ created_by: 'u-reception' })
     const kept = aChargeSheetItem({ charge_sheet_id: sheet.id, unit_price: 100, qty: 1 })
     const dropped = aChargeSheetItem({ charge_sheet_id: sheet.id, unit_price: 200, qty: 1 })
 
@@ -443,8 +472,8 @@ describe('/api/charge-sheets — line reconciliation', () => {
   })
 
   it('inserts lines that arrive without an id', async () => {
-    await signInAs('RECEPTIONIST')
-    const sheet = aChargeSheet()
+    await signInAs('RECEPTIONIST', { userId: 'u-reception' })
+    const sheet = aChargeSheet({ created_by: 'u-reception' })
     const line = aChargeSheetItem({ charge_sheet_id: sheet.id, unit_price: 100, qty: 1 })
 
     await update(sheet.id, {
@@ -662,8 +691,8 @@ describe('/api/charge-sheets — lines keep their own dates', () => {
   })
 
   it('keeps the dates through an edit that changes only one line', async () => {
-    await signInAs('RECEPTIONIST')
-    const sheet = aChargeSheet()
+    await signInAs('RECEPTIONIST', { userId: 'u-reception' })
+    const sheet = aChargeSheet({ created_by: 'u-reception' })
     const first = aChargeSheetItem({
       charge_sheet_id: sheet.id, charge_name: 'Room', unit_price: 3000, qty: 1,
       service_date: '2026-08-01',

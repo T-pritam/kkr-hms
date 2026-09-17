@@ -741,10 +741,13 @@ export default function BillingSettlementTab({
                           <div className="divide-y divide-input-border border-t border-input-border">
                             {group.settledRows.map((s) => (
                               <div key={s.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 pl-8 text-sm">
-                                <span className="text-muted">
-                                  {s.settlement_date ? new Date(s.settlement_date).toLocaleDateString() : '—'}
-                                  {s.given_by ? ` · ${s.given_by}` : ''}
-                                </span>
+                                <div>
+                                  <span className="text-muted">
+                                    {s.settlement_date ? new Date(s.settlement_date).toLocaleDateString() : '—'}
+                                    {s.given_by ? ` · ${s.given_by}` : ''}
+                                  </span>
+                                  <UpdatedStamp by={s.settled_by_user?.username} at={s.settlement_date} action="Settled" />
+                                </div>
                                 <div className="flex items-center gap-3">
                                   <span className="text-foreground">
                                     {s.visit_count} × ₹{parseInt(s.amount_per_visit || 0)} = ₹{parseInt(s.total_amount || 0)}
@@ -775,15 +778,18 @@ export default function BillingSettlementTab({
 
                     {group.pendingRow && (
                       <div className="px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-warning-subtle text-warning-text">
-                            Pending
-                          </span>
-                          <span className="text-sm text-muted">
-                            {group.pendingRow.visit_count} visit{group.pendingRow.visit_count === 1 ? '' : 's'}
-                            {Number(group.pendingRow.amount_per_visit) > 0 &&
-                              ` · ₹${parseInt(group.pendingRow.amount_per_visit)}/visit`}
-                          </span>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-warning-subtle text-warning-text">
+                              Pending
+                            </span>
+                            <span className="text-sm text-muted">
+                              {group.pendingRow.visit_count} visit{group.pendingRow.visit_count === 1 ? '' : 's'}
+                              {Number(group.pendingRow.amount_per_visit) > 0 &&
+                                ` · ₹${parseInt(group.pendingRow.amount_per_visit)}/visit`}
+                            </span>
+                          </div>
+                          <RecordedStamp record={group.pendingRow} />
                         </div>
                         <div className="flex items-center gap-3">
                           <span className="font-semibold text-foreground">

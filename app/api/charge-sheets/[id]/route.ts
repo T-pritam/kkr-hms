@@ -69,11 +69,15 @@ export async function PATCH(
 
     const { data: sheet } = await supabase
       .from('charge_sheets')
-      .select('id, status')
+      .select('id, status, created_by')
       .eq('id', id)
       .maybeSingle()
 
     if (!sheet) return NextResponse.json({ error: 'Charge sheet not found' }, { status: 404 })
+
+    if (user.role !== 'ADMIN' && sheet.created_by !== user.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
 
     if (sheet.status === 'forwarded') {
       return NextResponse.json(
@@ -188,17 +192,22 @@ export async function DELETE(
   try {
     const auth = await requireBilling(request, 'charge-sheet:write')
     if (auth.response) return auth.response
+    const { user } = auth
 
     const { id } = await params
     const supabase = await createClient()
 
     const { data: sheet } = await supabase
       .from('charge_sheets')
-      .select('id, status')
+      .select('id, status, created_by')
       .eq('id', id)
       .maybeSingle()
 
     if (!sheet) return NextResponse.json({ error: 'Charge sheet not found' }, { status: 404 })
+
+    if (user.role !== 'ADMIN' && sheet.created_by !== user.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
 
     // A forwarded sheet is the provenance of charges on a real bill. Destroying it
     // would leave those charges with a source_sheet_id pointing at nothing.

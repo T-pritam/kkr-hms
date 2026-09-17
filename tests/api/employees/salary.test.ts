@@ -53,26 +53,11 @@ describe('salary — access control', () => {
     expect((await settleEveryone({ month_year: THIS_MONTH })).status).toBe(403)
   })
 
-  /**
-   * Reception reads the list to decide whether to hand over more cash, so it
-   * gets `salary:list` — but never the figures, and never settlement.
-   */
-  it('lets RECEPTIONIST list, with every figure redacted', async () => {
+  it('refuses RECEPTIONIST the salary list and the settlement run', async () => {
     await signInAs('RECEPTIONIST')
     anEmployee({ id: 'e1', name: 'Ramesh', base_salary: 27000 })
 
-    const { status, body } = await list({ month_year: THIS_MONTH })
-
-    expect(status).toBe(200)
-    expect(body.summary).toBeNull()
-    expect(body.data[0]).toMatchObject({ name: 'Ramesh' })
-    expect(body.data[0].base_salary).toBeUndefined()
-    expect(body.data[0].salary_record).toBeNull()
-  })
-
-  it('still refuses RECEPTIONIST the settlement run', async () => {
-    await signInAs('RECEPTIONIST')
-
+    expect((await list({ month_year: THIS_MONTH })).status).toBe(403)
     expect((await settleEveryone({ month_year: THIS_MONTH })).status).toBe(403)
   })
 })

@@ -6,8 +6,13 @@
  * three things the old route got wrong, are the same list:
  *
  *   1. A settlement is durable and auditable. The old one wrote nothing.
- *   2. It touches no transaction. The old one flipped every row's status and
- *      overwrote every row's notes with "Marked as paid".
+ *   2. It touches only the one field a settlement actually speaks to: it marks
+ *      *this employee's own* transactions for *this date* verified (the same
+ *      status/verified_by/verified_at a manual verify sets), scoped narrowly so
+ *      it can never again do what the old route did — flip every row's status
+ *      to a fabricated value and overwrite every row's notes with "Marked as
+ *      paid". Notes, amounts and descriptions are never touched, and no other
+ *      employee's rows are ever included.
  *   3. It locks nothing. The old one locked the date for every other employee.
  */
 
@@ -98,19 +103,40 @@ describe('POST /api/ledger/shift-settlements', () => {
     })
   })
 
-  it('does not touch a single transaction', async () => {
-    await signInAs('ADMIN')
-    aTransaction({ id: 't1', created_by: 'u1', transaction_date: TODAY, status: 'pending', notes: 'Patient paid in two parts' })
+  it('verifies the employee’s own transactions for that date, and touches nothing else on them', async () => {
+    await signInAs('ADMIN', { userId: 'u-admin' })
+    aTransaction({ id: 't1', created_by: 'u1', transaction_date: TODAY, status: 'pending', notes: 'Patient paid in two parts', amount: 700 })
     aTransaction({ id: 't2', created_by: 'u1', transaction_date: TODAY, status: 'verified', notes: null })
 
     await settle({ employee_id: 'u1', settlement_date: TODAY, notes: 'Cash handed over' })
 
-    // Was BUGS.md #40 — the old route overwrote every row's notes.
+    // Was BUGS.md #40 — the old route overwrote every row's notes. This still
+    // must not — only status/verified_by/verified_at may change.
     expect(db.find('daily_ledger_transactions', (r) => r.id === 't1')).toMatchObject({
-      status: 'pending',
+      status: 'verified',
       notes: 'Patient paid in two parts',
+      amount: 700,
+      verified_by: 'u-admin',
     })
-    expect(db.find('daily_ledger_transactions', (r) => r.id === 't2')!.status).toBe('verified')
+    expect(db.find('daily_ledger_transactions', (r) => r.id === 't1')!.verified_at).toBeTruthy()
+
+    // Already verified — left exactly as it was, not re-stamped.
+    expect(db.find('daily_ledger_transactions', (r) => r.id === 't2')).toMatchObject({
+      status: 'verified',
+      notes: null,
+      verified_by: null,
+    })
+  })
+
+  it('does not verify another employee’s transactions for the same date', async () => {
+    await signInAs('ADMIN')
+    aTransaction({ id: 't1', created_by: 'u1', transaction_date: TODAY, status: 'pending' })
+    aTransaction({ id: 't2', created_by: 'u2', transaction_date: TODAY, status: 'pending' })
+
+    await settle({ employee_id: 'u1', settlement_date: TODAY })
+
+    expect(db.find('daily_ledger_transactions', (r) => r.id === 't1')!.status).toBe('verified')
+    expect(db.find('daily_ledger_transactions', (r) => r.id === 't2')!.status).toBe('pending')
   })
 
   it('does not close the day', async () => {
@@ -158,12 +184,13 @@ describe('POST /api/ledger/shift-settlements', () => {
    * A handover after the day was reconciled is a normal thing to happen, and it
    * mutates no ledger row and changes no total. Refusing would strand it.
    */
-  it('allows a settlement on a date that is already closed', async () => {
+  it('allows a settlement on a date that is already closed, but skips verifying — that is blocked on a closed date', async () => {
     await signInAs('ADMIN')
-    aTransaction({ created_by: 'u1', transaction_date: TODAY })
+    aTransaction({ id: 't1', created_by: 'u1', transaction_date: TODAY, status: 'pending' })
     aClosure({ closure_date: TODAY })
 
     expect((await settle({ employee_id: 'u1', settlement_date: TODAY })).status).toBe(201)
+    expect(db.find('daily_ledger_transactions', (r) => r.id === 't1')!.status).toBe('pending')
   })
 
   it('records the settlement in the audit log', async () => {

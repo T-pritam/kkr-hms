@@ -234,6 +234,7 @@ export async function POST(request: NextRequest) {
           transaction_reference,
           settlement_notes,
           updated_by: payload.userId,
+          settled_by: payload.userId,
           updated_at: settledAt,
         })
         .eq('id', settlement.id)

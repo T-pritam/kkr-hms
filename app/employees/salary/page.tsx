@@ -13,7 +13,6 @@ import { SALARY_STATUS_LABELS, SALARY_STATUS_VARIANTS, type SalaryStatus } from 
 import { inr, toAmount } from '@/lib/format/currency'
 import { monthLabel } from '@/lib/pdf/advance-log-pdf'
 import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch'
-import { useUser } from '@/hooks/use-user'
 import { AlertTriangle, Calendar, Plus, RefreshCw } from 'lucide-react'
 
 /**
@@ -63,11 +62,6 @@ interface Summary {
 
 function SalaryContent() {
   const searchParams = useSearchParams()
-  const { user } = useUser()
-  // Reception gets a name-and-advance view only — the API already withholds
-  // every salary figure for this role, this just stops the page from
-  // rendering the now-empty columns and the details/settle flow.
-  const isReceptionist = user?.role === 'RECEPTIONIST'
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -164,12 +158,10 @@ function SalaryContent() {
               aria-label="Month"
               className="sm:w-44"
             />
-            {!isReceptionist && (
-              <Button onClick={() => setShowMonthlyCredit(true)} variant="success">
-                <Calendar size={18} className="mr-2" />
-                Monthly Salary Credit
-              </Button>
-            )}
+            <Button onClick={() => setShowMonthlyCredit(true)} variant="success">
+              <Calendar size={18} className="mr-2" />
+              Monthly Salary Credit
+            </Button>
           </div>
         </div>
 
@@ -180,16 +172,14 @@ function SalaryContent() {
           </div>
         )}
 
-        {!isReceptionist && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-            {kpis.map(kpi => (
-              <div key={kpi.label} className="bg-surface rounded-lg border border-border p-4">
-                <div className="text-xs text-muted uppercase tracking-wide">{kpi.label}</div>
-                <div className={`text-lg font-bold mt-1 truncate ${kpi.tone}`}>{kpi.value}</div>
-              </div>
-            ))}
-          </div>
-        )}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+          {kpis.map(kpi => (
+            <div key={kpi.label} className="bg-surface rounded-lg border border-border p-4">
+              <div className="text-xs text-muted uppercase tracking-wide">{kpi.label}</div>
+              <div className={`text-lg font-bold mt-1 truncate ${kpi.tone}`}>{kpi.value}</div>
+            </div>
+          ))}
+        </div>
 
         {loading ? (
           <div className="text-center py-12">
@@ -207,10 +197,7 @@ function SalaryContent() {
               <table className="w-full">
                 <thead className="bg-surface-hover">
                   <tr>
-                    {(isReceptionist
-                      ? ['Employee', 'Advances']
-                      : ['Employee', 'Base salary', 'Attendance', 'Advances', 'Final salary', 'Status']
-                    ).map(h => (
+                    {['Employee', 'Base salary', 'Attendance', 'Advances', 'Final salary', 'Status'].map(h => (
                       <th
                         key={h}
                         className="px-4 py-3 text-left text-xs font-medium text-muted uppercase"
@@ -231,8 +218,8 @@ function SalaryContent() {
                     return (
                       <tr
                         key={employee.id}
-                        className={isReceptionist ? '' : 'hover:bg-table-row-hover cursor-pointer'}
-                        onClick={isReceptionist ? undefined : () => {
+                        className="hover:bg-table-row-hover cursor-pointer"
+                        onClick={() => {
                           setSelectedEmployeeID(employee.id)
                           setSelectedEmployeeName(employee.name)
                           setShowSalaryDetails(true)
@@ -246,36 +233,28 @@ function SalaryContent() {
                               .join(' · ') || '—'}
                           </div>
                         </td>
-                        {!isReceptionist && (
-                          <>
-                            <td className="px-4 py-3 text-foreground">{inr(employee.base_salary)}</td>
-                            <td className="px-4 py-3 text-sm text-muted">
-                              {record
-                                ? `${record.days_present ?? 0} days${record.ot_days ? ` + ${record.ot_days} OT` : ''}`
-                                : '—'}
-                            </td>
-                          </>
-                        )}
+                        <td className="px-4 py-3 text-foreground">{inr(employee.base_salary)}</td>
+                        <td className="px-4 py-3 text-sm text-muted">
+                          {record
+                            ? `${record.days_present ?? 0} days${record.ot_days ? ` + ${record.ot_days} OT` : ''}`
+                            : '—'}
+                        </td>
                         <td className="px-4 py-3 text-foreground">{inr(advanceTotal(employee))}</td>
-                        {!isReceptionist && (
-                          <>
-                            <td className="px-4 py-3 text-foreground font-medium">
-                              {/* final_salary, not calculated_salary — the column
-                                  header has always said "Final" and the value has
-                                  always been the pre-deduction figure. */}
-                              {record ? inr(record.final_salary) : '—'}
-                            </td>
-                            <td className="px-4 py-3">
-                              {status ? (
-                                <Badge variant={SALARY_STATUS_VARIANTS[status] ?? 'outline'}>
-                                  {SALARY_STATUS_LABELS[status] ?? status}
-                                </Badge>
-                              ) : (
-                                <Badge variant="outline">Not created</Badge>
-                              )}
-                            </td>
-                          </>
-                        )}
+                        <td className="px-4 py-3 text-foreground font-medium">
+                          {/* final_salary, not calculated_salary — the column
+                              header has always said "Final" and the value has
+                              always been the pre-deduction figure. */}
+                          {record ? inr(record.final_salary) : '—'}
+                        </td>
+                        <td className="px-4 py-3">
+                          {status ? (
+                            <Badge variant={SALARY_STATUS_VARIANTS[status] ?? 'outline'}>
+                              {SALARY_STATUS_LABELS[status] ?? status}
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline">Not created</Badge>
+                          )}
+                        </td>
                         <td className="px-4 py-3 text-right">
                           <Button
                             size="sm"
@@ -305,8 +284,8 @@ function SalaryContent() {
                 return (
                   <div
                     key={employee.id}
-                    className={isReceptionist ? 'p-4 space-y-3' : 'p-4 space-y-3 cursor-pointer hover:bg-table-row-hover'}
-                    onClick={isReceptionist ? undefined : () => {
+                    className="p-4 space-y-3 cursor-pointer hover:bg-table-row-hover"
+                    onClick={() => {
                       setSelectedEmployeeID(employee.id)
                       setSelectedEmployeeName(employee.name)
                       setShowSalaryDetails(true)
@@ -317,45 +296,37 @@ function SalaryContent() {
                         <div className="text-foreground font-medium truncate">{employee.name}</div>
                         <div className="text-xs text-muted">{employee.designation || '—'}</div>
                       </div>
-                      {!isReceptionist && (
-                        status ? (
-                          <Badge variant={SALARY_STATUS_VARIANTS[status] ?? 'outline'}>
-                            {SALARY_STATUS_LABELS[status] ?? status}
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline">Not created</Badge>
-                        )
+                      {status ? (
+                        <Badge variant={SALARY_STATUS_VARIANTS[status] ?? 'outline'}>
+                          {SALARY_STATUS_LABELS[status] ?? status}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline">Not created</Badge>
                       )}
                     </div>
                     <div className="grid grid-cols-2 gap-2 text-xs">
-                      {!isReceptionist && (
-                        <div>
-                          <div className="text-muted">Base salary</div>
-                          <div className="text-foreground">{inr(employee.base_salary)}</div>
-                        </div>
-                      )}
+                      <div>
+                        <div className="text-muted">Base salary</div>
+                        <div className="text-foreground">{inr(employee.base_salary)}</div>
+                      </div>
                       <div>
                         <div className="text-muted">Advances</div>
                         <div className="text-foreground">{inr(advanceTotal(employee))}</div>
                       </div>
-                      {!isReceptionist && (
-                        <>
-                          <div>
-                            <div className="text-muted">Attendance</div>
-                            <div className="text-foreground">
-                              {record
-                                ? `${record.days_present ?? 0} days${record.ot_days ? ` + ${record.ot_days} OT` : ''}`
-                                : '—'}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-muted">Final salary</div>
-                            <div className="text-foreground font-medium">
-                              {record ? inr(record.final_salary) : '—'}
-                            </div>
-                          </div>
-                        </>
-                      )}
+                      <div>
+                        <div className="text-muted">Attendance</div>
+                        <div className="text-foreground">
+                          {record
+                            ? `${record.days_present ?? 0} days${record.ot_days ? ` + ${record.ot_days} OT` : ''}`
+                            : '—'}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-muted">Final salary</div>
+                        <div className="text-foreground font-medium">
+                          {record ? inr(record.final_salary) : '—'}
+                        </div>
+                      </div>
                     </div>
                     <Button
                       size="sm"
@@ -377,20 +348,18 @@ function SalaryContent() {
         )}
       </div>
 
-      {!isReceptionist && (
-        <SalaryDetailsModal
-          isOpen={showSalaryDetails}
-          onClose={() => {
-            setShowSalaryDetails(false)
-            setSelectedEmployeeID(null)
-          }}
-          employeeId={selectedEmployeeID}
-          selectedMonth={selectedMonth}
-          onSuccess={fetchSalaryData}
-          onAddAdvance={() => setShowPayAdvance(true)}
-          advanceRefreshKey={advanceRefreshKey}
-        />
-      )}
+      <SalaryDetailsModal
+        isOpen={showSalaryDetails}
+        onClose={() => {
+          setShowSalaryDetails(false)
+          setSelectedEmployeeID(null)
+        }}
+        employeeId={selectedEmployeeID}
+        selectedMonth={selectedMonth}
+        onSuccess={fetchSalaryData}
+        onAddAdvance={() => setShowPayAdvance(true)}
+        advanceRefreshKey={advanceRefreshKey}
+      />
 
       <PayAdvanceModal
         isOpen={showPayAdvance}
@@ -404,14 +373,12 @@ function SalaryContent() {
         }}
       />
 
-      {!isReceptionist && (
-        <MonthlySalaryCreditModal
-          isOpen={showMonthlyCredit}
-          onClose={() => setShowMonthlyCredit(false)}
-          initialMonth={selectedMonth}
-          onSuccess={fetchSalaryData}
-        />
-      )}
+      <MonthlySalaryCreditModal
+        isOpen={showMonthlyCredit}
+        onClose={() => setShowMonthlyCredit(false)}
+        initialMonth={selectedMonth}
+        onSuccess={fetchSalaryData}
+      />
     </DashboardLayout>
   )
 }
