@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { verifyToken, getAccessToken, getRefreshToken, setAuthCookies, generateAccessToken, generateRefreshToken } from '@/lib/auth/jwt'
 import { getActiveClosure } from '@/lib/ledger/closure'
+import { paymentLinks } from '@/lib/billing/payments'
 
 /**
  * GET /api/ledger/daily-summary/[date]
@@ -70,12 +71,20 @@ export async function GET(
       query = query.eq('created_by', scopedTo)
     }
 
-    const { data: transactions, error } = await query
+    const { data: rows, error } = await query
 
     if (error) {
       console.error('Get daily summary error:', error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
+
+    // Which rows are a patient payment's credit. Those are edited from the
+    // patient's Payments tab, not here (PRD v2 CR-12), so the screen needs to know.
+    const links = await paymentLinks(supabase, (rows ?? []).map((r: any) => r.id))
+    const transactions = (rows ?? []).map((r: any) => ({
+      ...r,
+      payment_installment_id: links.get(r.id) ?? null,
+    }))
 
     // Calculate statistics
     let totalCredits = 0

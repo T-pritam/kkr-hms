@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch'
@@ -30,6 +31,7 @@ import { DayCloseBanner } from '@/components/ledger/day-close-banner'
 import { useUser } from '@/hooks/use-user'
 import { ledgerExpenseCategoryLabel } from '@/lib/format/expense'
 import type { LedgerClosure } from '@/lib/ledger/closure'
+import { istToday } from '@/lib/dates/ist'
 
 interface Transaction {
   id: string
@@ -50,7 +52,34 @@ interface Transaction {
   created_by_user?: { id: string; username: string }
   verified_by_user?: { id: string; username: string }
   patient?: { id: string; name: string }
+  /**
+   * Set when the row is a patient payment's credit. Those are changed from the
+   * patient's Payments tab, never here (PRD v2 CR-12).
+   */
+  payment_installment_id?: string | null
 }
+
+/** What the Source column reads for a row. */
+const SOURCE_LABELS: Record<string, string> = {
+  patient: 'Patient payment',
+  registration: 'Registration fee',
+  opd: 'OPD',
+  expense: 'Expense',
+  doctor_settlement: 'Doctor fee',
+  referral_commission: 'Referral commission',
+  salary: 'Salary',
+}
+
+const sourceLabel = (txn: Transaction) => {
+  const label = SOURCE_LABELS[txn.source] ?? txn.source
+  return txn.source === 'patient' || txn.source === 'registration'
+    ? `${label} (${txn.patient?.name || 'Unknown'})`
+    : label
+}
+
+/** Payment credits are edited through the payment, so the ledger offers a link instead. */
+const isPaymentEntry = (txn: Transaction) =>
+  Boolean(txn.payment_installment_id) || txn.source === 'registration'
 
 interface DailySummary {
   date: string
@@ -107,7 +136,7 @@ export default function DailyLedgerSummaryPage() {
 
   useEffect(() => {
     // Set default date to today
-    const today = new Date().toISOString().split('T')[0]
+    const today = istToday()
     setSelectedDate(today)
   }, [])
 
@@ -244,7 +273,7 @@ export default function DailyLedgerSummaryPage() {
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              max={new Date().toISOString().split('T')[0]}
+              max={istToday()}
               className="w-full sm:w-auto"
             />
             {!summary?.is_day_closed && (
@@ -416,8 +445,8 @@ export default function DailyLedgerSummaryPage() {
                             {txn.transaction_type.toUpperCase()}
                           </span>
                         </td>
-                        <td className="py-3 px-4 text-foreground text-sm capitalize">
-                          {txn.source} { txn.source == 'patient' ? `(${txn.patient?.name || 'Unknown'})` : '' }
+                        <td className="py-3 px-4 text-foreground text-sm">
+                          {sourceLabel(txn)}
                           {txn.source === 'expense' && txn.expense_category && (
                             // Not capitalized — it would title-case the free text.
                             <span className="block text-xs text-muted normal-case">
@@ -450,23 +479,37 @@ export default function DailyLedgerSummaryPage() {
                           <div className="flex gap-2">
                             {!summary.is_day_closed && (
                               <>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => {
-                                    setSelectedTransaction(txn)
-                                    setShowEditModal(true)
-                                  }}
-                                >
-                                  <Edit size={16} />
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="destructive"
-                                  onClick={() => handleDeleteTransaction(txn.id)}
-                                >
-                                  <Trash2 size={16} />
-                                </Button>
+                                {isPaymentEntry(txn) ? (
+                                  txn.patient?.id && (
+                                    <Link
+                                      href={`/patients/${txn.patient.id}`}
+                                      className="text-xs text-info hover:underline self-center whitespace-nowrap"
+                                      title="Payments are changed from the patient's Payments tab"
+                                    >
+                                      Open patient
+                                    </Link>
+                                  )
+                                ) : (
+                                  <>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => {
+                                        setSelectedTransaction(txn)
+                                        setShowEditModal(true)
+                                      }}
+                                    >
+                                      <Edit size={16} />
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="destructive"
+                                      onClick={() => handleDeleteTransaction(txn.id)}
+                                    >
+                                      <Trash2 size={16} />
+                                    </Button>
+                                  </>
+                                )}
                                 {canVerify && txn.status === 'pending' && (
                                   <Button
                                     size="sm"
@@ -515,7 +558,7 @@ export default function DailyLedgerSummaryPage() {
                       
                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
                         <span>{new Date(txn.created_at).toLocaleTimeString('en-GB', { hour12: false, hour: '2-digit', minute: '2-digit' })}</span>
-                        <span className="capitalize">{txn.source}{txn.source === 'patient' ? ` (${txn.patient?.name || 'Unknown'})` : ''}</span>
+                        <span>{sourceLabel(txn)}</span>
                         {txn.source === 'expense' && txn.expense_category && (
                           <span>{ledgerExpenseCategoryLabel(txn.expense_category, txn.expense_category_detail)}</span>
                         )}
@@ -526,25 +569,38 @@ export default function DailyLedgerSummaryPage() {
 
                       {!summary.is_day_closed && (
                         <div className="flex gap-2 pt-1">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="flex-1"
-                            onClick={() => {
-                              setSelectedTransaction(txn)
-                              setShowEditModal(true)
-                            }}
-                          >
-                            <Edit size={14} className="mr-1" />
-                            Edit
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => handleDeleteTransaction(txn.id)}
-                          >
-                            <Trash2 size={14} />
-                          </Button>
+                          {isPaymentEntry(txn) ? (
+                            txn.patient?.id && (
+                              <Link
+                                href={`/patients/${txn.patient.id}`}
+                                className="flex-1 text-sm text-info hover:underline self-center"
+                              >
+                                Open patient to change this payment
+                              </Link>
+                            )
+                          ) : (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="flex-1"
+                                onClick={() => {
+                                  setSelectedTransaction(txn)
+                                  setShowEditModal(true)
+                                }}
+                              >
+                                <Edit size={14} className="mr-1" />
+                                Edit
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => handleDeleteTransaction(txn.id)}
+                              >
+                                <Trash2 size={14} />
+                              </Button>
+                            </>
+                          )}
                           {canVerify && txn.status === 'pending' && (
                             <Button
                               size="sm"

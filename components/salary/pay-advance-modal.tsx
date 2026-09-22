@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { inr } from '@/lib/format/currency'
 import { useUser } from '@/hooks/use-user'
 import { AlertCircle, CheckCircle, Loader2 } from 'lucide-react'
+import { istToday } from '@/lib/dates/ist'
 
 /**
  * Paying a salary advance.
@@ -53,7 +54,7 @@ interface ValidationData {
   status: string | null
 }
 
-const today = () => new Date().toISOString().split('T')[0]
+const today = () => istToday()
 
 export function PayAdvanceModal({
   isOpen,

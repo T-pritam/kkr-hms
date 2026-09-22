@@ -17,6 +17,7 @@ import {
   MAX_CHARGE_DAYS,
   MAX_HOURS_PER_DAY,
 } from '@/lib/billing/constants'
+import { istToday } from '@/lib/dates/ist'
 
 /**
  * Raising and editing a temporary charge sheet.
@@ -77,7 +78,7 @@ interface Props {
   sheetId?: string | null
 }
 
-const today = () => new Date().toISOString().slice(0, 10)
+const today = () => istToday()
 
 const BLANK_LINE: ChargeSheetLine = {
   id: null,

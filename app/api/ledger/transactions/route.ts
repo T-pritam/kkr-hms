@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { verifyToken, getAccessToken, getRefreshToken, setAuthCookies, generateAccessToken, generateRefreshToken } from '@/lib/auth/jwt'
 import { createLedgerTransaction } from '@/lib/ledger/transactions'
 import { getActiveClosures } from '@/lib/ledger/closure'
+import { paymentLinks } from '@/lib/billing/payments'
 
 /**
  * GET /api/ledger/transactions
@@ -113,7 +114,13 @@ export async function GET(request: NextRequest) {
     if (rows.length > 0) {
       const dates = rows.map((r: any) => r.transaction_date).sort()
       const closures = await getActiveClosures(supabase, dates[0], dates[dates.length - 1])
-      decorated = rows.map((r: any) => ({ ...r, day_closed: closures.has(r.transaction_date) }))
+      const links = await paymentLinks(supabase, rows.map((r: any) => r.id))
+      decorated = rows.map((r: any) => ({
+        ...r,
+        day_closed: closures.has(r.transaction_date),
+        // Edited through the patient's Payments tab, not the ledger (CR-12).
+        payment_installment_id: links.get(r.id) ?? null,
+      }))
     }
 
     return NextResponse.json({ success: true, data: decorated })

@@ -3,6 +3,29 @@ import { createClient } from '@/lib/supabase/server'
 import { verifyToken, getAccessToken, getRefreshToken, setAuthCookies, generateAccessToken, generateRefreshToken } from '@/lib/auth/jwt'
 import { normaliseLedgerCategoryDetail, validateLedgerExpenseCategory } from '@/lib/finances/validate'
 import { assertLedgerDateOpen } from '@/lib/ledger/closure'
+import { paymentLinks } from '@/lib/billing/payments'
+
+/**
+ * A patient payment's ledger credit is changed through the payment, never here
+ * (PRD v2 CR-12). Editing or deleting it on its own is how the bill's "Paid" and
+ * the cash book used to drift apart (G-02) — deleting it even unlinked the
+ * payment, which then counted as paid with nothing in the ledger.
+ */
+async function assertNotPaymentEntry(supabase: any, existing: any): Promise<NextResponse | null> {
+  // An unlinked `patient` row is an orphan left by an old payment delete; it
+  // stays editable so an admin can clean it up. A registration row never is one.
+  const linked = (await paymentLinks(supabase, [existing.id])).has(existing.id)
+  if (!linked && existing.source !== 'registration') return null
+
+  return NextResponse.json(
+    {
+      error:
+        "This entry is a patient payment. Change or delete it from the patient's Payments tab, so the bill and the ledger stay the same.",
+      code: 'LEDGER_ENTRY_IS_PAYMENT',
+    },
+    { status: 409 }
+  )
+}
 
 /**
  * PUT /api/ledger/transactions/[id]
@@ -71,6 +94,9 @@ export async function PUT(
     if (payload.role !== 'ADMIN' && existing.created_by !== payload.userId) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
+
+    const paymentEntry = await assertNotPaymentEntry(supabase, existing)
+    if (paymentEntry) return paymentEntry
 
     // Build update object
     const updates: any = {}
@@ -234,6 +260,9 @@ export async function DELETE(
     if (payload.role !== 'ADMIN' && existing.created_by !== payload.userId) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
+
+    const paymentEntry = await assertNotPaymentEntry(supabase, existing)
+    if (paymentEntry) return paymentEntry
 
     // Delete transaction
     const { error } = await supabase

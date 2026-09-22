@@ -4,6 +4,7 @@ import { requireEmployee } from '@/lib/employees/authz'
 import { normaliseEmployeeBody, validateEmployee, firstError } from '@/lib/employees/validate'
 import { EMPLOYEE_SORTS, EMPLOYEE_STATUSES, type EmployeeSort } from '@/lib/employees/constants'
 import { pageMeta, parsePaging, safeSearch } from '@/lib/api/query'
+import { istToday } from '@/lib/dates/ist'
 
 /**
  * The employee register.
@@ -133,7 +134,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!values.join_date) {
-      values.join_date = new Date().toISOString().slice(0, 10)
+      values.join_date = istToday()
     }
 
     const check = validateEmployee(values, 'create')

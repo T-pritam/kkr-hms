@@ -27,6 +27,7 @@ export type BillingCapability =
   | 'visit-purpose:write'
   | 'doctor-fee:write'
   | 'pharmacy-charge:write'
+  | 'payment:write'
 
 const EVERYONE: UserRole[] = ['ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST', 'LAB_TECHNICIAN']
 
@@ -43,6 +44,11 @@ export const BILLING_CAPABILITIES: Record<BillingCapability, UserRole[]> = {
   // Fetching a pharmacy bill by id and attaching it as a charge. Same desk as
   // charge:write — reception routinely looks up and attaches these.
   'pharmacy-charge:write': BILLERS,
+
+  // Recording, correcting or deleting a patient payment. It used to check only
+  // that the caller was signed in, so a lab technician could take money against
+  // any bill (PRD v2 gap G-08). The desk that places charges takes the payments.
+  'payment:write': BILLERS,
 
   // The price list. Reception maintains it day to day — new charges, price
   // corrections — the same desk that already places charges from it.

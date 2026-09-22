@@ -32,6 +32,8 @@ const money = (n: number) =>
 export default function ChargeCataloguePage() {
   const { user } = useUser()
   const canWrite = hasBillingCapability(user?.role, 'charge-catalogue:write')
+  // The registration fee's entry is admin-only (PRD v2 Q-40); the API refuses too.
+  const canEditItem = (item: ChargeItem) => canWrite && (!item.is_registration_fee || user?.role === 'ADMIN')
 
   const [items, setItems] = useState<ChargeItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -196,7 +198,12 @@ export default function ChargeCataloguePage() {
                   {items.map(item => (
                     <tr key={item.id} className="hover:bg-table-row-hover">
                       <td className="px-4 py-3">
-                        <div className="text-foreground">{item.name}</div>
+                        <div className="text-foreground">
+                          {item.name}
+                          {item.is_registration_fee && (
+                            <Badge variant="accent" className="ml-2">Registration fee</Badge>
+                          )}
+                        </div>
                         {item.code && <div className="text-xs text-muted">{item.code}</div>}
                       </td>
                       <td className="px-4 py-3">
@@ -234,6 +241,7 @@ export default function ChargeCataloguePage() {
                       </td>
                       {canWrite && (
                         <td className="px-4 py-3 text-right">
+                          {canEditItem(item) ? (
                           <div className="flex justify-end gap-1">
                             <button
                               onClick={() => openEditor(item)}
@@ -250,6 +258,9 @@ export default function ChargeCataloguePage() {
                               <Trash2 size={16} />
                             </button>
                           </div>
+                          ) : (
+                            <span className="text-xs text-muted">Admin only</span>
+                          )}
                         </td>
                       )}
                     </tr>
@@ -265,6 +276,9 @@ export default function ChargeCataloguePage() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="text-foreground truncate">{item.name}</div>
+                      {item.is_registration_fee && (
+                        <Badge variant="accent">Registration fee</Badge>
+                      )}
                       <div className="text-xs text-muted">
                         {CHARGE_CATEGORY_LABELS[
                           item.category as keyof typeof CHARGE_CATEGORY_LABELS
@@ -288,7 +302,7 @@ export default function ChargeCataloguePage() {
                       )}
                     </span>
                   </div>
-                  {canWrite && (
+                  {canEditItem(item) && (
                     <div className="flex justify-end gap-1">
                       <button
                         onClick={() => openEditor(item)}

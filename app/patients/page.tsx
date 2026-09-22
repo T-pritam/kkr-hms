@@ -186,9 +186,13 @@ export default function PatientsPage() {
       const now = new Date()
 
       if (downloadRange === 'last_month') {
+        // Built from the parts, not toISOString(): local midnight on the 1st is
+        // still the previous day in UTC, which pulled the range back a day in IST.
         const from = new Date(now.getFullYear(), now.getMonth() - 1, 1)
         const to = new Date(now.getFullYear(), now.getMonth(), 0)
-        range = { start: from.toISOString().slice(0, 10), end: to.toISOString().slice(0, 10) }
+        const ymd = (d: Date) =>
+          `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        range = { start: ymd(from), end: ymd(to) }
       } else if (downloadRange === 'last_year') {
         range = { start: `${now.getFullYear() - 1}-01-01`, end: `${now.getFullYear() - 1}-12-31` }
       } else if (downloadRange === 'custom' && downloadStart && downloadEnd) {

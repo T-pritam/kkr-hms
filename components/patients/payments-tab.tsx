@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Edit } from 'lucide-react';
+import { Plus, Trash2, Edit, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useUser } from '@/hooks/use-user';
 import { UpdatedStamp } from '@/components/ui/updated-stamp';
+import { istToday } from '@/lib/dates/ist';
 
 interface PaymentsTabProps {
   patientId: string;
@@ -18,14 +19,18 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({
+  // Every payment is written with its ledger entry now (PRD v2 CR-12), so there
+  // is no "create ledger entry" switch. `kind` is 'registration' only when the
+  // form was opened from "Collect now".
+  const EMPTY_FORM = {
     amount: '',
-    payment_date: new Date().toISOString().split('T')[0],
+    payment_date: istToday(),
     payment_method: 'cash',
     transaction_reference: '',
     remarks: '',
-    create_ledger_entry: true,
-  });
+    kind: 'payment' as 'payment' | 'registration',
+  };
+  const [formData, setFormData] = useState(EMPTY_FORM);
 
   useEffect(() => {
     if (billing) {
@@ -50,7 +55,8 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
     setLoading(true);
 
     try {
-      const payload = { ...formData, amount: parseFloat(formData.amount) || 0 };
+      const { kind, ...fields } = formData;
+      const payload = { ...fields, amount: parseFloat(formData.amount) || 0 };
 
       if (editingId) {
         const response = await fetch(`/api/patients/${patientId}/installments/${editingId}`, {
@@ -63,7 +69,8 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
           await fetchInstallments();
           resetForm();
         } else {
-          alert('Failed to update installment');
+          const body = await response.json().catch(() => ({}));
+          alert(body.error || 'Failed to update installment');
         }
       } else {
         const response = await fetch(`/api/patients/${patientId}/installments`, {
@@ -71,6 +78,7 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             ...payload,
+            kind,
             patient_billing_id: billing.id,
           }),
         });
@@ -79,7 +87,10 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
           await fetchInstallments();
           resetForm();
         } else {
-          alert('Failed to add installment');
+          // Nothing is saved when this fails — the payment and its ledger entry
+          // are written together — so it is safe to fix the form and retry.
+          const body = await response.json().catch(() => ({}));
+          alert(body.error || 'Failed to add installment');
         }
       }
     } catch (error) {
@@ -98,7 +109,18 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
       payment_method: installment.payment_method,
       transaction_reference: installment.transaction_reference || '',
       remarks: installment.remarks || '',
-      create_ledger_entry: true,
+      kind: installment.kind === 'registration' ? 'registration' : 'payment',
+    });
+    setShowForm(true);
+  };
+
+  /** "Collect now" for a registration fee charged at registration but not taken (Q-43). */
+  const handleCollectRegistration = () => {
+    setEditingId(null);
+    setFormData({
+      ...EMPTY_FORM,
+      amount: String(Number(billing?.registration_fee_amount) || ''),
+      kind: 'registration',
     });
     setShowForm(true);
   };
@@ -114,7 +136,8 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
       if (response.ok) {
         await fetchInstallments();
       } else {
-        alert('Failed to delete installment');
+        const body = await response.json().catch(() => ({}));
+        alert(body.error || 'Failed to delete installment');
       }
     } catch (error) {
       console.error('Error deleting installment:', error);
@@ -125,14 +148,7 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
   const resetForm = () => {
     setShowForm(false);
     setEditingId(null);
-    setFormData({
-      amount: '',
-      payment_date: new Date().toISOString().split('T')[0],
-      payment_method: 'cash',
-      transaction_reference: '',
-      remarks: '',
-      create_ledger_entry: true,
-    });
+    setFormData({ ...EMPTY_FORM, payment_date: istToday() });
   };
 
   // A payment is locked once either fact is true: its day has been closed, or
@@ -161,7 +177,22 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
     );
   }
 
-  const paymentMethods = ['cash', 'upi', 'card', 'bank_transfer', 'cheque'];
+  // The registration fee is taken as cash or UPI only (Req 11).
+  const paymentMethods = formData.kind === 'registration'
+    ? ['cash', 'upi']
+    : ['cash', 'upi', 'card', 'bank_transfer', 'cheque'];
+
+  const registrationPending =
+    billing.registration_fee_status === 'pending' &&
+    Number(billing.registration_fee_amount) > 0 &&
+    !installments.some((i) => i.kind === 'registration');
+
+  const kindBadge = (installment: any) =>
+    installment.kind === 'registration' ? (
+      <span className="ml-2 text-xs font-medium px-2 py-0.5 rounded bg-accent-subtle text-accent">
+        Registration fee
+      </span>
+    ) : null;
 
   return (
     <div className="space-y-6">
@@ -170,7 +201,16 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
           <h3 className="text-lg sm:text-xl font-semibold text-foreground">Payment Installments</h3>
         </div>
         <button
-          onClick={() => setShowForm(!showForm)}
+          onClick={() => {
+            if (showForm) {
+              resetForm();
+            } else {
+              // A fresh ordinary payment, even if "Collect now" was used before.
+              setEditingId(null);
+              setFormData({ ...EMPTY_FORM, payment_date: istToday() });
+              setShowForm(true);
+            }
+          }}
           className="flex items-center gap-2 bg-info hover:bg-info-hover text-foreground px-3 sm:px-4 py-2 rounded-lg transition-colors min-h-[44px] text-sm"
         >
           <Plus className="h-4 w-4" />
@@ -179,8 +219,25 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
         </button>
       </div>
 
+      {registrationPending && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-warning/30 bg-warning-subtle p-4">
+          <p className="flex items-center gap-2 text-sm text-warning-text">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            Registration fee ₹{Number(billing.registration_fee_amount).toFixed(2)} not collected yet
+          </p>
+          <Button size="sm" onClick={handleCollectRegistration}>
+            Collect now
+          </Button>
+        </div>
+      )}
+
       {showForm && (
         <form onSubmit={handleSubmit} className="bg-surface-hover rounded-lg p-6 space-y-4">
+          {formData.kind === 'registration' && (
+            <p className="text-sm font-medium text-foreground">
+              {editingId ? 'Edit registration fee payment' : 'Collect registration fee'}
+            </p>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-muted mb-2">
@@ -303,6 +360,7 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
                   <tr key={installment.id} className="hover:bg-table-row-hover">
                     <td className="px-4 py-3 text-sm text-foreground">
                       {installment.installment_number}
+                      {kindBadge(installment)}
                     </td>
                     <td className="px-4 py-3 text-sm text-foreground">
                       {new Date(installment.payment_date).toLocaleDateString()}
@@ -387,6 +445,7 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
                       <span className="text-xs bg-surface-inset px-2 py-0.5 rounded text-muted">
                         #{installment.installment_number}
                       </span>
+                      {kindBadge(installment)}
                       <span className="text-xs font-medium px-2 py-0.5 rounded bg-info-subtle text-info">
                         {installment.payment_method.toUpperCase()}
                       </span>

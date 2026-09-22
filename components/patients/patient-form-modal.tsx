@@ -19,6 +19,7 @@ import {
 import { resolveAge } from '@/lib/patients/age'
 import type { FieldErrors } from '@/lib/case-sheet/types'
 import { AlertCircle, ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
+import { istToday } from '@/lib/dates/ist'
 
 /**
  * Registering and editing a patient.
@@ -77,11 +78,8 @@ interface FormState {
   status: string
 }
 
-const todayLocal = () => {
-  const now = new Date()
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
-}
+// The hospital's calendar date, not the browser's (lib/dates/ist.ts).
+const todayLocal = istToday
 
 const EMPTY: FormState = {
   patient_id: '',
@@ -105,6 +103,20 @@ const EMPTY: FormState = {
   allergies: '',
   current_medications: '',
   status: 'Active',
+}
+
+interface RegistrationFeeState {
+  amount: string
+  collected: boolean
+  payment_method: 'cash' | 'upi'
+  transaction_reference: string
+}
+
+const EMPTY_FEE: RegistrationFeeState = {
+  amount: '',
+  collected: false,
+  payment_method: 'cash',
+  transaction_reference: '',
 }
 
 /** Dates arrive as ISO or `YYYY-MM-DD`; a date input only accepts the latter. */
@@ -230,6 +242,15 @@ export function PatientFormModal({
    */
   const [idTouched, setIdTouched] = useState(false)
 
+  /**
+   * The registration fee (PRD v2 CR-11), create mode only. `feeItem` is the
+   * catalogue entry the amount comes from; null hides the block. The desk may
+   * change the amount (0 waives it); "collected" starts unticked, and if it is
+   * left that way the fee is still charged and shows as not collected.
+   */
+  const [feeItem, setFeeItem] = useState<{ id: string; name: string; amount: number } | null>(null)
+  const [fee, setFee] = useState<RegistrationFeeState>(EMPTY_FEE)
+
   const set = (patch: Partial<FormState>) => setForm(prev => ({ ...prev, ...patch }))
 
   const clearError = (field: string) =>
@@ -266,6 +287,8 @@ export function PatientFormModal({
     }
 
     setForm({ ...EMPTY, date_of_join: todayLocal() })
+    setFee(EMPTY_FEE)
+    setFeeItem(null)
 
     // Suggest the next number. A failure here is not worth blocking
     // registration over — the field simply starts blank and the server issues
@@ -276,6 +299,18 @@ export function PatientFormModal({
       .then(body => {
         if (cancelled || !body?.data?.patient_id) return
         setForm(prev => (prev.patient_id ? prev : { ...prev, patient_id: body.data.patient_id }))
+      })
+      .catch(() => {})
+
+    // No fee block if nothing is configured, or if this lookup fails — the
+    // patient can still be registered and the fee added as a charge later.
+    fetch('/api/registration-fee')
+      .then(res => (res.ok ? res.json() : null))
+      .then(body => {
+        const item = body?.registrationFee
+        if (cancelled || !item) return
+        setFeeItem(item)
+        setFee(prev => ({ ...prev, amount: String(item.amount) }))
       })
       .catch(() => {})
 
@@ -320,6 +355,15 @@ export function PatientFormModal({
     // Status is not on the create form; it is always Active to begin with.
     if (mode === 'create') delete payload.status
 
+    if (mode === 'create' && feeItem) {
+      payload.registration_fee = {
+        amount: fee.amount.trim() === '' ? null : Number(fee.amount),
+        collected: fee.collected,
+        payment_method: fee.payment_method,
+        transaction_reference: fee.transaction_reference,
+      }
+    }
+
     try {
       const res = await fetch(
         mode === 'edit' ? `/api/patients/${patient.id}` : '/api/patients',
@@ -335,6 +379,14 @@ export function PatientFormModal({
       if (!res.ok) {
         if (body?.fieldErrors) setFieldErrors(body.fieldErrors)
         throw new Error(body?.error || 'Failed to save the patient')
+      }
+
+      // The patient is registered either way; only the fee step failed.
+      if (body?.registration_fee?.status === 'failed') {
+        alert(
+          `Patient registered, but the registration fee was not recorded: ${body.registration_fee.error}. ` +
+            'Collect it from the patient\'s Payments tab.',
+        )
       }
 
       onSuccess(body?.patient)
@@ -499,6 +551,92 @@ export function PatientFormModal({
             </Field>
           )}
         </section>
+
+        {mode === 'create' && feeItem && (
+          <section className="rounded-lg border border-border p-4 space-y-4">
+            <div className="flex items-baseline justify-between gap-3">
+              <h3 className="text-sm font-semibold text-foreground">Registration fee</h3>
+              <span className="text-xs text-muted">From the catalogue: {feeItem.name}</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field
+                id="registration_fee_amount"
+                label="Amount (₹)"
+                error={err('registration_fee.amount')}
+                hint="Change it if you need to. 0 waives the fee."
+              >
+                <Input
+                  id="registration_fee_amount"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={fee.amount}
+                  onChange={e => {
+                    setFee(prev => ({ ...prev, amount: e.target.value }))
+                    clearError('registration_fee.amount')
+                  }}
+                  disabled={saving}
+                />
+              </Field>
+
+              <div className="space-y-1.5">
+                <span className="block text-sm font-medium text-foreground">Collected now?</span>
+                <label className="flex items-center gap-2 min-h-[40px]">
+                  <input
+                    type="checkbox"
+                    checked={fee.collected}
+                    onChange={e => setFee(prev => ({ ...prev, collected: e.target.checked }))}
+                    disabled={saving || Number(fee.amount) <= 0}
+                    className="h-4 w-4 rounded border-border text-primary focus:ring-ring disabled:opacity-50"
+                  />
+                  <span className="text-sm text-foreground">Collected</span>
+                </label>
+                <p className="text-xs text-muted">
+                  {fee.collected
+                    ? 'Recorded as a payment and a ledger entry.'
+                    : 'Left unticked, it is still charged and shows as not collected.'}
+                </p>
+              </div>
+            </div>
+
+            {fee.collected && Number(fee.amount) > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Field id="registration_fee_mode" label="Payment mode" required error={err('registration_fee.payment_method')}>
+                  <Select
+                    id="registration_fee_mode"
+                    value={fee.payment_method}
+                    onChange={e => setFee(prev => ({ ...prev, payment_method: e.target.value as 'cash' | 'upi' }))}
+                    disabled={saving}
+                  >
+                    <option value="cash">Cash</option>
+                    <option value="upi">UPI</option>
+                  </Select>
+                </Field>
+
+                {fee.payment_method === 'upi' && (
+                  <Field
+                    id="registration_fee_reference"
+                    label="UPI reference"
+                    required
+                    error={err('registration_fee.transaction_reference')}
+                  >
+                    <Input
+                      id="registration_fee_reference"
+                      value={fee.transaction_reference}
+                      onChange={e => {
+                        setFee(prev => ({ ...prev, transaction_reference: e.target.value }))
+                        clearError('registration_fee.transaction_reference')
+                      }}
+                      disabled={saving}
+                      placeholder="UPI transaction ID"
+                    />
+                  </Field>
+                )}
+              </div>
+            )}
+          </section>
+        )}
 
         <Section
           title="Personal details"

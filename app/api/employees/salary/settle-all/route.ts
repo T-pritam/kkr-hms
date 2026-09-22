@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireEmployee } from '@/lib/employees/authz'
+import { istToday } from '@/lib/dates/ist'
 
 /**
  * POST /api/employees/salary/settle-all
@@ -56,7 +57,7 @@ export async function POST(request: NextRequest) {
       .from('salary_payments')
       .update({
         status: 'settled',
-        settled_on: new Date().toISOString().split('T')[0],
+        settled_on: istToday(),
         // settled_on recorded when; nothing recorded who.
         settled_by: user.id,
         updated_by: user.id,

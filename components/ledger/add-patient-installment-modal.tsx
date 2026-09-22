@@ -200,7 +200,6 @@ export function AddPatientInstallmentModal({
             payment_method: formData.payment_method,
             transaction_reference: formData.transaction_reference,
             remarks: formData.remarks,
-            create_ledger_entry: true,
           }),
         }
       );

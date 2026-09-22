@@ -4,6 +4,8 @@ import { requirePatient } from '@/lib/patients/authz'
 import { normalisePatientBody, validatePatient, firstError } from '@/lib/patients/validate'
 import { PATIENT_SORTS, PATIENT_STATUSES, type PatientSort } from '@/lib/patients/constants'
 import { pageMeta, parsePaging, safeSearch } from '@/lib/api/query'
+import { istToday } from '@/lib/dates/ist'
+import { applyRegistrationFee, parseRegistrationFee, type RegistrationFeeOutcome } from '@/lib/billing/registration-fee'
 
 /**
  * The patient registry.
@@ -109,7 +111,7 @@ export async function POST(request: NextRequest) {
     // Registration date defaults to today. Computed here rather than in the
     // form so an API client gets the same behaviour.
     if (!values.date_of_join) {
-      values.date_of_join = new Date().toISOString().slice(0, 10)
+      values.date_of_join = istToday()
     }
 
     const check = validatePatient(values, 'create')
@@ -118,6 +120,13 @@ export async function POST(request: NextRequest) {
         { error: firstError(check.errors), fieldErrors: check.errors },
         { status: 400 }
       )
+    }
+
+    // The registration fee block (PRD v2 CR-11) is checked before anything is
+    // written, so a UPI fee with no reference can't leave a half-registration.
+    const fee = parseRegistrationFee(body.registration_fee)
+    if (!fee.ok) {
+      return NextResponse.json({ error: fee.error, fieldErrors: fee.fieldErrors }, { status: 400 })
     }
 
     const { data: patient, error: patientError } = await supabase
@@ -149,23 +158,54 @@ export async function POST(request: NextRequest) {
     // Every patient needs a billing row for the charges and payments tabs to
     // have somewhere to write. A failure here is logged rather than thrown: the
     // patient is registered, and the billing row is recreated on demand.
-    const { error: billingError } = await supabase.from('patient_billing').insert({
-      patient_id: patient.id,
-      base_charge: 0,
-      total_doctor_fees: 0,
-      patient_charges_total: 0,
-      patient_paid_amount: 0,
-      billing_status: 'pending',
-      referral_settled: false,
-      created_by: user.id,
-    })
+    //
+    // joined_date / month_year were missing here while POST .../billing set
+    // them — so Finances, which groups bills by month_year, never counted a bill
+    // made at registration (PRD v2 gap G-26).
+    const joinDate = String(patient.date_of_join || values.date_of_join).slice(0, 10)
+    const { data: billing, error: billingError } = await supabase
+      .from('patient_billing')
+      .insert({
+        patient_id: patient.id,
+        base_charge: 0,
+        total_doctor_fees: 0,
+        patient_charges_total: 0,
+        patient_paid_amount: 0,
+        billing_status: 'pending',
+        referral_settled: false,
+        joined_date: joinDate,
+        month_year: joinDate.slice(0, 7),
+        created_by: user.id,
+      })
+      .select('id')
+      .single()
 
     if (billingError) {
       console.error('Error creating billing record:', billingError)
     }
 
+    // Charge the fee and, if ticked, take it. A failure past this point does not
+    // undo the registration — the fee then shows as not collected and the desk
+    // takes it from the Payments tab; the response says which happened.
+    let registrationFee: RegistrationFeeOutcome | null = null
+    if (fee.value) {
+      registrationFee = billing
+        ? await applyRegistrationFee(supabase, {
+            patientId: patient.id,
+            billingId: billing.id,
+            chargeDate: joinDate,
+            fee: fee.value,
+            userId: user.id,
+          })
+        : { status: 'failed', amount: fee.value.amount, error: 'The bill could not be created' }
+    }
+
     return NextResponse.json(
-      { message: 'Patient created successfully', patient },
+      {
+        message: 'Patient created successfully',
+        patient,
+        ...(registrationFee ? { registration_fee: registrationFee } : {}),
+      },
       { status: 201 }
     )
   } catch (error: any) {

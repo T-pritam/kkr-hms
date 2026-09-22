@@ -87,6 +87,8 @@ export const SCHEMA: Record<string, string[]> = {
   charge_items: [
     'id', 'code', 'name', 'category', 'billing_mode', 'default_price', 'unit_label',
     'is_active', 'notes', 'created_at', 'created_by', 'updated_at', 'updated_by',
+    // 20260922000001 — the one entry the registration form pre-fills the fee from
+    'is_registration_fee',
   ],
 
   // 20260808000003 — temporary charge sheets. Not billing until forwarded.
@@ -212,6 +214,8 @@ export const SCHEMA: Record<string, string[]> = {
     'doctor_fees_included_in_package',
     // 20260805000003 — who handed the commission over (was missing from this dump)
     'referral_settlement_given_by',
+    // 20260922000001 — pending / collected / waived; null on older bills
+    'registration_fee_status',
   ],
 
   patient_billing_installments: [
@@ -220,6 +224,8 @@ export const SCHEMA: Record<string, string[]> = {
     // 20260918000001 — links the payment to the ledger credit it created, so
     // "has this been verified" can be asked directly instead of guessed at.
     'ledger_transaction_id',
+    // 20260922000001 — 'payment' or 'registration'
+    'kind',
   ],
 
   patient_case_sheets: [

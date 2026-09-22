@@ -12,6 +12,7 @@
 
 import { SupabaseClient } from '@supabase/supabase-js'
 import type { PharmacyBillHead, PharmacyBillItem } from './client'
+import { istToday } from '@/lib/dates/ist'
 
 export interface BillDetails {
   head: PharmacyBillHead
@@ -24,7 +25,7 @@ export function billColumns(externalId: number, details: BillDetails) {
   return {
     external_bill_id: externalId,
     entry_number: head.entry_number || null,
-    entry_date: head.entry_date || new Date().toISOString().slice(0, 10),
+    entry_date: head.entry_date || istToday(),
     invoice_number: head.invoice_number || null,
     bill_patient_name: head.patient_name || null,
     doctor_name: head.doctor_name || null,

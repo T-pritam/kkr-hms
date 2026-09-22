@@ -16,6 +16,19 @@ import { requireBilling } from '@/lib/billing/authz'
 import { normaliseChargeItemBody, validateChargeItem } from '@/lib/billing/validate'
 import { firstError } from '@/lib/patients/validate'
 
+/**
+ * The registration fee's entry is admin-only (PRD v2 Q-40). Reception keeps
+ * editing the rest of the catalogue (Q-01 = B), but this one price is what every
+ * registration pre-fills, so changing or retiring it is admin's call.
+ */
+function registrationFeeGuard(item: { is_registration_fee?: boolean | null }, role: string) {
+  if (!item.is_registration_fee || role === 'ADMIN') return null
+  return NextResponse.json(
+    { error: 'Only an admin can change the registration fee', code: 'REGISTRATION_FEE_ADMIN_ONLY' },
+    { status: 403 }
+  )
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -75,11 +88,14 @@ export async function PATCH(
 
     const { data: existing } = await supabase
       .from('charge_items')
-      .select('id')
+      .select('id, is_registration_fee')
       .eq('id', id)
       .maybeSingle()
 
     if (!existing) return NextResponse.json({ error: 'Charge item not found' }, { status: 404 })
+
+    const adminOnly = registrationFeeGuard(existing, user.role)
+    if (adminOnly) return adminOnly
 
     const { data, error } = await supabase
       .from('charge_items')
@@ -120,11 +136,14 @@ export async function DELETE(
 
     const { data: existing } = await supabase
       .from('charge_items')
-      .select('id')
+      .select('id, is_registration_fee')
       .eq('id', id)
       .maybeSingle()
 
     if (!existing) return NextResponse.json({ error: 'Charge item not found' }, { status: 404 })
+
+    const adminOnly = registrationFeeGuard(existing, user.role)
+    if (adminOnly) return adminOnly
 
     // Anything pointing at this entry makes the row history, not config.
     const { count: chargeCount } = await supabase

@@ -41,6 +41,7 @@ import {
 } from '@/lib/pdf/finance-pdf'
 import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch'
 import { expenseTypeLabel } from '@/lib/format/expense'
+import { istMonth } from '@/lib/dates/ist'
 
 interface FinancialSummary {
   month_year: string
@@ -80,7 +81,7 @@ export default function FinancesPage() {
   const [loading, setLoading] = useState(true)
   const [summary, setSummary] = useState<FinancialSummary | null>(null)
   const [selectedMonth, setSelectedMonth] = useState<string>(
-    new Date().toISOString().slice(0, 7)
+    istMonth()
   )
   const [activeTab, setActiveTab] = useState<'overview' | 'settlements' | 'transactions' | 'expenses' | 'dayclose'>(
     'overview'

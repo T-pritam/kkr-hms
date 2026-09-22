@@ -10,6 +10,7 @@ import {
   generateRefreshToken,
   setAuthCookies,
 } from '@/lib/auth/jwt'
+import { istToday } from '@/lib/dates/ist'
 
 /**
  * GET /api/finances/referral-commissions
@@ -206,7 +207,7 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createClient()
 
-    const ledgerDate = new Date().toISOString().split('T')[0]
+    const ledgerDate = istToday()
 
     // Guard before the billings are marked settled, so a refused ledger write
     // cannot leave commissions flagged as paid with no debit behind them.

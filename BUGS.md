@@ -13,7 +13,7 @@ Status legend: 🔴 security · 🟠 correctness · 🟡 consistency
 
 ## Start here
 
-35 failing-by-design tests cover the defects below. If you fix nothing else, fix this one:
+31 failing-by-design tests cover the defects below. If you fix nothing else, fix this one:
 
 | # | What breaks | Where |
 |---|---|---|
@@ -314,23 +314,29 @@ attached to another patient's billing record is all accepted.
 
 ---
 
-### 🟠 #19 — Payments are not validated either
-**Where:** `app/api/patients/[id]/installments/route.ts:74`
-**Tests:** `tests/api/billing/installments.test.ts` (2 cases)
+### 🟠 #19 — Payments are not compared against the balance *(half resolved)*
+**Where:** `app/api/patients/[id]/installments/route.ts`
+**Tests:** `tests/api/billing/installments.test.ts` (1 failing case, 1 now passing)
 
-Nothing compares the payment against the outstanding balance, and nothing rejects a zero
-or negative amount. Overpayment produces a negative balance everywhere it is displayed.
+**Resolved (2026-09-22, PRD v2 CR-12):** a zero or negative amount is rejected before
+anything is written (`lib/billing/payments.ts` `validatePayment`).
+
+**Still open:** nothing compares the payment against the outstanding balance, so
+overpayment produces a negative balance everywhere it is displayed. Whether it should be
+refused waits on the balance rules in PRD v2 (the "what the payments cover" questions).
 
 ---
 
 
-### 🟠 #21 — Editing or deleting a payment leaves the ledger entry behind
-**Where:** `app/api/patients/[id]/installments/[installmentId]/route.ts`
-**Tests:** `tests/api/billing/installments.test.ts` (2 cases)
+### ✅ #21 — RESOLVED — editing or deleting a payment moves its ledger entry too
+**Where:** `app/api/patients/[id]/installments/[installmentId]/route.ts`, `lib/billing/payments.ts`
+**Tests:** `tests/api/billing/installments.test.ts` (now ordinary passing tests)
 
-Both verbs re-sum `patient_paid_amount` but never touch the ledger credit created
-alongside the payment. The two records drift apart, and because no reference is stored
-linking them, there is no way to find the orphan afterwards.
+Resolved 2026-09-22 (PRD v2 CR-12). The payment and its ledger credit are one record:
+the credit is always written with the payment (the optional `create_ledger_entry` is
+gone), an edit updates it, a delete removes it, and a payment that never had one gets one
+the first time it is edited. The ledger screen can no longer edit or delete a payment's
+credit on its own (409 `LEDGER_ENTRY_IS_PAYMENT`).
 
 ---
 

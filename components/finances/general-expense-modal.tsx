@@ -11,6 +11,7 @@ import {
   EXPENSE_TYPES,
   MISCELLANEOUS_TYPE,
 } from '@/lib/finances/constants'
+import { istToday } from '@/lib/dates/ist'
 
 interface Expense {
   id: number
@@ -40,7 +41,7 @@ export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense
   const [formData, setFormData] = useState({
     expense_type: '',
     amount: '',
-    expense_date: new Date().toISOString().split('T')[0],
+    expense_date: istToday(),
     month_year: monthYear,
     remarks: '',
     expense_type_detail: '',
@@ -188,7 +189,7 @@ export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense
     setFormData({
       expense_type: '',
       amount: '',
-      expense_date: new Date().toISOString().split('T')[0],
+      expense_date: istToday(),
       month_year: monthYear,
       remarks: '',
       expense_type_detail: '',

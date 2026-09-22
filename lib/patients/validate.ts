@@ -28,6 +28,7 @@ import {
   RELATIONS,
 } from './constants'
 import type { FieldErrors } from '@/lib/case-sheet/types'
+import { istToday } from '@/lib/dates/ist'
 
 /** Columns a client may write. Anything else in the body is ignored outright. */
 export const PATIENT_WRITABLE = [
@@ -100,7 +101,7 @@ export function normalisePatientBody(body: any): Record<string, any> {
 }
 
 function today(): string {
-  return new Date().toISOString().slice(0, 10)
+  return istToday()
 }
 
 export interface Validation {

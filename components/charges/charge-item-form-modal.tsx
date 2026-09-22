@@ -35,6 +35,8 @@ export interface ChargeItem {
   unit_label: string | null
   notes: string | null
   is_active: boolean
+  /** The entry the registration form pre-fills the fee from (PRD v2 CR-11). */
+  is_registration_fee?: boolean
 }
 
 interface Props {

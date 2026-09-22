@@ -22,6 +22,8 @@ type Db = {
 
 export type LedgerSource =
   | 'patient'
+  // The registration fee, booked by lib/billing/payments.ts (PRD v2 CR-11).
+  | 'registration'
   | 'opd'
   | 'expense'
   | 'doctor_settlement'
@@ -37,8 +39,13 @@ export const PAYMENT_MODES: PaymentMode[] = ['cash', 'upi', 'card', 'bank_transf
  * settlement routes on the user's behalf and are not accepted from a request
  * body — which is what stops a hand-rolled POST from disguising an entry as a
  * doctor settlement.
+ *
+ * `patient` and `registration` are not here either: a patient payment's credit
+ * is only ever written together with the payment itself (lib/billing/payments.ts,
+ * PRD v2 CR-12). A bare ledger row claiming to be one would count as money
+ * received that no bill knows about.
  */
-export const USER_SOURCES: LedgerSource[] = ['patient', 'opd', 'expense']
+export const USER_SOURCES: LedgerSource[] = ['opd', 'expense']
 
 export interface LedgerTransactionInput {
   transaction_date: string

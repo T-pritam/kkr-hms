@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { verifyAuth } from '@/lib/auth/verify';
+import { requireBilling } from '@/lib/billing/authz';
 import { assertLedgerDateOpen } from '@/lib/ledger/closure';
+import { deletePayment, updatePayment, validatePayment } from '@/lib/billing/payments';
 
 /**
  * Refuses when the ledger credit this payment created has already been
@@ -33,23 +34,28 @@ async function assertNotVerified(
   );
 }
 
+const INSTALLMENT_COLUMNS =
+  'id, created_by, patient_billing_id, installment_number, amount, payment_date, payment_method, transaction_reference, remarks, kind, ledger_transaction_id';
+
+/**
+ * Delete a payment — and its ledger credit with it (PRD v2 CR-12). Deleting a
+ * registration payment puts the registration fee back to "not collected".
+ */
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; installmentId: string }> }
 ) {
   try {
-    const authResult = await verifyAuth(request);
-    if (!authResult.isValid || !authResult.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requireBilling(request, 'payment:write');
+    if (auth.response) return auth.response;
+    const { user } = auth;
 
     const supabase = await createClient();
     const { installmentId } = await params;
 
-    // Check if user is admin or created this installment
     const { data: installment } = await supabase
       .from('patient_billing_installments')
-      .select('created_by, patient_billing_id, payment_date, ledger_transaction_id')
+      .select(INSTALLMENT_COLUMNS)
       .eq('id', installmentId)
       .single();
 
@@ -57,7 +63,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Installment not found' }, { status: 404 });
     }
 
-    if (authResult.user.role !== 'ADMIN' && installment.created_by !== authResult.user.id) {
+    if (user.role !== 'ADMIN' && installment.created_by !== user.id) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -70,25 +76,7 @@ export async function DELETE(
     const verified = await assertNotVerified(supabase, installment.ledger_transaction_id);
     if (verified) return verified;
 
-    const { error } = await supabase
-      .from('patient_billing_installments')
-      .delete()
-      .eq('id', installmentId);
-
-    if (error) throw error;
-
-    // Recalculate patient_paid_amount
-    const { data: allInstallments } = await supabase
-      .from('patient_billing_installments')
-      .select('amount')
-      .eq('patient_billing_id', installment.patient_billing_id);
-
-    const totalPaid = allInstallments?.reduce((sum, inst) => sum + Number(inst.amount), 0) || 0;
-
-    await supabase
-      .from('patient_billing')
-      .update({ patient_paid_amount: totalPaid })
-      .eq('id', installment.patient_billing_id);
+    await deletePayment(supabase, installment);
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -100,24 +88,26 @@ export async function DELETE(
   }
 }
 
+/**
+ * Edit a payment — and its ledger credit with it (PRD v2 CR-12). Fields the
+ * caller leaves out keep their stored values. A payment's kind never changes.
+ */
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; installmentId: string }> }
 ) {
   try {
-    const authResult = await verifyAuth(request);
-    if (!authResult.isValid || !authResult.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requireBilling(request, 'payment:write');
+    if (auth.response) return auth.response;
+    const { user } = auth;
 
     const supabase = await createClient();
     const { installmentId } = await params;
-    const body = await request.json();
+    const body = await request.json().catch(() => ({}));
 
-    // Check if user is admin or created this installment
     const { data: installment } = await supabase
       .from('patient_billing_installments')
-      .select('created_by, patient_billing_id, payment_date, ledger_transaction_id')
+      .select(INSTALLMENT_COLUMNS)
       .eq('id', installmentId)
       .single();
 
@@ -125,8 +115,22 @@ export async function PATCH(
       return NextResponse.json({ error: 'Installment not found' }, { status: 404 });
     }
 
-    if (authResult.user.role !== 'ADMIN' && installment.created_by !== authResult.user.id) {
+    if (user.role !== 'ADMIN' && installment.created_by !== user.id) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const check = validatePayment(body, {
+      amount: Number(installment.amount),
+      payment_date: installment.payment_date,
+      payment_method: installment.payment_method,
+      transaction_reference: installment.transaction_reference,
+      remarks: installment.remarks,
+    });
+    if (!check.ok) {
+      return NextResponse.json(
+        { error: check.error, fieldErrors: check.fieldErrors },
+        { status: check.status }
+      );
     }
 
     // Same rule as delete: a payment on an already-closed day is reconciled
@@ -134,47 +138,28 @@ export async function PATCH(
     // changes it, so a closed day can't be backed into either.
     const locked = await assertLedgerDateOpen(supabase, installment.payment_date, 'update');
     if (locked) return locked;
-
-    if (body.payment_date && body.payment_date !== installment.payment_date) {
-      const targetLocked = await assertLedgerDateOpen(supabase, body.payment_date, 'update');
+    if (check.value.payment_date !== installment.payment_date) {
+      const targetLocked = await assertLedgerDateOpen(supabase, check.value.payment_date, 'update');
       if (targetLocked) return targetLocked;
     }
 
     const verified = await assertNotVerified(supabase, installment.ledger_transaction_id);
     if (verified) return verified;
 
-    const updateData = {
-      amount: body.amount,
-      payment_date: body.payment_date,
-      payment_method: body.payment_method,
-      transaction_reference: body.transaction_reference,
-      remarks: body.remarks,
-      updated_by: authResult.user.id,
-    };
+    const result = await updatePayment(supabase, {
+      installment,
+      input: check.value,
+      userId: user.id,
+    });
 
-    const { data, error } = await supabase
-      .from('patient_billing_installments')
-      .update(updateData)
-      .eq('id', installmentId)
-      .select()
-      .single();
+    if (!result.ok) {
+      return NextResponse.json(
+        { error: result.error, ...(result.code ? { code: result.code } : {}) },
+        { status: result.status }
+      );
+    }
 
-    if (error) throw error;
-
-    // Recalculate patient_paid_amount
-    const { data: allInstallments } = await supabase
-      .from('patient_billing_installments')
-      .select('amount')
-      .eq('patient_billing_id', installment.patient_billing_id);
-
-    const totalPaid = allInstallments?.reduce((sum, inst) => sum + Number(inst.amount), 0) || 0;
-
-    await supabase
-      .from('patient_billing')
-      .update({ patient_paid_amount: totalPaid })
-      .eq('id', installment.patient_billing_id);
-
-    return NextResponse.json(data);
+    return NextResponse.json(result.installment);
   } catch (error) {
     console.error('Error updating installment:', error);
     return NextResponse.json(

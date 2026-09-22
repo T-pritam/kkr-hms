@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch'
 import { CloseDayDialog } from '@/components/ledger/close-day-dialog'
+import { istToday } from '@/lib/dates/ist'
 
 /**
  * Every date still awaiting a close, oldest first, with the action next to it.
@@ -43,7 +44,7 @@ const formatDate = (value: string) =>
 /** How overdue a day is. The oldest entry is the one that matters most. */
 const ageInDays = (value: string) => {
   const then = new Date(`${value}T00:00:00`).getTime()
-  const now = new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00').getTime()
+  const now = new Date(istToday() + 'T00:00:00').getTime()
   return Math.max(0, Math.round((now - then) / 86_400_000))
 }
 

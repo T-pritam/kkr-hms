@@ -8,6 +8,7 @@ import {
   generateRefreshToken,
   setAuthCookies,
 } from '@/lib/auth/jwt'
+import { istMonth } from '@/lib/dates/ist'
 
 /**
  * GET /api/finances/summary
@@ -60,7 +61,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const monthYear =
       searchParams.get('month_year') ||
-      new Date().toISOString().slice(0, 7)
+      istMonth()
 
     const supabase = await createClient()
 

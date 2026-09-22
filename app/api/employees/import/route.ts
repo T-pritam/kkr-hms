@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireEmployee } from '@/lib/employees/authz'
+import { istToday } from '@/lib/dates/ist'
 
 export async function POST(request: NextRequest) {
   try {
@@ -72,7 +73,7 @@ export async function POST(request: NextRequest) {
         name,
         designation,
         base_salary: salary,
-        join_date: new Date().toISOString().split('T')[0],
+        join_date: istToday(),
         status: 'Active',
       })
     }

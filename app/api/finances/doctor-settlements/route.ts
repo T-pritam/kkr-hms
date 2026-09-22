@@ -10,6 +10,7 @@ import {
   generateRefreshToken,
   setAuthCookies,
 } from '@/lib/auth/jwt'
+import { istToday } from '@/lib/dates/ist'
 
 /**
  * GET /api/finances/doctor-settlements
@@ -196,7 +197,7 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createClient()
 
-    const ledgerDate = new Date().toISOString().split('T')[0]
+    const ledgerDate = istToday()
 
     // Guard before the settlements are marked paid. Refusing the ledger write
     // afterwards would leave doctors flagged as settled with no matching debit —

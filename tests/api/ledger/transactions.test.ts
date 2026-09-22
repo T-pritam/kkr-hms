@@ -9,7 +9,7 @@ import { PUT as setStatus } from '@/app/api/ledger/transactions/[id]/status/rout
 import { call } from '../../helpers/request'
 import { signInAs, signOut, signInWithRefreshTokenOnly } from '../../helpers/auth'
 import { db } from '../../helpers/fake-supabase'
-import { aTransaction, aClosure, aShiftSettlement, aPatient, aUser } from '../../helpers/seed'
+import { aTransaction, aClosure, aShiftSettlement, aPatient, aUser, anInstallment } from '../../helpers/seed'
 import { NOW, TODAY } from '../../setup'
 
 const list = (query = {}) => call(listTransactions, 'GET', '/api/ledger/transactions', { query })
@@ -656,5 +656,72 @@ describe('ledger expenses — the category', () => {
 
     expect(status).toBe(200)
     expect(transactionRow('t1').expense_category_detail).toBeNull()
+  })
+})
+
+/**
+ * PRD v2 CR-12: a patient payment's credit moves with the payment. The ledger
+ * screen editing or deleting it on its own is how "Paid" and the cash book
+ * drifted apart (G-02).
+ */
+describe('ledger — entries that belong to a patient payment', () => {
+  it('refuses to edit a payment credit, for admin too', async () => {
+    await signInAs('ADMIN', { userId: 'u-me' })
+    aTransaction({ id: 't1', source: 'patient', created_by: 'u-me', amount: 500 })
+    anInstallment({ id: 'i1', ledger_transaction_id: 't1', amount: 500 })
+
+    const { status, body } = await update('t1', { amount: 50 })
+
+    expect(status).toBe(409)
+    expect(body.code).toBe('LEDGER_ENTRY_IS_PAYMENT')
+    expect(transactionRow('t1').amount).toBe(500)
+  })
+
+  it('refuses to delete a payment credit', async () => {
+    await signInAs('RECEPTIONIST', { userId: 'u-me' })
+    aTransaction({ id: 't1', source: 'patient', created_by: 'u-me' })
+    anInstallment({ id: 'i1', ledger_transaction_id: 't1' })
+
+    const { status, body } = await remove('t1')
+
+    expect(status).toBe(409)
+    expect(body.code).toBe('LEDGER_ENTRY_IS_PAYMENT')
+    expect(db.count('daily_ledger_transactions')).toBe(1)
+  })
+
+  it('refuses a registration-fee credit even if its link is missing', async () => {
+    await signInAs('ADMIN', { userId: 'u-me' })
+    aTransaction({ id: 't1', source: 'registration', created_by: 'u-me' })
+
+    expect((await update('t1', { amount: 1 })).status).toBe(409)
+    expect((await remove('t1')).status).toBe(409)
+  })
+
+  /** An orphan left by an old payment delete stays editable, so it can be cleaned up. */
+  it('still lets an unlinked patient row be removed', async () => {
+    await signInAs('ADMIN', { userId: 'u-me' })
+    aTransaction({ id: 't1', source: 'patient', created_by: 'u-me' })
+
+    expect((await remove('t1')).status).toBe(200)
+  })
+
+  it('marks which listed rows belong to a payment', async () => {
+    await signInAs('ADMIN')
+    aTransaction({ id: 't1', source: 'patient' })
+    aTransaction({ id: 't2', source: 'opd' })
+    anInstallment({ id: 'i1', ledger_transaction_id: 't1' })
+
+    const { body } = await list({ start_date: TODAY, end_date: TODAY })
+
+    expect(body.data.find((r: any) => r.id === 't1').payment_installment_id).toBe('i1')
+    expect(body.data.find((r: any) => r.id === 't2').payment_installment_id).toBeNull()
+  })
+
+  it('does not accept a bare patient or registration credit from the ledger form', async () => {
+    await signInAs('RECEPTIONIST')
+
+    expect((await create({ ...validTransaction, source: 'patient' })).body.error).toBe('Invalid source')
+    expect((await create({ ...validTransaction, source: 'registration' })).body.error).toBe('Invalid source')
+    expect(db.count('daily_ledger_transactions')).toBe(0)
   })
 })

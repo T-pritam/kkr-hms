@@ -155,7 +155,7 @@ describe('POST /api/patients/[id]/installments', () => {
 
   it('defaults the date to today and the method to cash', async () => {
     await signInAs('RECEPTIONIST')
-    aBilling({ id: 'b1' })
+    aBilling({ id: 'b1', patient_id: 'p1' })
 
     await create('p1', { patient_billing_id: 'b1', amount: 1000 })
 
@@ -167,7 +167,7 @@ describe('POST /api/patients/[id]/installments', () => {
 
   it('numbers installments sequentially', async () => {
     await signInAs('RECEPTIONIST')
-    aBilling({ id: 'b1' })
+    aBilling({ id: 'b1', patient_id: 'p1' })
 
     await create('p1', { patient_billing_id: 'b1', amount: 1000 })
     await create('p1', { patient_billing_id: 'b1', amount: 2000 })
@@ -178,8 +178,8 @@ describe('POST /api/patients/[id]/installments', () => {
 
   it('numbers per billing record, not globally', async () => {
     await signInAs('RECEPTIONIST')
-    aBilling({ id: 'b1' })
-    aBilling({ id: 'b2' })
+    aBilling({ id: 'b1', patient_id: 'p1' })
+    aBilling({ id: 'b2', patient_id: 'p1' })
     anInstallment({ patient_billing_id: 'b2', installment_number: 7 })
 
     await create('p1', { patient_billing_id: 'b1', amount: 1000 })
@@ -189,7 +189,7 @@ describe('POST /api/patients/[id]/installments', () => {
 
   it('re-sums patient_paid_amount from scratch after each payment', async () => {
     await signInAs('RECEPTIONIST')
-    aBilling({ id: 'b1', patient_paid_amount: 0 })
+    aBilling({ id: 'b1', patient_id: 'p1', patient_paid_amount: 0 })
 
     await create('p1', { patient_billing_id: 'b1', amount: 3000 })
     expect(paidAmount()).toBe(3000)
@@ -200,7 +200,7 @@ describe('POST /api/patients/[id]/installments', () => {
 
   it('self-heals a patient_paid_amount that had drifted', async () => {
     await signInAs('RECEPTIONIST')
-    aBilling({ id: 'b1', patient_paid_amount: 99999 })
+    aBilling({ id: 'b1', patient_id: 'p1', patient_paid_amount: 99999 })
     anInstallment({ patient_billing_id: 'b1', amount: 1000, installment_number: 1 })
 
     await create('p1', { patient_billing_id: 'b1', amount: 500 })
@@ -210,6 +210,7 @@ describe('POST /api/patients/[id]/installments', () => {
 
   it('returns 500 when the insert fails', async () => {
     await signInAs('RECEPTIONIST')
+    aBilling({ id: 'b1', patient_id: 'p1' })
     db.failNext('patient_billing_installments') // the next-number lookup
     db.failNext('patient_billing_installments') // the insert itself
 
@@ -219,7 +220,7 @@ describe('POST /api/patients/[id]/installments', () => {
   /** Overpayment is possible: nothing compares the payment against the outstanding balance. */
   it('accepts a payment larger than the outstanding balance', async () => {
     await signInAs('RECEPTIONIST')
-    aBilling({ id: 'b1', total_charges: 1000, patient_paid_amount: 0 })
+    aBilling({ id: 'b1', patient_id: 'p1', total_charges: 1000, patient_paid_amount: 0 })
 
     const { status } = await create('p1', { patient_billing_id: 'b1', amount: 50000 })
 
@@ -230,19 +231,55 @@ describe('POST /api/patients/[id]/installments', () => {
   /** Known defect — see BUGS.md #19. */
   it.fails('should reject a payment that exceeds the outstanding balance', async () => {
     await signInAs('RECEPTIONIST')
-    aBilling({ id: 'b1', total_charges: 1000, patient_paid_amount: 0 })
+    aBilling({ id: 'b1', patient_id: 'p1', total_charges: 1000, patient_paid_amount: 0 })
 
     const { status } = await create('p1', { patient_billing_id: 'b1', amount: 50000 })
     expect(status).toBe(400)
   })
 
-  /** Known defect — see BUGS.md #19. A zero or negative payment is accepted. */
-  it.fails('should reject a zero or negative payment', async () => {
+  /** Was BUGS.md #19 (the zero/negative half). Rejected before anything is written. */
+  it('rejects a zero or negative payment and saves nothing', async () => {
     await signInAs('RECEPTIONIST')
-    aBilling({ id: 'b1' })
+    aBilling({ id: 'b1', patient_id: 'p1' })
 
     expect((await create('p1', { patient_billing_id: 'b1', amount: 0 })).status).toBe(400)
     expect((await create('p1', { patient_billing_id: 'b1', amount: -500 })).status).toBe(400)
+    expect(db.count('patient_billing_installments')).toBe(0)
+    expect(db.count('daily_ledger_transactions')).toBe(0)
+  })
+
+  /** PRD v2 gap G-06: the bill used to come from the body, unchecked against the URL. */
+  it("refuses a bill that belongs to a different patient", async () => {
+    await signInAs('RECEPTIONIST')
+    aBilling({ id: 'b-other', patient_id: 'p2' })
+
+    const { status, body } = await create('p1', { patient_billing_id: 'b-other', amount: 1000 })
+
+    expect(status).toBe(404)
+    expect(body.error).toBe('That billing record does not belong to this patient')
+    expect(db.count('patient_billing_installments')).toBe(0)
+  })
+
+  it('requires patient_billing_id', async () => {
+    await signInAs('RECEPTIONIST')
+
+    expect((await create('p1', { amount: 1000 })).status).toBe(400)
+  })
+
+  /** PRD v2 gap G-08: any signed-in role, a lab technician included, could take money. */
+  it('refuses roles that do not take payments', async () => {
+    await signInAs('LAB_TECHNICIAN')
+    aBilling({ id: 'b1', patient_id: 'p1' })
+
+    expect((await create('p1', { patient_billing_id: 'b1', amount: 1000 })).status).toBe(403)
+    expect(db.count('patient_billing_installments')).toBe(0)
+  })
+
+  it('rejects an unknown payment kind', async () => {
+    await signInAs('RECEPTIONIST')
+    aBilling({ id: 'b1', patient_id: 'p1' })
+
+    expect((await create('p1', { patient_billing_id: 'b1', amount: 1000, kind: 'refund' })).status).toBe(400)
   })
 })
 
@@ -297,13 +334,20 @@ describe('POST /api/patients/[id]/installments — ledger side effect', () => {
     expect(installment.ledger_transaction_id).toBe(transaction.id)
   })
 
-  it('leaves the installment unlinked when no ledger entry is requested', async () => {
+  /**
+   * PRD v2 CR-12 / gap G-07. The ledger credit used to be optional
+   * (`create_ledger_entry`) although no screen ever offered the choice. A payment
+   * and its credit are one record now, whatever the request says.
+   */
+  it('always writes and links the ledger credit, even if create_ledger_entry is false', async () => {
     await signInAs('RECEPTIONIST')
-    aBilling({ id: 'b1' })
+    aBilling({ id: 'b1', patient_id: 'p1' })
 
-    await create('p1', { patient_billing_id: 'b1', amount: 5000 })
+    await create('p1', { patient_billing_id: 'b1', amount: 5000, create_ledger_entry: false })
 
-    expect(db.rows('patient_billing_installments')[0].ledger_transaction_id).toBeUndefined()
+    const transaction = db.rows('daily_ledger_transactions')[0]
+    expect(transaction).toMatchObject({ source: 'patient', amount: 5000 })
+    expect(db.rows('patient_billing_installments')[0].ledger_transaction_id).toBe(transaction.id)
   })
 
   it('falls back to a generic description if the patient cannot be found', async () => {
@@ -319,13 +363,21 @@ describe('POST /api/patients/[id]/installments — ledger side effect', () => {
     expect(db.rows('daily_ledger_transactions')[0].description).toBe('Patient installment payment #1')
   })
 
-  it('writes no ledger entry unless create_ledger_entry is set', async () => {
+  /**
+   * PRD v2 gap G-04. If the ledger write fails after the installment is saved,
+   * the installment is removed again — a payment is never counted in "Paid"
+   * without its credit.
+   */
+  it('removes the installment again when the ledger write fails', async () => {
     await signInAs('RECEPTIONIST')
-    aBilling({ id: 'b1' })
+    aBilling({ id: 'b1', patient_id: 'p1', patient_paid_amount: 0 })
+    db.failNext('daily_ledger_transactions')
 
-    await create('p1', { patient_billing_id: 'b1', amount: 5000 })
+    const { status } = await create('p1', { patient_billing_id: 'b1', amount: 5000 })
 
-    expect(db.count('daily_ledger_transactions')).toBe(0)
+    expect(status).toBe(500)
+    expect(db.count('patient_billing_installments')).toBe(0)
+    expect(paidAmount()).toBe(0)
   })
 
   /**
@@ -351,12 +403,16 @@ describe('POST /api/patients/[id]/installments — ledger side effect', () => {
     expect(db.count('patient_billing_installments')).toBe(0)
   })
 
-  /** Was BUGS.md #20 — this path skipped the UPI reference rule the ledger's own POST enforces. */
-  it('should require a reference number for a UPI payment', async () => {
+  /**
+   * Was BUGS.md #20 — this path skipped the UPI reference rule the ledger's own
+   * POST enforces. Now checked before anything is written (G-04): the payment
+   * used to be saved and counted first, then the ledger refused it.
+   */
+  it('should require a reference number for a UPI payment, and save nothing without one', async () => {
     await signInAs('RECEPTIONIST')
-    aBilling({ id: 'b1' })
+    aBilling({ id: 'b1', patient_id: 'p1', patient_paid_amount: 0 })
 
-    const { status } = await create('p1', {
+    const { status, body } = await create('p1', {
       patient_billing_id: 'b1',
       amount: 5000,
       payment_method: 'upi',
@@ -364,6 +420,51 @@ describe('POST /api/patients/[id]/installments — ledger side effect', () => {
     })
 
     expect(status).toBe(400)
+    expect(body.fieldErrors.transaction_reference).toBeTruthy()
+    expect(db.count('patient_billing_installments')).toBe(0)
+    expect(paidAmount()).toBe(0)
+  })
+})
+
+describe('POST /api/patients/[id]/installments — registration fee (PRD v2 CR-11)', () => {
+  it('books kind registration under the registration ledger source and marks the fee collected', async () => {
+    await signInAs('RECEPTIONIST', { userId: 'u-recep' })
+    aPatient({ id: 'p1', patient_id: '12/26', name: 'Ramesh Kumar' })
+    aBilling({ id: 'b1', patient_id: 'p1', registration_fee_status: 'pending' })
+
+    const { status } = await create('p1', { patient_billing_id: 'b1', amount: 100, kind: 'registration' })
+
+    expect(status).toBe(200)
+    expect(db.rows('patient_billing_installments')[0]).toMatchObject({ kind: 'registration', amount: 100 })
+    expect(db.rows('daily_ledger_transactions')[0]).toMatchObject({
+      source: 'registration',
+      transaction_type: 'credit',
+      amount: 100,
+      patient_id: 'p1',
+      created_by: 'u-recep',
+    })
+    expect(db.find('patient_billing', (r) => r.id === 'b1')!.registration_fee_status).toBe('collected')
+  })
+
+  it('refuses a second registration payment on the same bill', async () => {
+    await signInAs('RECEPTIONIST')
+    aBilling({ id: 'b1', patient_id: 'p1' })
+    anInstallment({ patient_billing_id: 'b1', kind: 'registration', amount: 100 })
+
+    const { status, body } = await create('p1', { patient_billing_id: 'b1', amount: 100, kind: 'registration' })
+
+    expect(status).toBe(409)
+    expect(body.code).toBe('REGISTRATION_ALREADY_PAID')
+    expect(db.count('patient_billing_installments')).toBe(1)
+  })
+
+  it('defaults to an ordinary payment', async () => {
+    await signInAs('RECEPTIONIST')
+    aBilling({ id: 'b1', patient_id: 'p1' })
+
+    await create('p1', { patient_billing_id: 'b1', amount: 100 })
+
+    expect(db.rows('patient_billing_installments')[0].kind).toBe('payment')
   })
 })
 
@@ -408,7 +509,12 @@ describe('PATCH /api/patients/[id]/installments/[installmentId]', () => {
     expect(paidAmount()).toBe(2500)
   })
 
-  it('blanks the fields the caller omits', async () => {
+  /**
+   * A partial edit. The old test here asserted the opposite ("blanks the fields
+   * the caller omits"), which was only ever true of the in-memory fake — real
+   * PostgREST drops undefined keys and leaves them as they were.
+   */
+  it('keeps the fields the caller omits', async () => {
     await signInAs('ADMIN')
     aBilling({ id: 'b1' })
     anInstallment({ id: 'i1', patient_billing_id: 'b1', remarks: 'Original note', transaction_reference: 'REF-1' })
@@ -416,8 +522,17 @@ describe('PATCH /api/patients/[id]/installments/[installmentId]', () => {
     await edit('p1', 'i1', { amount: 1000 })
 
     const stored = db.find('patient_billing_installments', (r) => r.id === 'i1')!
-    expect(stored.remarks).toBeUndefined()
-    expect(stored.transaction_reference).toBeUndefined()
+    expect(stored.remarks).toBe('Original note')
+    expect(stored.transaction_reference).toBe('REF-1')
+  })
+
+  it('rejects an edit to a zero amount', async () => {
+    await signInAs('ADMIN')
+    aBilling({ id: 'b1' })
+    anInstallment({ id: 'i1', patient_billing_id: 'b1', amount: 1000 })
+
+    expect((await edit('p1', 'i1', { amount: 0 })).status).toBe(400)
+    expect(db.find('patient_billing_installments', (r) => r.id === 'i1')!.amount).toBe(1000)
   })
 
   /**
@@ -480,20 +595,42 @@ describe('PATCH /api/patients/[id]/installments/[installmentId]', () => {
     expect(db.find('patient_billing_installments', (r) => r.id === 'i1')!.amount).toBe(2500)
   })
 
-  /**
-   * Known defect — see BUGS.md #21. The ledger credit written when the installment was
-   * created is never revisited, so the ledger and the billing record now disagree, and
-   * nothing links the two rows for a later repair.
-   */
-  it.fails('should keep the linked ledger entry in step with the edited amount', async () => {
+  /** Was BUGS.md #21. The payment and its credit move together (PRD v2 CR-12). */
+  it('keeps the linked ledger entry in step with the edit', async () => {
     await signInAs('ADMIN')
     aBilling({ id: 'b1', patient_id: 'p1' })
-    anInstallment({ id: 'i1', patient_billing_id: 'b1', amount: 1000, installment_number: 1 })
-    aTransaction({ id: 't1', source: 'patient', amount: 1000, patient_id: 'p1' })
+    aTransaction({ id: 't1', source: 'patient', amount: 1000, patient_id: 'p1', transaction_date: TODAY })
+    anInstallment({ id: 'i1', patient_billing_id: 'b1', amount: 1000, installment_number: 1, ledger_transaction_id: 't1' })
 
-    await edit('p1', 'i1', { amount: 2500 })
+    await edit('p1', 'i1', {
+      amount: 2500,
+      payment_method: 'upi',
+      transaction_reference: 'UPI-9',
+      payment_date: '2026-03-14',
+      remarks: 'corrected',
+    })
 
-    expect(Number(db.find('daily_ledger_transactions', (r) => r.id === 't1')!.amount)).toBe(2500)
+    expect(db.find('daily_ledger_transactions', (r) => r.id === 't1')).toMatchObject({
+      amount: 2500,
+      payment_mode: 'upi',
+      reference_number: 'UPI-9',
+      transaction_date: '2026-03-14',
+      notes: 'corrected',
+    })
+  })
+
+  /** A payment written before credits were mandatory gets one the first time it is edited. */
+  it('creates the missing ledger entry for a payment that never had one', async () => {
+    await signInAs('ADMIN')
+    aPatient({ id: 'p1', patient_id: '12/26', name: 'Ramesh Kumar' })
+    aBilling({ id: 'b1', patient_id: 'p1' })
+    anInstallment({ id: 'i1', patient_billing_id: 'b1', amount: 1000, installment_number: 1, ledger_transaction_id: null })
+
+    await edit('p1', 'i1', { amount: 1200 })
+
+    const transaction = db.rows('daily_ledger_transactions')[0]
+    expect(transaction).toMatchObject({ source: 'patient', amount: 1200, patient_id: 'p1', description: '12/26 Ramesh Kumar' })
+    expect(db.find('patient_billing_installments', (r) => r.id === 'i1')!.ledger_transaction_id).toBe(transaction.id)
   })
 })
 
@@ -563,15 +700,25 @@ describe('DELETE /api/patients/[id]/installments/[installmentId]', () => {
     expect(db.count('patient_billing_installments')).toBe(1)
   })
 
-  /** Known defect — see BUGS.md #21. Deleting the payment leaves the ledger credit behind. */
-  it.fails('should remove the linked ledger entry too', async () => {
+  /** Was BUGS.md #21. Deleting the payment deletes its credit (PRD v2 CR-12). */
+  it('removes the linked ledger entry too', async () => {
     await signInAs('ADMIN')
     aBilling({ id: 'b1', patient_id: 'p1' })
-    anInstallment({ id: 'i1', patient_billing_id: 'b1', amount: 1000, installment_number: 1 })
     aTransaction({ id: 't1', source: 'patient', amount: 1000, patient_id: 'p1' })
+    anInstallment({ id: 'i1', patient_billing_id: 'b1', amount: 1000, installment_number: 1, ledger_transaction_id: 't1' })
 
     await remove('p1', 'i1')
 
     expect(db.count('daily_ledger_transactions')).toBe(0)
+  })
+
+  it('puts the registration fee back to not collected when its payment is deleted', async () => {
+    await signInAs('ADMIN')
+    aBilling({ id: 'b1', patient_id: 'p1', registration_fee_status: 'collected' })
+    anInstallment({ id: 'i1', patient_billing_id: 'b1', amount: 100, kind: 'registration' })
+
+    await remove('p1', 'i1')
+
+    expect(db.find('patient_billing', (r) => r.id === 'b1')!.registration_fee_status).toBe('pending')
   })
 })

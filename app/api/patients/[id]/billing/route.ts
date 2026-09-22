@@ -4,6 +4,8 @@ import { verifyAuth } from '@/lib/auth/verify';
 import { recalculatePatientBilling } from '@/lib/recalculate-billing';
 import { validateBillingHeader } from '@/lib/billing/validate';
 import { firstError } from '@/lib/patients/validate';
+import { istToday } from '@/lib/dates/ist';
+import { getRegistrationFeeItem } from '@/lib/billing/registration-fee';
 
 export async function GET(
   request: NextRequest,
@@ -55,8 +57,31 @@ export async function GET(
       }
     }
 
+    // What the registration fee charged on each bill comes to, so the Payments
+    // tab can say "registration fee ₹X not collected" (PRD v2 Q-43) while
+    // registration_fee_status is 'pending'.
+    const billings = billingRecords ?? [];
+    const feeItem = billings.length > 0 ? await getRegistrationFeeItem(supabase) : null;
+    const feeByBill = new Map<string, number>();
+    if (feeItem) {
+      const { data: feeCharges } = await supabase
+        .from('patient_charges')
+        .select('patient_billing_id, amount, qty')
+        .eq('charge_item_id', feeItem.id)
+        .in('patient_billing_id', billings.map((b: any) => b.id));
+      for (const c of feeCharges ?? []) {
+        feeByBill.set(
+          c.patient_billing_id,
+          (feeByBill.get(c.patient_billing_id) ?? 0) + Number(c.amount) * (Number(c.qty) || 1)
+        );
+      }
+    }
+
     return NextResponse.json({
-      billings: billingRecords,
+      billings: billings.map((b: any) => ({
+        ...b,
+        registration_fee_amount: feeByBill.get(b.id) ?? 0,
+      })),
       referral: referralData,
     });
   } catch (error) {
@@ -90,8 +115,8 @@ export async function POST(
       .eq('id', patientId)
       .single();
 
-    const joinDate = patient?.date_of_join || new Date().toISOString().split('T')[0];
-    const monthYear = new Date(joinDate).toISOString().slice(0, 7);
+    const joinDate = patient?.date_of_join || istToday();
+    const monthYear = String(joinDate).slice(0, 7);
 
     const billingData = {
       patient_id: patientId,

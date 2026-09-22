@@ -25,6 +25,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requireBilling } from '@/lib/billing/authz'
 import { recalculatePatientBilling } from '@/lib/recalculate-billing'
 import { copyBillToCharge } from '@/lib/pharmacy/store'
+import { istToday } from '@/lib/dates/ist'
 
 export async function POST(
   request: NextRequest,
@@ -93,7 +94,7 @@ export async function POST(
         .eq('id', sheet.patient_id)
         .maybeSingle()
 
-      const joinedDate = patient?.date_of_join ?? new Date().toISOString().slice(0, 10)
+      const joinedDate = patient?.date_of_join ?? istToday()
 
       const { data: created, error: createError } = await supabase
         .from('patient_billing')
@@ -138,7 +139,7 @@ export async function POST(
           description: `From charge sheet ${sheet.sheet_no}`,
           amount: item.unit_price,
           qty: item.qty,
-          charge_date: item.service_date ?? new Date().toISOString().slice(0, 10),
+          charge_date: item.service_date ?? istToday(),
           charge_group_id: groupId,
           source_sheet_id: sheet.id,
           created_by: user.id,

@@ -12,6 +12,7 @@ import {
   type ChargeItemOption,
 } from '@/components/charges/charge-item-select'
 import { MAX_CHARGE_DAYS, MAX_HOURS_PER_DAY, isRangeBillingMode } from '@/lib/billing/constants'
+import { istToday } from '@/lib/dates/ist'
 
 /**
  * Placing a charge on a patient, and correcting one.
@@ -57,7 +58,7 @@ interface FormState {
   hours: string
 }
 
-const today = () => new Date().toISOString().slice(0, 10)
+const today = () => istToday()
 
 const BLANK: FormState = {
   charge_item_id: '',

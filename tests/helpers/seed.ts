@@ -143,6 +143,7 @@ export function aChargeItem(overrides: Row = {}): Row {
     default_price: 500,
     unit_label: null,
     is_active: true,
+    is_registration_fee: false,
     notes: null,
     created_by: null,
     updated_by: null,
@@ -231,6 +232,7 @@ export function anInstallment(overrides: Row = {}): Row {
     remarks: null,
     created_by: null,
     ledger_transaction_id: null,
+    kind: 'payment',
     ...overrides,
   })[0]
 }

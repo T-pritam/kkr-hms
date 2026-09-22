@@ -15,6 +15,7 @@ import {
   AlertCircle
 } from 'lucide-react'
 import { EmployeeShiftDetailsModal } from '@/components/ledger/employee-shift-details-modal'
+import { istToday } from '@/lib/dates/ist'
 
 interface EmployeeSummary {
   employeeId: string
@@ -52,7 +53,7 @@ export default function EmployeeShiftPage() {
 
   useEffect(() => {
     // Set default date to today
-    const today = new Date().toISOString().split('T')[0]
+    const today = istToday()
     setSelectedDate(today)
   }, [])
 
@@ -111,7 +112,7 @@ export default function EmployeeShiftPage() {
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              max={new Date().toISOString().split('T')[0]}
+              max={istToday()}
               className="w-full sm:w-auto"
             />
             <Button onClick={fetchEmployeeShiftSummary} variant="outline">

@@ -16,6 +16,7 @@ import {
 } from '@/lib/employees/constants'
 import type { FieldErrors } from '@/lib/case-sheet/types'
 import { AlertCircle, ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
+import { istToday } from '@/lib/dates/ist'
 
 /**
  * Adding and editing an employee.
@@ -62,11 +63,8 @@ interface FormState {
   bank_ifsc: string
 }
 
-const todayLocal = () => {
-  const now = new Date()
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
-}
+// The hospital's calendar date, not the browser's (lib/dates/ist.ts).
+const todayLocal = istToday
 
 const EMPTY: FormState = {
   employee_code: '',

@@ -9,6 +9,7 @@ import {
   setAuthCookies,
 } from '@/lib/auth/jwt'
 import { normaliseExpenseDetail, validateExpenseType } from '@/lib/finances/validate'
+import { istMonth } from '@/lib/dates/ist'
 
 // Helper function for token refresh
 async function refreshTokenIfNeeded() {
@@ -68,7 +69,7 @@ export async function GET(request: NextRequest) {
     }
 
     const searchParams = request.nextUrl.searchParams
-    const monthYear = searchParams.get('month_year') || new Date().toISOString().slice(0, 7)
+    const monthYear = searchParams.get('month_year') || istMonth()
 
     const supabase = await createClient()
 

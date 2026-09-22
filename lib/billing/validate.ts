@@ -21,6 +21,7 @@ import {
   MAX_HOURS_PER_DAY,
 } from './constants'
 import type { FieldErrors } from '@/lib/case-sheet/types'
+import { istToday } from '@/lib/dates/ist'
 
 const blank = (v: unknown) =>
   v === null || v === undefined || (typeof v === 'string' && v.trim() === '')
@@ -179,7 +180,7 @@ export function normalisePatientChargeBody(body: any): NormalisedCharge {
     // Today when omitted, as the old route did. A one-off charge is almost
     // always being entered on the day it happened, and the form always sends it.
     charge_date: blank(b.charge_date)
-      ? new Date().toISOString().slice(0, 10)
+      ? istToday()
       : String(b.charge_date).trim(),
     from_date: blank(b.from_date) ? null : String(b.from_date).trim(),
     to_date: blank(b.to_date) ? null : String(b.to_date).trim(),
