@@ -465,11 +465,28 @@ describe('GET /api/finances/summary', () => {
     expect((await summary({ month_year: THIS_MONTH })).body.expenses.doctor_fees).toBe(6500)
   })
 
-  it('should report pending receivables', async () => {
+  /** PRD v2 Q-32 / CR-15: charges are internal and nothing is owed against them. */
+  it('no longer reports pending receivables', async () => {
     await signInAs('ADMIN')
     aBilling({ month_year: THIS_MONTH, total_charges: 26500, patient_paid_amount: 7000 })
 
-    expect((await summary({ month_year: THIS_MONTH })).body.income.pending_receivables).toBe(19500)
+    expect((await summary({ month_year: THIS_MONTH })).body.income).not.toHaveProperty('pending_receivables')
+  })
+
+  /** PRD v2 CR-15: doctor fees and commission are always the patient's expense. */
+  it('counts doctor fees and commission even on a bill that says they were in a package', async () => {
+    await signInAs('ADMIN')
+    aBilling({
+      month_year: THIS_MONTH,
+      total_doctor_fees: 6500,
+      referral_commission_amount: 3000,
+      doctor_fees_included_in_package: true,
+      referral_commission_included_in_package: true,
+    })
+
+    const { body } = await summary({ month_year: THIS_MONTH })
+    expect(body.expenses.doctor_fees).toBe(6500)
+    expect(body.expenses.referral_commissions).toBe(3000)
   })
 
   /**

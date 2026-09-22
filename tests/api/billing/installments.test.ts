@@ -309,7 +309,7 @@ describe('POST /api/patients/[id]/installments — ledger side effect', () => {
       patient_id: 'p1',
       // Identifies the patient rather than the installment count — the
       // source/patient_id columns already say "patient, and an installment".
-      description: '12/26 Ramesh Kumar',
+      description: '12/26 Ramesh Kumar (Regular)',
       status: 'pending',
       created_by: 'u-recep',
     })
@@ -360,7 +360,7 @@ describe('POST /api/patients/[id]/installments — ledger side effect', () => {
       create_ledger_entry: true,
     })
 
-    expect(db.rows('daily_ledger_transactions')[0].description).toBe('Patient installment payment #1')
+    expect(db.rows('daily_ledger_transactions')[0].description).toBe('Patient installment payment #1 (Regular)')
   })
 
   /**
@@ -464,7 +464,7 @@ describe('POST /api/patients/[id]/installments — registration fee (PRD v2 CR-1
 
     await create('p1', { patient_billing_id: 'b1', amount: 100 })
 
-    expect(db.rows('patient_billing_installments')[0].kind).toBe('payment')
+    expect(db.rows('patient_billing_installments')[0].kind).toBe('regular')
   })
 })
 
@@ -629,7 +629,7 @@ describe('PATCH /api/patients/[id]/installments/[installmentId]', () => {
     await edit('p1', 'i1', { amount: 1200 })
 
     const transaction = db.rows('daily_ledger_transactions')[0]
-    expect(transaction).toMatchObject({ source: 'patient', amount: 1200, patient_id: 'p1', description: '12/26 Ramesh Kumar' })
+    expect(transaction).toMatchObject({ source: 'patient', amount: 1200, patient_id: 'p1', description: '12/26 Ramesh Kumar (Regular)' })
     expect(db.find('patient_billing_installments', (r) => r.id === 'i1')!.ledger_transaction_id).toBe(transaction.id)
   })
 })

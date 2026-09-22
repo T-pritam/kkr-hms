@@ -4,6 +4,10 @@
  * Every charge, settlement and billing mutation calls this. It is therefore the most
  * load-bearing function in the money path.
  *
+ * Since PRD v2 CR-15, charges are internal ("services used") and nothing is owed
+ * against them: total_charges is the charges alone, doctor fees are the patient's
+ * expense (total_doctor_fees), and the base package and its flags are gone.
+ *
  * `referral_commission_included_in_package` and `doctor_fees_included_in_package` now
  * exist on `patient_billing` (see BUGS.md #16, resolved by
  * supabase/migrations/20260805000001_patient_billing_package_flags.sql) — the function
@@ -76,26 +80,31 @@ describe('recalculatePatientBilling — intended totals', () => {
     expect(Number(billingRow().total_doctor_fees)).toBe(6500)
   })
 
-  it('adds base charge, charges, doctor fees and commission into total_charges', async () => {
+  it('makes total_charges the charges alone — no doctor fees, commission or base package', async () => {
     aBilling({ id: 'b1', base_charge: 20000, referral_commission_amount: 3000 })
     aCharge({ patient_billing_id: 'b1', amount: 1000, qty: 2 })
     aSettlement({ patient_billing_id: 'b1', total_amount: 6500 })
 
     await recalculatePatientBilling(supabase(), 'b1')
 
-    expect(Number(billingRow().total_charges)).toBe(31500)
+    expect(billingRow()).toMatchObject({
+      patient_charges_total: 2000,
+      total_charges: 2000,
+      total_doctor_fees: 6500,
+    })
   })
 
   it('ignores charges and settlements belonging to another billing cycle', async () => {
-    aBilling({ id: 'b1', base_charge: 500 })
-    aBilling({ id: 'b2', base_charge: 0 })
+    aBilling({ id: 'b1' })
+    aBilling({ id: 'b2' })
     aCharge({ patient_billing_id: 'b1', amount: 100, qty: 1 })
     aCharge({ patient_billing_id: 'b2', amount: 9999, qty: 1 })
     aSettlement({ patient_billing_id: 'b2', total_amount: 8888 })
 
     await recalculatePatientBilling(supabase(), 'b1')
 
-    expect(Number(billingRow().total_charges)).toBe(600)
+    expect(Number(billingRow().total_charges)).toBe(100)
+    expect(Number(billingRow().total_doctor_fees)).toBe(0)
   })
 
   it('clears stale totals when everything attached has been removed', async () => {
@@ -119,103 +128,34 @@ describe('recalculatePatientBilling — intended totals', () => {
   })
 
   it('treats a settlement with a null total_amount as zero', async () => {
-    aBilling({ id: 'b1', base_charge: 1000 })
+    aBilling({ id: 'b1' })
     aSettlement({ patient_billing_id: 'b1', total_amount: null })
 
     await recalculatePatientBilling(supabase(), 'b1')
 
-    expect(Number(billingRow().total_charges)).toBe(1000)
+    expect(Number(billingRow().total_doctor_fees)).toBe(0)
   })
 })
 
 /**
- * The package flags describe what a base charge already covers. With no base
- * charge there is no package, so neither flag can mean anything — and reading
- * them literally would be actively wrong in both directions.
- *
- * All four combinations of (base charge?) x (commission ticked?), because the
- * whole point is that the two axes interact.
+ * The base package and its "included in package" flags were removed (PRD v2
+ * CR-15, migration 20260923000001). Rows that still carry old values must not
+ * move the total.
  */
-describe('recalculatePatientBilling — no base charge', () => {
-  it('excludes the referral commission from the bill when there is no package', async () => {
-    // The commission is still owed to the referrer and still settled through
-    // Finance; it is simply not something this patient is charged for.
-    aBilling({
-      id: 'b1',
-      base_charge: 0,
-      referral_commission_amount: 2000,
-      referral_commission_included_in_package: false,
-    })
-    aCharge({ patient_billing_id: 'b1', amount: 12000, qty: 1 })
-    aSettlement({ patient_billing_id: 'b1', total_amount: 1500 })
-
-    await recalculatePatientBilling(supabase(), 'b1')
-
-    expect(Number(billingRow().total_charges)).toBe(13500)
-  })
-
-  it('adds the commission on top when there is a package and the tick is off', async () => {
+describe('recalculatePatientBilling — package leftovers are ignored', () => {
+  it('ignores a leftover base charge and both flags', async () => {
     aBilling({
       id: 'b1',
       base_charge: 20000,
-      referral_commission_amount: 2000,
+      referral_commission_amount: 3000,
       referral_commission_included_in_package: false,
-    })
-
-    await recalculatePatientBilling(supabase(), 'b1')
-
-    expect(Number(billingRow().total_charges)).toBe(22000)
-  })
-
-  it('leaves the commission out when the package already covers it', async () => {
-    aBilling({
-      id: 'b1',
-      base_charge: 20000,
-      referral_commission_amount: 2000,
-      referral_commission_included_in_package: true,
-    })
-
-    await recalculatePatientBilling(supabase(), 'b1')
-
-    expect(Number(billingRow().total_charges)).toBe(20000)
-  })
-
-  it('still bills doctor fees when the flag claims a package that does not exist', async () => {
-    // The dangerous direction: honouring this flag would drop the doctor's fees
-    // off the bill entirely, on the strength of a package worth zero.
-    aBilling({
-      id: 'b1',
-      base_charge: 0,
       doctor_fees_included_in_package: true,
     })
-    aSettlement({ patient_billing_id: 'b1', total_amount: 4500 })
+    aCharge({ patient_billing_id: 'b1', amount: 2000, qty: 1 })
+    aSettlement({ patient_billing_id: 'b1', total_amount: 3000 })
 
     await recalculatePatientBilling(supabase(), 'b1')
 
-    expect(Number(billingRow().total_charges)).toBe(4500)
-  })
-
-  it('honours the doctor-fees flag when there really is a package', async () => {
-    aBilling({
-      id: 'b1',
-      base_charge: 20000,
-      doctor_fees_included_in_package: true,
-    })
-    aSettlement({ patient_billing_id: 'b1', total_amount: 4500 })
-
-    await recalculatePatientBilling(supabase(), 'b1')
-
-    // total_doctor_fees is still recorded — it is only kept off the total.
-    expect(Number(billingRow().total_doctor_fees)).toBe(4500)
-    expect(Number(billingRow().total_charges)).toBe(20000)
-  })
-
-  it('bills nothing but the itemised charges when there is no package or referral', async () => {
-    aBilling({ id: 'b1', base_charge: 0, referral_commission_amount: 0 })
-    aCharge({ patient_billing_id: 'b1', amount: 500, qty: 3 })
-
-    await recalculatePatientBilling(supabase(), 'b1')
-
-    expect(Number(billingRow().total_charges)).toBe(1500)
+    expect(Number(billingRow().total_charges)).toBe(2000)
   })
 })

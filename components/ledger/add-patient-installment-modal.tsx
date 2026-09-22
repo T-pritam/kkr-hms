@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { DESK_PAYMENT_KINDS, PAYMENT_KIND_LABELS, type DeskPaymentKind } from '@/lib/billing/payment-labels';
 
 interface Patient {
   id: string;
@@ -47,6 +48,8 @@ export function AddPatientInstallmentModal({
     payment_method: 'cash',
     transaction_reference: '',
     remarks: '',
+    // The payment's label (PRD v2 CR-15): Regular / Advance / Discharge / Misc.
+    kind: 'regular' as DeskPaymentKind,
   });
 
   useEffect(() => {
@@ -200,6 +203,7 @@ export function AddPatientInstallmentModal({
             payment_method: formData.payment_method,
             transaction_reference: formData.transaction_reference,
             remarks: formData.remarks,
+            kind: formData.kind,
           }),
         }
       );
@@ -230,6 +234,7 @@ export function AddPatientInstallmentModal({
       payment_method: 'cash',
       transaction_reference: '',
       remarks: '',
+      kind: 'regular',
     });
     setSearchQuery('');
     setBilling(null);
@@ -368,6 +373,27 @@ export function AddPatientInstallmentModal({
                   }
                   className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
                 />
+              </div>
+
+              {/* What the payment is for */}
+              <div>
+                <label className="block text-sm font-medium text-muted mb-2">
+                  Payment for *
+                </label>
+                <select
+                  required
+                  value={formData.kind}
+                  onChange={(e) =>
+                    setFormData({ ...formData, kind: e.target.value as DeskPaymentKind })
+                  }
+                  className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
+                >
+                  {DESK_PAYMENT_KINDS.map((k) => (
+                    <option key={k} value={k}>
+                      {PAYMENT_KIND_LABELS[k]}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {/* Payment Method */}

@@ -177,7 +177,6 @@ describe('finance report generators', () => {
       total_charges: 12000,
       total_paid: 8000,
       total_commission: 3000,
-      pending_receivables: 19500,
       net_income: 8000,
       billing_count: 3,
     },
@@ -223,7 +222,7 @@ describe('finance report generators', () => {
   it('handles a month with no activity', async () => {
     const empty = {
       ...summary,
-      income: { total_charges: 0, total_paid: 0, total_commission: 0, pending_receivables: 0, net_income: 0, billing_count: 0 },
+      income: { total_charges: 0, total_paid: 0, total_commission: 0, net_income: 0, billing_count: 0 },
       expenses: { general_expenses: 0, salary_expenses: 0, ledger_expenses: 0, commission_expenses: 0, doctor_fees: 0, total_expenses: 0 },
       profit: { net_profit: 0, profit_margin: 0 },
     }

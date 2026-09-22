@@ -49,7 +49,6 @@ interface FinancialSummary {
     total_charges: number
     total_paid: number
     total_commission: number
-    pending_receivables: number
     net_income: number
     billing_count: number
   }
@@ -464,21 +463,6 @@ export default function FinancesPage() {
                 </CardContent>
               </Card>
 
-              {/* Pending Receivables */}
-              <Card className="bg-gradient-to-br from-primary-subtle to-primary-subtle/50 border-primary/20">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted flex items-center gap-2">
-                    <AlertCircle className="h-4 w-4 text-primary" />
-                    Pending Receivables
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-2xl sm:text-3xl font-bold text-foreground">
-                    {formatCurrency(summary.income.pending_receivables)}
-                  </p>
-                  <p className="text-xs sm:text-sm text-muted mt-1">To be collected</p>
-                </CardContent>
-              </Card>
             </div>
 
             {/* Income & Expense Breakdown */}
@@ -505,7 +489,8 @@ export default function FinancesPage() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="flex justify-between items-center pb-2 border-b border-border">
-                    <span className="text-muted">Total Charges</span>
+                    {/* Charges are internal — what patients used, not money owed (PRD v2 CR-15). */}
+                    <span className="text-muted">Services used (reference)</span>
                     <span className="font-semibold text-foreground">
                       {formatCurrency(summary.income.total_charges)}
                     </span>
@@ -514,12 +499,6 @@ export default function FinancesPage() {
                     <span className="text-muted">Amount Received</span>
                     <span className="font-semibold text-success-text">
                       {formatCurrency(summary.income.total_paid)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center pb-2 border-b border-border">
-                    <span className="text-muted">Pending Receivables</span>
-                    <span className="font-semibold text-warning-text">
-                      {formatCurrency(summary.income.pending_receivables)}
                     </span>
                   </div>
                   <div className="flex justify-between items-center pt-2">

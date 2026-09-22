@@ -97,36 +97,22 @@ export async function GET(request: NextRequest) {
     const totalCharges =
       monthCharges?.reduce((sum, c) => sum + (Number(c.amount) * (Number(c.qty) || 1)), 0) || 0
 
-    // Commission from billings that belong to this month (by month_year)
+    // Commission and doctor fees from billings that belong to this month (by
+    // month_year). Both are always the patient's expense, paid out of their money
+    // (PRD v2 CR-15) — the package that could "include" them is gone.
+    //
+    // There is no "pending receivables" any more: charges are internal and
+    // nothing is owed against them, so nothing is waiting to be collected (Q-32).
     const { data: patientBilling } = await supabase
       .from('patient_billing')
-      .select('referral_commission_amount, total_charges, patient_paid_amount, referral_commission_included_in_package, total_doctor_fees, doctor_fees_included_in_package')
+      .select('referral_commission_amount, total_doctor_fees')
       .eq('month_year', monthYear)
 
     const totalCommission =
-      patientBilling?.reduce(
-        (sum, b) => {
-          if (b.referral_commission_included_in_package) return sum
-          return sum + (Number(b.referral_commission_amount) || 0)
-        },
-        0
-      ) || 0
+      patientBilling?.reduce((sum, b) => sum + (Number(b.referral_commission_amount) || 0), 0) || 0
 
     const totalDoctorFees =
-      patientBilling?.reduce(
-        (sum, b) => {
-          if (b.doctor_fees_included_in_package) return sum
-          return sum + (Number(b.total_doctor_fees) || 0)
-        },
-        0
-      ) || 0
-
-    // Pending receivables: total_charges from all billings in this month minus what's been paid
-    const totalBillingCharges =
-      patientBilling?.reduce((sum, b) => sum + (Number(b.total_charges) || 0), 0) || 0
-    const totalBillingPaid =
-      patientBilling?.reduce((sum, b) => sum + (Number(b.patient_paid_amount) || 0), 0) || 0
-    const pendingReceivables = totalBillingCharges - totalBillingPaid
+      patientBilling?.reduce((sum, b) => sum + (Number(b.total_doctor_fees) || 0), 0) || 0
 
     // Billing count: billings from this month + those with transactions this month
     const billingCount = new Set([
@@ -251,7 +237,6 @@ export async function GET(request: NextRequest) {
           total_charges: totalCharges,
           total_paid: totalPaid,
           total_commission: totalCommission,
-          pending_receivables: pendingReceivables,
           net_income: netIncome,
           billing_count: patientBilling?.length || 0,
         },

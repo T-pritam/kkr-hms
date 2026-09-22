@@ -1,3 +1,4 @@
+import { PAYMENT_KIND_LABELS, type PaymentKind } from '@/lib/billing/payment-labels'
 import {
   M, ROW_H, C,
   mkDoc, hdr, boxRow, sec, thead, trow, ttotal, footers,
@@ -58,13 +59,23 @@ export async function fetchPatientPDFData(patientId: string, dateFilter?: { star
 }
 
 // ── Main PDF generator ─────────────────────────────────────────────────────────
+/**
+ * The patient's billing report.
+ *
+ * PRD v2 CR-15 / Q-35: this is the document a patient can be given, so it shows
+ * the services used and the payments received — and nothing else. Charges are
+ * internal knowledge with nothing owed against them, so there is no balance or
+ * "due"; the patient's total bill is what they paid. The doctor-fee and
+ * referral-commission figures (the hospital's expenses) and the retired base
+ * package are left out. What exactly the patient copy shows is still to be
+ * settled (Q-67).
+ */
 export function generatePatientPDF(data: PatientPDFData) {
-  const { patient, billing, charges, installments, settlements, referral } = data
+  const { patient, billing, charges, installments } = data
   const h = mkDoc()
 
-  const totalCharges = Number(billing?.total_charges || 0)
+  const servicesUsed = Number(billing?.patient_charges_total ?? billing?.total_charges ?? 0)
   const totalPaid    = Number(billing?.patient_paid_amount || 0)
-  const balance      = totalCharges - totalPaid
 
   // ── Header ─────────────────────────────────────────────────────────────────
   hdr(h,
@@ -74,10 +85,8 @@ export function generatePatientPDF(data: PatientPDFData) {
 
   // ── KPI boxes ──────────────────────────────────────────────────────────────
   boxRow(h, [
-    { label: 'Total Charges',  value: fmt(totalCharges),                      accent: C.blue },
-    { label: 'Total Paid',     value: fmt(totalPaid),                         accent: C.green },
-    { label: 'Balance Due',    value: fmt(balance),                           accent: balance > 0 ? C.red : C.teal },
-    { label: 'Doctor Fees',    value: fmt(billing?.total_doctor_fees || 0),   accent: C.purple },
+    { label: 'Services Used',          value: fmt(servicesUsed), accent: C.blue },
+    { label: 'Total Bill (Payments)',  value: fmt(totalPaid),    accent: C.green },
   ])
 
   // ── Patient info + Billing side by side ────────────────────────────────────
@@ -109,15 +118,9 @@ export function generatePatientPDF(data: PatientPDFData) {
   ]
 
   const billingInfo: [string, string][] = [
-    ['Base Charge (Package)',  fmt(billing?.base_charge || 0)],
-    ['Other Charges',          fmt(billing?.patient_charges_total || 0)],
-    ['Doctor Fees',            fmt(billing?.total_doctor_fees || 0)],
-    ['Dr. Fees in Package',    billing?.doctor_fees_included_in_package ? 'Yes' : 'No'],
-    ['Referral Commission',    fmt(billing?.referral_commission_amount || 0)],
-    ['Commission in Package',  billing?.referral_commission_included_in_package ? 'Yes' : 'No'],
-    ['Total Charges',          fmt(totalCharges)],
-    ['Total Paid',             fmt(totalPaid)],
-    ['Balance Due',            fmt(balance)],
+    ['Services Used',          fmt(servicesUsed)],
+    ['Payments Received',      String(installments.length)],
+    ['Total Bill (Payments)',  fmt(totalPaid)],
   ]
 
   const startY = h.y
@@ -157,73 +160,8 @@ export function generatePatientPDF(data: PatientPDFData) {
 
   h.y = Math.max(leftEndY, h.y) + 4
 
-  // ── Referral info ──────────────────────────────────────────────────────────
-  if (referral || billing?.referral_commission_amount > 0) {
-    sec(h, 'REFERRAL INFORMATION', C.teal)
-    const refInfo: [string, string][] = [
-      ['Name',        referral?.name || '—'],
-      ['Phone',       referral?.phone || '—'],
-      ['Commission',  fmt(billing?.referral_commission_amount || 0)],
-      ['In Package',  billing?.referral_commission_included_in_package ? 'Yes' : 'No'],
-      ['Settlement',  billing?.referral_settled ? 'Settled' : 'Pending'],
-    ]
-    refInfo.forEach(([lbl, val], i) => {
-      if (i % 2 === 0) {
-        h.doc.setFillColor(...C.tblAlt)
-        h.doc.rect(M, h.y, h.cw, ROW_H, 'F')
-      }
-      h.bold(7.5); h.doc.setTextColor(...C.muted)
-      h.doc.text(lbl, M + 3, h.y + 5)
-      h.normal(7.5); h.doc.setTextColor(...C.dark)
-      h.doc.text(val, M + 48, h.y + 5)
-      h.doc.setDrawColor(...C.border); h.doc.setLineWidth(0.2)
-      h.doc.line(M, h.y + ROW_H, M + h.cw, h.y + ROW_H)
-      h.y += ROW_H
-    })
-    h.y += 4
-  }
-
-  // ── Doctor visits table ────────────────────────────────────────────────────
-  sec(h, 'DOCTOR VISITS & SETTLEMENTS', C.purple)
-
-  if (settlements.length > 0) {
-    // Purpose replaces Specialty: a doctor now has one row per purpose, and
-    // without it two rows of the same doctor read as a duplicate on the bill.
-    // The speciality is on the registry; what the visit was for is not.
-    thead(h, [
-      { label: '#',        x: M + 2 },
-      { label: 'Doctor',   x: M + 11 },
-      { label: 'Purpose',  x: M + 82 },
-      { label: 'Visits',   x: M + 148, align: 'center' },
-      { label: 'Per Visit',x: M + 170, align: 'right' },
-      { label: 'Total',    x: M + 205, align: 'right' },
-      { label: 'Status',   x: M + 228 },
-    ])
-    let drTotal = 0
-    settlements.forEach((s: any, i: number) => {
-      drTotal += Number(s.total_amount || 0)
-      trow(h, [
-        { text: String(i + 1),                                       x: M + 2 },
-        { text: (s.doctor?.name || '—').substring(0, 30),            x: M + 11 },
-        { text: (s.visit_purpose?.name || '—').substring(0, 26),     x: M + 82 },
-        { text: String(s.visit_count || 0),                          x: M + 148, align: 'center' },
-        { text: fmt(s.amount_per_visit),                             x: M + 170, align: 'right' },
-        { text: fmt(s.total_amount),                                 x: M + 205, align: 'right' },
-        { text: s.settled ? 'Settled' : 'Pending',                   x: M + 228 },
-      ], i)
-    })
-    ttotal(h, [
-      { text: 'TOTAL DOCTOR FEES', x: M + 11 },
-      { text: fmt(drTotal),        x: M + 205, align: 'right' },
-    ])
-  } else {
-    h.normal(8); h.doc.setTextColor(...C.muted)
-    h.doc.text('No doctor visits recorded.', M + 4, h.y + 5)
-    h.doc.setTextColor(...C.dark); h.y += 10
-  }
-
   // ── Charges table ──────────────────────────────────────────────────────────
-  sec(h, 'CHARGES', C.orange)
+  sec(h, 'SERVICES USED', C.orange)
 
   if (charges.length > 0) {
     thead(h, [
@@ -251,7 +189,7 @@ export function generatePatientPDF(data: PatientPDFData) {
       ], i)
     })
     ttotal(h, [
-      { text: 'TOTAL CHARGES',  x: M + 11 },
+      { text: 'TOTAL SERVICES USED', x: M + 11 },
       { text: fmt(chargesTotal), x: RE, align: 'right' },
     ])
   } else {
@@ -268,7 +206,8 @@ export function generatePatientPDF(data: PatientPDFData) {
       { label: '#',          x: M + 2 },
       { label: 'Date',       x: M + 11 },
       { label: 'Amount',     x: M + 60, align: 'right' },
-      { label: 'Method',     x: M + 90 },
+      { label: 'Type',       x: M + 70 },
+      { label: 'Method',     x: M + 100 },
       { label: 'Reference',  x: M + 140 },
       { label: 'Remarks',    x: M + 210 },
     ])
@@ -280,13 +219,14 @@ export function generatePatientPDF(data: PatientPDFData) {
         { text: String(inst.installment_number || i + 1),           x: M + 2 },
         { text: fmtDate(inst.payment_date),                         x: M + 11 },
         { text: fmt(amount),                                        x: M + 60, align: 'right' },
-        { text: (inst.payment_method || 'cash').replace('_', ' '), x: M + 90 },
+        { text: PAYMENT_KIND_LABELS[inst.kind as PaymentKind] ?? 'Regular', x: M + 70 },
+        { text: (inst.payment_method || 'cash').replace('_', ' '), x: M + 100 },
         { text: (inst.transaction_reference || '—').substring(0, 28), x: M + 140 },
         { text: (inst.remarks || '—').substring(0, 28),             x: M + 210 },
       ], i)
     })
     ttotal(h, [
-      { text: 'TOTAL PAID', x: M + 11 },
+      { text: 'TOTAL BILL (PAYMENTS)', x: M + 11 },
       { text: fmt(payTotal), x: M + 60, align: 'right' },
     ])
   } else {
@@ -296,30 +236,22 @@ export function generatePatientPDF(data: PatientPDFData) {
   }
 
   // ── Summary banner ─────────────────────────────────────────────────────────
+  // No balance: nothing is owed against the services used (PRD v2 CR-15).
   h.checkPage(20)
-  const bw3 = (h.cw - 8) / 3
+  const bw2 = (h.cw - 4) / 2
   const sumY = h.y
-  // Charges
   h.doc.setFillColor(...C.blue)
-  h.doc.rect(M, sumY, bw3, 14, 'F')
+  h.doc.rect(M, sumY, bw2, 14, 'F')
   h.bold(7); h.doc.setTextColor(186, 211, 245)
-  h.doc.text('TOTAL CHARGES', M + bw3 / 2, sumY + 5, { align: 'center' })
+  h.doc.text('SERVICES USED', M + bw2 / 2, sumY + 5, { align: 'center' })
   h.bold(10.5); h.doc.setTextColor(...C.white)
-  h.doc.text(fmt(totalCharges), M + bw3 / 2, sumY + 11, { align: 'center' })
-  // Paid
+  h.doc.text(fmt(servicesUsed), M + bw2 / 2, sumY + 11, { align: 'center' })
   h.doc.setFillColor(...C.green)
-  h.doc.rect(M + bw3 + 4, sumY, bw3, 14, 'F')
+  h.doc.rect(M + bw2 + 4, sumY, bw2, 14, 'F')
   h.bold(7); h.doc.setTextColor(186, 211, 245)
-  h.doc.text('TOTAL PAID', M + bw3 + 4 + bw3 / 2, sumY + 5, { align: 'center' })
+  h.doc.text('TOTAL BILL (PAYMENTS)', M + bw2 + 4 + bw2 / 2, sumY + 5, { align: 'center' })
   h.bold(10.5); h.doc.setTextColor(...C.white)
-  h.doc.text(fmt(totalPaid), M + bw3 + 4 + bw3 / 2, sumY + 11, { align: 'center' })
-  // Balance
-  h.doc.setFillColor(...(balance > 0 ? C.red : C.teal))
-  h.doc.rect(M + (bw3 + 4) * 2, sumY, bw3, 14, 'F')
-  h.bold(7); h.doc.setTextColor(186, 211, 245)
-  h.doc.text('BALANCE DUE', M + (bw3 + 4) * 2 + bw3 / 2, sumY + 5, { align: 'center' })
-  h.bold(10.5); h.doc.setTextColor(...C.white)
-  h.doc.text(fmt(balance), M + (bw3 + 4) * 2 + bw3 / 2, sumY + 11, { align: 'center' })
+  h.doc.text(fmt(totalPaid), M + bw2 + 4 + bw2 / 2, sumY + 11, { align: 'center' })
   h.doc.setTextColor(...C.dark)
   h.y = sumY + 18
 

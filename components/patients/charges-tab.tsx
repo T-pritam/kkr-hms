@@ -11,6 +11,8 @@ import { PharmacyBillAddModal } from '@/components/patients/pharmacy-bill-add-mo
 import { PharmacyBillViewModal } from '@/components/patients/pharmacy-bill-view-modal';
 import { PatientChargesDownloadModal } from '@/components/patients/patient-charges-download-modal';
 import { CHARGE_CATEGORY_LABELS } from '@/lib/billing/constants';
+import { hasBillingCapability } from '@/lib/billing/authz';
+import { Modal } from '@/components/ui/modal';
 import { groupByCharge, groupByDate } from '@/lib/billing/group-charges';
 import {
   printPatientCharges, type PatientChargesPatient,
@@ -69,6 +71,11 @@ export default function ChargesTab({ patientId, billing, onCreateBilling, patien
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  /** The lab/medicine charge being collected separately, and how (PRD v2 CR-15). */
+  const [collecting, setCollecting] = useState<any | null>(null);
+  const [collectMode, setCollectMode] = useState('cash');
+  const [collectRef, setCollectRef] = useState('');
+  const [collectBusy, setCollectBusy] = useState(false);
 
   const fetchCharges = useCallback(async () => {
     if (!billing) return;
@@ -99,6 +106,64 @@ export default function ChargesTab({ patientId, billing, onCreateBilling, patien
 
   const canModify = (charge: any) =>
     user?.role === 'ADMIN' || user?.id === charge.created_by;
+
+  /** Whoever takes payments decides lab/medicine charges (PRD v2 Q-65). */
+  const canDecide = hasBillingCapability(user?.role, 'payment:write');
+
+  /**
+   * Lab and medicine: collect separately now, mark included, or send back to
+   * "to collect". Collecting adds a payment tagged Lab/Medicine (Payments tab
+   * and Ledger).
+   */
+  const decide = async (charge: any, body: Record<string, unknown>) => {
+    setError('');
+    setNotice('');
+    try {
+      const response = await fetch(`/api/patients/${patientId}/charges/${charge.id}/lab-medicine`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result?.error || 'Failed to update the charge');
+      setNotice(
+        result.status === 'collected'
+          ? `Collected as payment #${result.installment_number}`
+          : result.status === 'included'
+            ? 'Marked as included in the patient’s payments'
+            : 'Marked to collect separately',
+      );
+      await fetchCharges();
+      return true;
+    } catch (err: any) {
+      setError(err.message);
+      return false;
+    }
+  };
+
+  const openCollect = (charge: any) => {
+    setCollecting(charge);
+    setCollectMode('cash');
+    setCollectRef('');
+  };
+
+  const confirmCollect = async () => {
+    if (!collecting) return;
+    setCollectBusy(true);
+    const ok = await decide(collecting, {
+      action: 'collect',
+      payment_method: collectMode,
+      transaction_reference: collectRef || null,
+    });
+    setCollectBusy(false);
+    if (ok) setCollecting(null);
+  };
+
+  const labMedicineProps = {
+    canDecide,
+    onCollect: openCollect,
+    onDecide: (charge: any, action: 'include' | 'to_collect') => void decide(charge, { action }),
+  };
 
   const handleDelete = async (charge: any, wholeGroup: boolean) => {
     const count = wholeGroup
@@ -285,6 +350,7 @@ export default function ChargesTab({ patientId, billing, onCreateBilling, patien
                         onView={setPharmacyViewBillId}
                         onEdit={openEdit}
                         onDelete={(c) => handleDelete(c, false)}
+                        {...labMedicineProps}
                       />
                     ))}
                   </div>
@@ -294,7 +360,8 @@ export default function ChargesTab({ patientId, billing, onCreateBilling, patien
           })}
 
           <div className="bg-surface-inset rounded-lg p-4 flex justify-between items-center">
-            <span className="text-sm font-semibold text-foreground">Total Charges</span>
+            {/* Charges are internal — what the patient used, not money owed (PRD v2 CR-15). */}
+            <span className="text-sm font-semibold text-foreground">Total services used</span>
             <span className="text-sm font-semibold text-foreground">{money(total)}</span>
           </div>
         </div>
@@ -371,6 +438,7 @@ export default function ChargesTab({ patientId, billing, onCreateBilling, patien
                         onView={setPharmacyViewBillId}
                         onEdit={openEdit}
                         onDelete={(c) => handleDelete(c, false)}
+                        {...labMedicineProps}
                       />
                     ))}
                   </div>
@@ -380,7 +448,8 @@ export default function ChargesTab({ patientId, billing, onCreateBilling, patien
           })}
 
           <div className="bg-surface-inset rounded-lg p-4 flex justify-between items-center">
-            <span className="text-sm font-semibold text-foreground">Total Charges</span>
+            {/* Charges are internal — what the patient used, not money owed (PRD v2 CR-15). */}
+            <span className="text-sm font-semibold text-foreground">Total services used</span>
             <span className="text-sm font-semibold text-foreground">{money(total)}</span>
           </div>
         </div>
@@ -417,6 +486,57 @@ export default function ChargesTab({ patientId, billing, onCreateBilling, patien
         />
       )}
 
+      <Modal
+        isOpen={Boolean(collecting)}
+        onClose={() => setCollecting(null)}
+        title="Collect separately"
+        description={
+          collecting
+            ? `${collecting.charge_type} — ${money(lineTotal(collecting))}. Adds a payment tagged ${
+                collecting.charge_item?.category === 'lab' ? 'Lab' : 'Medicine'
+              }, shown in the Ledger.`
+            : undefined
+        }
+        footer={
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setCollecting(null)} disabled={collectBusy}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void confirmCollect()}
+              disabled={collectBusy || (collectMode === 'upi' && !collectRef.trim())}
+            >
+              Collect {collecting ? money(lineTotal(collecting)) : ''}
+            </Button>
+          </div>
+        }
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <select
+            aria-label="Payment mode"
+            value={collectMode}
+            onChange={(e) => setCollectMode(e.target.value)}
+            className="w-full bg-surface-inset text-foreground rounded-lg px-3 py-2 border border-border"
+          >
+            {['cash', 'upi', 'card', 'bank_transfer', 'cheque'].map((m) => (
+              <option key={m} value={m}>
+                {m.replace('_', ' ').toUpperCase()}
+              </option>
+            ))}
+          </select>
+          {collectMode === 'upi' && (
+            <input
+              aria-label="UPI reference"
+              placeholder="UPI reference *"
+              value={collectRef}
+              onChange={(e) => setCollectRef(e.target.value)}
+              className="w-full bg-surface-inset text-foreground rounded-lg px-3 py-2 border border-border"
+            />
+          )}
+        </div>
+      </Modal>
+
       <PatientChargesDownloadModal
         isOpen={downloadOpen}
         onClose={() => setDownloadOpen(false)}
@@ -446,6 +566,9 @@ function ChargeDetailRow({
   onView,
   onEdit,
   onDelete,
+  canDecide,
+  onCollect,
+  onDecide,
 }: {
   charge: any;
   canModify: boolean;
@@ -454,8 +577,15 @@ function ChargeDetailRow({
   onView: (billId: string) => void;
   onEdit: (charge: any) => void;
   onDelete: (charge: any) => void;
+  canDecide: boolean;
+  onCollect: (charge: any) => void;
+  onDecide: (charge: any, action: 'include' | 'to_collect') => void;
 }) {
   const bill = charge.pharmacy_bill;
+  // Lab / medicine: included in the payments, to collect, or collected (CR-15).
+  const status: string | null = charge.lab_medicine_status ?? null;
+  const collected = status === 'collected';
+  const payment = charge.collected_installment;
 
   return (
     <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 px-4 py-3">
@@ -463,6 +593,17 @@ function ChargeDetailRow({
         <p className="text-sm font-medium text-foreground">
           {charge.charge_type}
           {bill && <Badge variant="info" className="ml-2">Pharmacy</Badge>}
+          {status === 'included' && (
+            <Badge variant="success" className="ml-2">Included in payments</Badge>
+          )}
+          {status === 'to_collect' && (
+            <Badge variant="warning" className="ml-2">To collect</Badge>
+          )}
+          {collected && (
+            <Badge variant="accent" className="ml-2">
+              Collected{payment?.installment_number ? ` · payment #${payment.installment_number}` : ''}
+            </Badge>
+          )}
           {charge.billing_mode === 'per_day' && (
             <span className="ml-2 text-xs text-muted">per day</span>
           )}
@@ -499,7 +640,22 @@ function ChargeDetailRow({
           <span className="font-medium text-foreground">{money(lineTotal(charge))}</span>
         </span>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {canDecide && status === 'to_collect' && (
+            <>
+              <button onClick={() => onCollect(charge)} className="text-success-text text-sm font-medium">
+                Collect now
+              </button>
+              <button onClick={() => onDecide(charge, 'include')} className="text-muted text-sm font-medium">
+                Included
+              </button>
+            </>
+          )}
+          {canDecide && status === 'included' && (
+            <button onClick={() => onDecide(charge, 'to_collect')} className="text-muted text-sm font-medium">
+              Collect separately
+            </button>
+          )}
           {bill && (
             <button
               onClick={() => onView(bill.id)}
@@ -513,7 +669,8 @@ function ChargeDetailRow({
               Edit
             </button>
           )}
-          {canModify && (
+          {/* A collected charge goes only after its payment (Payments tab). */}
+          {canModify && !collected && (
             <button
               onClick={() => onDelete(charge)}
               className="text-destructive text-sm font-medium"

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { requireBilling } from '@/lib/billing/authz';
 import { assertLedgerDateOpen } from '@/lib/ledger/closure';
-import { deletePayment, updatePayment, validatePayment } from '@/lib/billing/payments';
+import { deletePayment, isDeskPaymentKind, updatePayment, validatePayment } from '@/lib/billing/payments';
 
 /**
  * Refuses when the ledger credit this payment created has already been
@@ -90,7 +90,11 @@ export async function DELETE(
 
 /**
  * Edit a payment — and its ledger credit with it (PRD v2 CR-12). Fields the
- * caller leaves out keep their stored values. A payment's kind never changes.
+ * caller leaves out keep their stored values.
+ *
+ * The label can move between the desk's own four (regular, advance, discharge,
+ * misc). A lab, medicine or registration payment keeps its label, and a lab or
+ * medicine payment keeps its amount — that comes from the charge it collected.
  */
 export async function PATCH(
   request: NextRequest,
@@ -117,6 +121,33 @@ export async function PATCH(
 
     if (user.role !== 'ADMIN' && installment.created_by !== user.id) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const storedKind = installment.kind === 'payment' || !installment.kind ? 'regular' : installment.kind;
+    let kind = storedKind;
+    if (body.kind !== undefined && body.kind !== storedKind) {
+      if (!isDeskPaymentKind(storedKind) || !isDeskPaymentKind(body.kind)) {
+        return NextResponse.json(
+          { error: 'This payment\'s label is set by the app and cannot be changed' },
+          { status: 400 }
+        );
+      }
+      kind = body.kind;
+    }
+
+    if (
+      (storedKind === 'lab' || storedKind === 'medicine') &&
+      body.amount !== undefined &&
+      Number(body.amount) !== Number(installment.amount)
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            'This payment collected a lab/medicine charge, so its amount comes from that charge. Delete the payment and collect the charge again.',
+          code: 'LAB_MEDICINE_AMOUNT_FIXED',
+        },
+        { status: 400 }
+      );
     }
 
     const check = validatePayment(body, {
@@ -150,6 +181,7 @@ export async function PATCH(
       installment,
       input: check.value,
       userId: user.id,
+      kind,
     });
 
     if (!result.ok) {

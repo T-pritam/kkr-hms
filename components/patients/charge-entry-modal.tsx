@@ -15,6 +15,26 @@ import { MAX_CHARGE_DAYS, MAX_HOURS_PER_DAY, isRangeBillingMode } from '@/lib/bi
 import { istToday } from '@/lib/dates/ist'
 
 /**
+ * Lab and medicine charges ask one more thing when saved (PRD v2 CR-15): is it
+ * collected from the patient separately now — the default, "excluded" — or
+ * already included in their regular payments? Collected separately, it becomes
+ * its own payment tagged Lab or Medicine and shows in the Ledger.
+ */
+const LAB_MEDICINE_LABEL: Record<string, string> = { lab: 'Lab', pharmacy: 'Medicine' }
+
+interface LabMedicineAnswer {
+  choice: 'collect' | 'included'
+  payment_method: string
+  transaction_reference: string
+}
+
+const DEFAULT_ANSWER: LabMedicineAnswer = {
+  choice: 'collect',
+  payment_method: 'cash',
+  transaction_reference: '',
+}
+
+/**
  * Placing a charge on a patient, and correcting one.
  *
  * The form has three shapes, and which one it shows is decided by the catalogue
@@ -148,12 +168,15 @@ export function ChargeEntryModal({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  /** The save-time question for lab/medicine; null until Save is first pressed. */
+  const [labAnswer, setLabAnswer] = useState<LabMedicineAnswer | null>(null)
 
   useEffect(() => {
     if (!isOpen) return
     setError('')
     setFieldErrors({})
     setItem(null)
+    setLabAnswer(null)
 
     setForm(
       charge
@@ -215,6 +238,8 @@ export function ChargeEntryModal({
 
   const chooseItem = (chosen: ChargeItemOption | null) => {
     setItem(chosen)
+    // A different charge may not be lab/medicine, or may be the other one.
+    setLabAnswer(null)
     // Only per_day asks for a range now; per_hour uses the single charge date.
     const ranged = chosen?.billing_mode === 'per_day'
     setForm(prev => ({
@@ -246,8 +271,18 @@ export function ChargeEntryModal({
     return { total: rate * qty * (days || 0), rate, qty }
   }, [form.amount, form.qty, days, isHourly, hours, showQty])
 
+  /** Lab or Medicine when the chosen catalogue entry is one — only on create. */
+  const labMedicine = mode === 'create' ? LAB_MEDICINE_LABEL[item?.category ?? ''] : undefined
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // First Save on a lab/medicine charge asks the question instead of saving.
+    if (labMedicine && !labAnswer) {
+      setLabAnswer(DEFAULT_ANSWER)
+      return
+    }
+
     setSaving(true)
     setError('')
     setFieldErrors({})
@@ -276,6 +311,17 @@ export function ChargeEntryModal({
           payload.hour_lines = [{ charge_date: form.charge_date, hours }]
         } else {
           payload.charge_date = form.charge_date
+        }
+
+        if (labMedicine && labAnswer) {
+          payload.lab_medicine =
+            labAnswer.choice === 'included'
+              ? { choice: 'included' }
+              : {
+                  choice: 'collect',
+                  payment_method: labAnswer.payment_method,
+                  transaction_reference: labAnswer.transaction_reference || null,
+                }
         }
       } else {
         payload.charge_date = form.charge_date
@@ -314,11 +360,25 @@ export function ChargeEntryModal({
     : Boolean(form.charge_date)
   // A day holds at most 24 hours, and billing zero of them bills nothing at all.
   const hoursReady = !isHourly || (hours >= 1 && hours <= MAX_HOURS_PER_DAY)
+  // Collecting by UPI needs its reference, as every UPI payment does.
+  const labAnswerReady =
+    !labAnswer ||
+    labAnswer.choice === 'included' ||
+    labAnswer.payment_method !== 'upi' ||
+    labAnswer.transaction_reference.trim() !== ''
   const canSave =
-    named && Number(form.amount) > 0 && datesReady && hoursReady && (mode === 'edit' || !!billingId)
+    named &&
+    Number(form.amount) > 0 &&
+    datesReady &&
+    hoursReady &&
+    labAnswerReady &&
+    (mode === 'edit' || !!billingId)
 
   const submitLabel = () => {
     if (mode === 'edit') return 'Save changes'
+    if (labMedicine && labAnswer) {
+      return labAnswer.choice === 'collect' ? `Save & collect ${money(preview.total)}` : 'Save (included)'
+    }
     if (isRange && days > 1) return `Add ${days} lines`
     return 'Add charge'
   }
@@ -349,6 +409,66 @@ export function ChargeEntryModal({
       }
     >
       <form id="charge-entry-form" onSubmit={handleSubmit} className="space-y-4">
+        {labMedicine && labAnswer && (
+          <div className="rounded-lg border border-warning/40 bg-warning-subtle p-4 space-y-3" role="alert">
+            <p className="text-sm font-medium text-foreground">
+              {labMedicine} {money(preview.total)} — how is it paid?
+            </p>
+            <label className="flex items-start gap-2 text-sm text-foreground">
+              <input
+                type="radio"
+                name="lab-medicine-choice"
+                checked={labAnswer.choice === 'collect'}
+                onChange={() => setLabAnswer({ ...labAnswer, choice: 'collect' })}
+                className="mt-1"
+              />
+              <span>
+                <strong>Collect separately now</strong> (excluded)
+                <span className="block text-xs text-muted">
+                  Adds a payment tagged {labMedicine} for this patient, shown in the Ledger.
+                </span>
+              </span>
+            </label>
+            {labAnswer.choice === 'collect' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pl-6">
+                <select
+                  aria-label="Payment mode"
+                  value={labAnswer.payment_method}
+                  onChange={e => setLabAnswer({ ...labAnswer, payment_method: e.target.value })}
+                  className="w-full bg-surface-inset text-foreground rounded-lg px-3 py-2 border border-border"
+                >
+                  {['cash', 'upi', 'card', 'bank_transfer', 'cheque'].map(m => (
+                    <option key={m} value={m}>
+                      {m.replace('_', ' ').toUpperCase()}
+                    </option>
+                  ))}
+                </select>
+                {labAnswer.payment_method === 'upi' && (
+                  <Input
+                    aria-label="UPI reference"
+                    placeholder="UPI reference *"
+                    value={labAnswer.transaction_reference}
+                    onChange={e => setLabAnswer({ ...labAnswer, transaction_reference: e.target.value })}
+                  />
+                )}
+              </div>
+            )}
+            <label className="flex items-start gap-2 text-sm text-foreground">
+              <input
+                type="radio"
+                name="lab-medicine-choice"
+                checked={labAnswer.choice === 'included'}
+                onChange={() => setLabAnswer({ ...labAnswer, choice: 'included' })}
+                className="mt-1"
+              />
+              <span>
+                <strong>Included in the patient&apos;s payments</strong>
+                <span className="block text-xs text-muted">Nothing is collected separately.</span>
+              </span>
+            </label>
+          </div>
+        )}
+
         {error && (
           <div className="flex items-start gap-2 p-3 rounded-md bg-destructive-subtle border border-destructive/30 text-destructive text-sm">
             <AlertCircle size={16} className="mt-0.5 shrink-0" />

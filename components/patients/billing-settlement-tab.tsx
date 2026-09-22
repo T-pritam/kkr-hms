@@ -27,6 +27,10 @@ function RecordedStamp({ record }: { record: any }) {
   );
 }
 
+/** Rupees with paise — money was cut off with parseInt here before (G-19). */
+const inr = (value: unknown) =>
+  `₹${(Number(value) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
 export default function BillingSettlementTab({
   patientId,
   billing,
@@ -545,19 +549,19 @@ export default function BillingSettlementTab({
                 className="flex items-center gap-2 bg-info hover:bg-info-hover text-foreground px-4 py-2 rounded-lg transition-colors"
               >
                 <Plus className="h-4 w-4" />
-                Set Charges
+                Referral & Commission
               </button>
             )}
           </div>
         </div>
 
+        {/*
+          PRD v2 CR-15: charges are internal (services used) and nothing is owed
+          against them, so there is no Base Charge and no Balance. The patient's
+          total bill is what they paid; doctor fees and the referral commission
+          are the patient's expenses, paid out of that money. Paise shown (Q-50).
+        */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-surface-inset rounded-lg p-4">
-            <p className="text-muted text-sm">Base Charge</p>
-            <p className="text-2xl font-bold text-foreground">
-              ₹{parseInt(billing.base_charge || 0)}
-            </p>
-          </div>
           <div className="bg-surface-inset rounded-lg p-4">
             <p className="text-muted text-sm">Referral Person</p>
             <p className="text-2xl text-foreground">
@@ -572,51 +576,30 @@ export default function BillingSettlementTab({
           <div className="bg-surface-inset rounded-lg p-4">
             <p className="text-muted text-sm">Referral Commission</p>
             <p className="text-2xl font-bold text-foreground">
-              ₹{parseInt(billing.referral_commission_amount || 0)}
+              {inr(billing.referral_commission_amount)}
             </p>
-            {/*
-              Say why the number is not in Total Charges. With no package the
-              commission is owed to the referrer, not by the patient, and an
-              unexplained figure that does not add up reads as a broken total.
-            */}
             {Number(billing.referral_commission_amount || 0) > 0 && (
-              <p className="text-xs text-muted mt-1">
-                {Number(billing.base_charge || 0) > 0
-                  ? billing.referral_commission_included_in_package
-                    ? 'Included in the base charge'
-                    : 'Billed on top of the base charge'
-                  : 'Payable to referrer — not billed to the patient'}
-              </p>
+              <p className="text-xs text-muted mt-1">An expense of this patient — paid out of their payments</p>
             )}
           </div>
           <div className="bg-surface-inset rounded-lg p-4">
             <p className="text-muted text-sm">Doctor Fees</p>
             <p className="text-2xl font-bold text-foreground">
-              ₹{parseInt(billing.total_doctor_fees || 0)}
+              {inr(billing.total_doctor_fees)}
             </p>
+            <p className="text-xs text-muted mt-1">An expense of this patient</p>
           </div>
           <div className="bg-surface-inset rounded-lg p-4">
-            <p className="text-muted text-sm">Other Charges</p>
+            <p className="text-muted text-sm">Services Used</p>
             <p className="text-2xl font-bold text-foreground">
-              ₹{parseInt(billing.patient_charges_total || 0)}
+              {inr(billing.patient_charges_total)}
             </p>
-          </div>
-          <div className="bg-info rounded-lg p-4">
-            <p className="text-info-foreground text-sm">Total Charges</p>
-            <p className="text-2xl font-bold text-foreground">
-              ₹{parseInt(billing.total_charges || 0)}
-            </p>
+            <p className="text-xs text-muted mt-1">For reference — not billed against</p>
           </div>
           <div className="bg-success rounded-lg p-4">
-            <p className="text-success-foreground text-sm">Total Paid</p>
+            <p className="text-success-foreground text-sm">Total Bill (payments received)</p>
             <p className="text-2xl font-bold text-foreground">
-              ₹{parseInt(billing.patient_paid_amount || 0)}
-            </p>
-          </div>
-          <div className="bg-primary rounded-lg p-4">
-            <p className="text-primary-foreground text-sm">Balance</p>
-            <p className="text-2xl font-bold text-foreground">
-              ₹{parseInt(billing.total_charges || 0) - parseInt(billing.patient_paid_amount || 0)}
+              {inr(billing.patient_paid_amount)}
             </p>
           </div>
         </div>

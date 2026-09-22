@@ -224,7 +224,7 @@ export const SCHEMA: Record<string, string[]> = {
     // 20260918000001 — links the payment to the ledger credit it created, so
     // "has this been verified" can be asked directly instead of guessed at.
     'ledger_transaction_id',
-    // 20260922000001 — 'payment' or 'registration'
+    // 20260922000001, widened by 20260923000001 — the payment's label
     'kind',
   ],
 
@@ -248,6 +248,8 @@ export const SCHEMA: Record<string, string[]> = {
     'created_at', 'created_by', 'updated_at', 'updated_by', 'qty',
     // 20260808000002 — catalogue link, and the group a date range's rows share
     'charge_item_id', 'billing_mode', 'charge_group_id', 'source_sheet_id',
+    // 20260923000001 — lab / medicine: included, to collect, or collected (and by which payment)
+    'lab_medicine_status', 'collected_installment_id',
   ],
 
   patient_consultations: [

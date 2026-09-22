@@ -118,9 +118,10 @@ export async function POST(
     const joinDate = patient?.date_of_join || istToday();
     const monthYear = String(joinDate).slice(0, 7);
 
+    // No base package any more (PRD v2 CR-15): a new bill never carries one.
     const billingData = {
       patient_id: patientId,
-      base_charge: body.base_charge || 0,
+      base_charge: 0,
       referral_commission_amount: body.referral_commission_amount || 0,
       joined_date: joinDate,
       month_year: monthYear,
@@ -181,7 +182,7 @@ export async function PATCH(
 
     const { data: target } = await supabase
       .from('patient_billing')
-      .select('id, patient_id, base_charge')
+      .select('id, patient_id')
       .eq('id', body.billing_id)
       .maybeSingle();
 
@@ -225,30 +226,8 @@ export async function PATCH(
     if (body.referral_settlement_date !== undefined) {
       updateData.referral_settlement_date = body.referral_settlement_date;
     }
-    if (body.base_charge !== undefined) {
-      updateData.base_charge = body.base_charge;
-    }
-    if (body.referral_commission_included_in_package !== undefined) {
-      updateData.referral_commission_included_in_package = body.referral_commission_included_in_package;
-    }
-    if (body.doctor_fees_included_in_package !== undefined) {
-      updateData.doctor_fees_included_in_package = body.doctor_fees_included_in_package;
-    }
-
-    // A base charge is no longer required, and neither is a referral. But the two
-    // "included in package" flags only mean something when there *is* a package —
-    // with no base charge there is nothing for anything to be included in. Force
-    // them off rather than storing a row that contradicts the formula in
-    // lib/recalculate-billing.ts, which ignores them in that state anyway.
-    const effectiveBaseCharge =
-      updateData.base_charge !== undefined
-        ? Number(updateData.base_charge) || 0
-        : Number(target.base_charge) || 0;
-
-    if (effectiveBaseCharge <= 0) {
-      updateData.referral_commission_included_in_package = false;
-      updateData.doctor_fees_included_in_package = false;
-    }
+    // The base package and its two "included in package" flags are gone (PRD v2
+    // CR-15). Older clients may still send them; they are ignored, not stored.
 
     const { data, error } = await supabase
       .from('patient_billing')
@@ -270,7 +249,7 @@ export async function PATCH(
     }
 
     // Recalculate billing totals if relevant fields changed
-    if (body.base_charge !== undefined || body.referral_commission_amount !== undefined || body.referral_commission_included_in_package !== undefined || body.doctor_fees_included_in_package !== undefined) {
+    if (body.referral_commission_amount !== undefined) {
       await recalculatePatientBilling(supabase, body.billing_id);
     }
 

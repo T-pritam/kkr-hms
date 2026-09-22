@@ -448,7 +448,8 @@ export function validateBillingHeader(
 ): { ok: true } | { ok: false; errors: FieldErrors } {
   const errors: FieldErrors = {}
 
-  for (const field of ['base_charge', 'referral_commission_amount'] as const) {
+  // base_charge is no longer written (PRD v2 CR-15), so only the commission is checked.
+  for (const field of ['referral_commission_amount'] as const) {
     if (!(field in values) || blank(values[field])) continue
     const n = money(values[field])
     if (n === null) errors[field] = `${label(field)} must be a number`

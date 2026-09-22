@@ -258,8 +258,7 @@ export async function generateIncomePDF(monthYear: string, summary: any) {
 
   boxRow(h, [
     { label: 'Amount Received',     value: fmt(summary.income.total_paid),          accent: C.green },
-    { label: 'Total Charges',       value: fmt(summary.income.total_charges),       accent: C.navy },
-    { label: 'Pending Receivables', value: fmt(summary.income.pending_receivables), accent: C.orange },
+    { label: 'Services Used (ref.)', value: fmt(summary.income.total_charges),      accent: C.navy },
     { label: 'Billing Records',     value: String(summary.income.billing_count),   accent: C.teal },
   ])
 
@@ -387,7 +386,6 @@ export async function generateMonthlyFinancePDF(monthYear: string, summary: any)
   ])
 
   boxRow(h, [
-    { label: 'Pending Receivables',      value: fmt(summary.income.pending_receivables),         accent: C.orange },
     { label: 'Pending Dr. Settlements',  value: fmt(summary.pending_settlements.doctor_fees),    accent: C.purple },
     { label: 'Pending Ref. Commissions', value: fmt(summary.pending_settlements.referral_commissions || 0), accent: C.blue },
     { label: 'Billing Records',          value: String(summary.income.billing_count),            accent: C.navy },
@@ -431,9 +429,8 @@ export async function generateMonthlyFinancePDF(monthYear: string, summary: any)
   h.y += TH_H
 
   const incRows = [
-    ['Total Charges',       fmt(summary.income.total_charges)],
-    ['Amount Received',     fmt(summary.income.total_paid)],
-    ['Pending Receivables', fmt(summary.income.pending_receivables)],
+    ['Services Used (ref.)', fmt(summary.income.total_charges)],
+    ['Amount Received',      fmt(summary.income.total_paid)],
   ]
   const expRows = [
     ['Salary',      fmt(summary.expenses.salary_expenses)],

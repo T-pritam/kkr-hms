@@ -15,6 +15,9 @@ export const CHARGE_CATEGORIES = [
   'procedure',
   'registration',
   'pharmacy',
+  // The outside lab (PRD v2 CR-15). A lab charge, like a Pharmacy one, is
+  // either included in the patient's payments or collected separately.
+  'lab',
   'other',
 ] as const
 
@@ -27,6 +30,7 @@ export const CHARGE_CATEGORY_LABELS: Record<ChargeCategory, string> = {
   procedure: 'Procedures',
   registration: 'Registration & Admin',
   pharmacy: 'Pharmacy',
+  lab: 'Lab',
   other: 'Other',
 }
 

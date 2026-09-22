@@ -6,6 +6,12 @@ import { Button } from '@/components/ui/button';
 import { useUser } from '@/hooks/use-user';
 import { UpdatedStamp } from '@/components/ui/updated-stamp';
 import { istToday } from '@/lib/dates/ist';
+import {
+  DESK_PAYMENT_KINDS,
+  PAYMENT_KIND_LABELS,
+  isDeskPaymentKind,
+  type PaymentKind,
+} from '@/lib/billing/payment-labels';
 
 interface PaymentsTabProps {
   patientId: string;
@@ -20,15 +26,16 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   // Every payment is written with its ledger entry now (PRD v2 CR-12), so there
-  // is no "create ledger entry" switch. `kind` is 'registration' only when the
-  // form was opened from "Collect now".
+  // is no "create ledger entry" switch. `kind` is the payment's label (CR-15):
+  // the desk picks Regular / Advance / Discharge / Misc; it is 'registration'
+  // only when the form was opened from "Collect now".
   const EMPTY_FORM = {
     amount: '',
     payment_date: istToday(),
     payment_method: 'cash',
     transaction_reference: '',
     remarks: '',
-    kind: 'payment' as 'payment' | 'registration',
+    kind: 'regular' as PaymentKind,
   };
   const [formData, setFormData] = useState(EMPTY_FORM);
 
@@ -62,7 +69,8 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
         const response = await fetch(`/api/patients/${patientId}/installments/${editingId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+          // Only the desk's own labels can be changed; the app sets the rest.
+          body: JSON.stringify(isDeskPaymentKind(kind) ? { ...payload, kind } : payload),
         });
 
         if (response.ok) {
@@ -109,7 +117,7 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
       payment_method: installment.payment_method,
       transaction_reference: installment.transaction_reference || '',
       remarks: installment.remarks || '',
-      kind: installment.kind === 'registration' ? 'registration' : 'payment',
+      kind: (installment.kind === 'payment' || !installment.kind ? 'regular' : installment.kind) as PaymentKind,
     });
     setShowForm(true);
   };
@@ -187,12 +195,23 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
     Number(billing.registration_fee_amount) > 0 &&
     !installments.some((i) => i.kind === 'registration');
 
-  const kindBadge = (installment: any) =>
-    installment.kind === 'registration' ? (
-      <span className="ml-2 text-xs font-medium px-2 py-0.5 rounded bg-accent-subtle text-accent">
-        Registration fee
+  // Every payment shows its label (PRD v2 CR-15, the client's point 5).
+  const kindBadge = (installment: any) => {
+    const kind = (installment.kind === 'payment' || !installment.kind ? 'regular' : installment.kind) as PaymentKind;
+    const appSet = !isDeskPaymentKind(kind);
+    return (
+      <span
+        className={`ml-2 text-xs font-medium px-2 py-0.5 rounded ${
+          appSet ? 'bg-accent-subtle text-accent' : 'bg-surface-inset text-muted'
+        }`}
+      >
+        {PAYMENT_KIND_LABELS[kind] ?? kind}
       </span>
-    ) : null;
+    );
+  };
+
+  // A lab/medicine payment's amount comes from its charge (the API refuses a change).
+  const amountLocked = !!editingId && (formData.kind === 'lab' || formData.kind === 'medicine');
 
   return (
     <div className="space-y-6">
@@ -250,6 +269,8 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
                 min="0.01"
                 placeholder="0.00"
                 value={formData.amount}
+                disabled={amountLocked}
+                title={amountLocked ? 'Set by the lab/medicine charge this payment collected' : undefined}
                 onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
                 className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
               />
@@ -266,6 +287,30 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
                 onChange={(e) => setFormData({ ...formData, payment_date: e.target.value })}
                 className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-muted mb-2">
+                Payment for *
+              </label>
+              {isDeskPaymentKind(formData.kind) ? (
+                <select
+                  required
+                  value={formData.kind}
+                  onChange={(e) => setFormData({ ...formData, kind: e.target.value as PaymentKind })}
+                  className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
+                >
+                  {DESK_PAYMENT_KINDS.map((k) => (
+                    <option key={k} value={k}>
+                      {PAYMENT_KIND_LABELS[k]}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <p className="px-4 py-2 text-sm text-foreground">
+                  {PAYMENT_KIND_LABELS[formData.kind]} <span className="text-muted">(set by the app)</span>
+                </p>
+              )}
             </div>
 
             <div>

@@ -31,13 +31,15 @@ import {
 } from '@/lib/billing/validate'
 import { firstError } from '@/lib/patients/validate'
 import { recalculatePatientBilling } from '@/lib/recalculate-billing'
+import { collectCharges, labMedicineKind, parseLabMedicineChoice } from '@/lib/billing/lab-medicine'
 
 const LIST_SELECT = `
   *,
   users!created_by(id, username),
   updated_by_user:users!updated_by(id, username),
   charge_item:charge_items(id, name, category, billing_mode, unit_label),
-  pharmacy_bill:pharmacy_bills!patient_charge_id(id, entry_number, entry_date, external_bill_id, invoice_url)
+  pharmacy_bill:pharmacy_bills!patient_charge_id(id, entry_number, entry_date, external_bill_id, invoice_url),
+  collected_installment:patient_billing_installments!collected_installment_id(id, installment_number, payment_method, payment_date)
 `
 
 /**
@@ -129,12 +131,12 @@ export async function POST(
     // The catalogue is the authority on how a service is billed. Taking
     // billing_mode from the request would let a caller bill a per-day service as
     // a single row by lying about the mode.
-    let chargeItem: { id: string; name: string; billing_mode: string } | null = null
+    let chargeItem: { id: string; name: string; billing_mode: string; category: string } | null = null
 
     if (values.charge_item_id) {
       const { data } = await supabase
         .from('charge_items')
-        .select('id, name, billing_mode')
+        .select('id, name, billing_mode, category')
         .eq('id', values.charge_item_id)
         .maybeSingle()
 
@@ -162,6 +164,21 @@ export async function POST(
       )
     }
 
+    /**
+     * Lab and medicine ask one more thing, at the moment of saving (PRD v2 CR-15):
+     * collected separately now (the default — excluded), or included in the
+     * patient's payments. Checked here, before anything is written.
+     */
+    const labMedicine = labMedicineKind(chargeItem?.category)
+    const choice = labMedicine ? parseLabMedicineChoice(body.lab_medicine) : null
+    if (choice && !choice.ok) {
+      return NextResponse.json(
+        { error: choice.error, fieldErrors: choice.fieldErrors },
+        { status: choice.status }
+      )
+    }
+    const decision = choice?.ok ? choice.value : null
+
     const shared = {
       patient_id: patientId,
       patient_billing_id: billingId,
@@ -173,6 +190,12 @@ export async function POST(
       qty: values.qty,
       created_by: user.id,
       updated_by: user.id,
+      // Excluded until collected; nothing is collected unless the desk said so.
+      lab_medicine_status: labMedicine
+        ? decision?.choice === 'included'
+          ? 'included'
+          : 'to_collect'
+        : null,
     }
 
     // One row per day for either range mode, one row otherwise. The group id ties
@@ -214,6 +237,35 @@ export async function POST(
 
     if (error) throw error
 
+    // "Collect separately now": the payment, labelled Lab or Medicine, is taken
+    // for everything this entry added. If it is refused, the charge goes too —
+    // the desk answered one question, and gets one outcome.
+    let collected: { installment_id: string; installment_number: number } | null = null
+    if (labMedicine && decision?.choice === 'collect' && decision.payment) {
+      const result = await collectCharges(supabase, {
+        patientId,
+        billingId,
+        kind: labMedicine,
+        rows: data ?? [],
+        chargeName: values.charge_type ?? chargeItem?.name ?? 'Charge',
+        payment: decision.payment,
+        userId: user.id,
+      })
+
+      if (!result.ok) {
+        await supabase.from('patient_charges').delete().in('id', (data ?? []).map((r: any) => r.id))
+        await recalculatePatientBilling(supabase, billingId)
+        return NextResponse.json(
+          { error: result.error, fieldErrors: result.fieldErrors, ...(result.code ? { code: result.code } : {}) },
+          { status: result.status }
+        )
+      }
+      collected = {
+        installment_id: result.installment.id,
+        installment_number: result.installment.installment_number,
+      }
+    }
+
     await recalculatePatientBilling(supabase, billingId)
 
     return NextResponse.json(
@@ -227,6 +279,15 @@ export async function POST(
         charges: data,
         // The old route returned the bare row and the tab read `.id` off it.
         charge: Array.isArray(data) ? data[0] : data,
+        ...(labMedicine
+          ? {
+              lab_medicine: {
+                kind: labMedicine,
+                status: collected ? 'collected' : decision?.choice === 'included' ? 'included' : 'to_collect',
+                ...(collected ?? {}),
+              },
+            }
+          : {}),
       },
       { status: 201 }
     )

@@ -32,20 +32,24 @@ import { istToday } from '@/lib/dates/ist'
 
 type Db = { from: (table: string) => any }
 
-/** What a payment is for. `registration` is the registration fee (CR-11). */
-export const PAYMENT_KINDS = ['payment', 'registration'] as const
-export type PaymentKind = (typeof PAYMENT_KINDS)[number]
+import {
+  PAYMENT_KIND_LABELS,
+  PAYMENT_KINDS,
+  type PaymentKind,
+} from '@/lib/billing/payment-labels'
 
-export const PAYMENT_KIND_LABELS: Record<PaymentKind, string> = {
-  payment: 'Payment',
-  registration: 'Registration fee',
-}
+export {
+  DESK_PAYMENT_KINDS,
+  PAYMENT_KIND_LABELS,
+  PAYMENT_KINDS,
+  isDeskPaymentKind,
+  type DeskPaymentKind,
+  type PaymentKind,
+} from '@/lib/billing/payment-labels'
 
 /** The ledger source each kind is booked under. */
-const LEDGER_SOURCE: Record<PaymentKind, 'patient' | 'registration'> = {
-  payment: 'patient',
-  registration: 'registration',
-}
+const LEDGER_SOURCE = (kind: PaymentKind): 'patient' | 'registration' =>
+  kind === 'registration' ? 'registration' : 'patient'
 
 /** Ledger sources that belong to a patient payment and are edited through it. */
 export const PAYMENT_LEDGER_SOURCES = ['patient', 'registration'] as const
@@ -168,15 +172,26 @@ export async function resumPaid(db: Db, billingId: string): Promise<number> {
   return total
 }
 
-async function ledgerDescription(db: Db, patientId: string, installmentNumber: number): Promise<string> {
+/**
+ * What the Ledger shows for a payment: the patient and, in brackets, the label —
+ * "12/26 Ramesh Kumar (Advance)" (the client's point 5).
+ */
+async function ledgerDescription(
+  db: Db,
+  patientId: string,
+  installmentNumber: number,
+  kind: PaymentKind,
+): Promise<string> {
   const { data: patient } = await db
     .from('patients')
     .select('patient_id, name')
     .eq('id', patientId)
     .maybeSingle()
 
-  // Which patient, not which installment: the row already says source = patient.
-  return patient ? `${patient.patient_id} ${patient.name}` : `Patient installment payment #${installmentNumber}`
+  const label = PAYMENT_KIND_LABELS[kind] ?? PAYMENT_KIND_LABELS.regular
+  return patient
+    ? `${patient.patient_id} ${patient.name} (${label})`
+    : `Patient installment payment #${installmentNumber} (${label})`
 }
 
 export interface RecordPaymentArgs {
@@ -192,7 +207,7 @@ export interface RecordPaymentArgs {
  */
 export async function recordPayment(
   db: Db,
-  { patientId, billingId, kind = 'payment', input, userId }: RecordPaymentArgs,
+  { patientId, billingId, kind = 'regular', input, userId }: RecordPaymentArgs,
 ): Promise<{ ok: true; installment: any; ledger: any } | Refusal> {
   if (!billingId) {
     return { ok: false, status: 400, error: 'patient_billing_id is required' }
@@ -272,12 +287,12 @@ export async function recordPayment(
     {
       transaction_date: input.payment_date,
       transaction_type: 'credit',
-      source: LEDGER_SOURCE[kind],
+      source: LEDGER_SOURCE(kind),
       amount: input.amount,
       payment_mode: input.payment_method,
       reference_number: input.transaction_reference,
       patient_id: patientId,
-      description: await ledgerDescription(db, patientId, installmentNumber),
+      description: await ledgerDescription(db, patientId, installmentNumber, kind),
       notes: input.remarks,
       created_by: userId,
     },
@@ -319,14 +334,36 @@ export async function recordPayment(
  */
 export async function updatePayment(
   db: Db,
-  { installment, input, userId }: { installment: any; input: PaymentInput; userId: string },
+  {
+    installment,
+    input,
+    userId,
+    kind,
+  }: { installment: any; input: PaymentInput; userId: string; kind?: PaymentKind },
 ): Promise<{ ok: true; installment: any } | Refusal> {
-  const ledgerFields = {
+  const currentKind: PaymentKind = (PAYMENT_KINDS as readonly string[]).includes(installment.kind)
+    ? installment.kind
+    : 'regular'
+  const nextKind: PaymentKind = kind ?? currentKind
+
+  const { data: billing } = await db
+    .from('patient_billing')
+    .select('patient_id')
+    .eq('id', installment.patient_billing_id)
+    .maybeSingle()
+  const patientId: string | null = billing?.patient_id ?? null
+  const installmentNumber = Number(installment.installment_number) || 1
+
+  const ledgerFields: Record<string, unknown> = {
     transaction_date: input.payment_date,
     amount: input.amount,
     payment_mode: input.payment_method,
     reference_number: input.transaction_reference,
     notes: input.remarks,
+  }
+  // A relabelled payment reads its new label in the Ledger too.
+  if (nextKind !== currentKind && patientId) {
+    ledgerFields.description = await ledgerDescription(db, patientId, installmentNumber, nextKind)
   }
 
   let ledgerId: string | null = installment.ledger_transaction_id ?? null
@@ -346,27 +383,20 @@ export async function updatePayment(
   if (!ledgerId) {
     // A payment with no ledger entry — written before entries were mandatory, or
     // orphaned by an old ledger-screen delete. Editing it heals the pair.
-    const { data: billing } = await db
-      .from('patient_billing')
-      .select('patient_id')
-      .eq('id', installment.patient_billing_id)
-      .maybeSingle()
-
-    const patientId = billing?.patient_id ?? null
-    const kind: PaymentKind = installment.kind === 'registration' ? 'registration' : 'payment'
-
     const created = await createLedgerTransaction(
       db,
       {
-        ...ledgerFields,
+        transaction_date: input.payment_date,
+        amount: input.amount,
+        notes: input.remarks,
         transaction_type: 'credit',
-        source: LEDGER_SOURCE[kind],
+        source: LEDGER_SOURCE(nextKind),
         payment_mode: input.payment_method,
         reference_number: input.transaction_reference,
         patient_id: patientId,
         description: patientId
-          ? await ledgerDescription(db, patientId, Number(installment.installment_number) || 1)
-          : `Patient installment payment #${installment.installment_number ?? 1}`,
+          ? await ledgerDescription(db, patientId, installmentNumber, nextKind)
+          : `Patient installment payment #${installmentNumber} (${PAYMENT_KIND_LABELS[nextKind]})`,
         created_by: userId,
       },
       { allowedSources: [...PAYMENT_LEDGER_SOURCES] },
@@ -386,6 +416,7 @@ export async function updatePayment(
       payment_method: input.payment_method,
       transaction_reference: input.transaction_reference,
       remarks: input.remarks,
+      kind: nextKind,
       ledger_transaction_id: ledgerId,
       updated_by: userId,
     })
@@ -419,6 +450,17 @@ export async function updatePayment(
  * The caller has already checked ownership, closed days and verification.
  */
 export async function deletePayment(db: Db, installment: any): Promise<void> {
+  // A lab/medicine charge this payment collected goes back to "to collect". Done
+  // before the delete: the charge must never say "collected" by a payment that
+  // no longer exists (pc_collected_has_payment_check refuses it).
+  if (installment.kind === 'lab' || installment.kind === 'medicine') {
+    const { error: chargeError } = await db
+      .from('patient_charges')
+      .update({ lab_medicine_status: 'to_collect', collected_installment_id: null })
+      .eq('collected_installment_id', installment.id)
+    if (chargeError) throw chargeError
+  }
+
   const { error } = await db.from('patient_billing_installments').delete().eq('id', installment.id)
   if (error) throw error
 

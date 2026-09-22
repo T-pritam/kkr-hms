@@ -26,6 +26,7 @@ import { requireBilling } from '@/lib/billing/authz'
 import { recalculatePatientBilling } from '@/lib/recalculate-billing'
 import { copyBillToCharge } from '@/lib/pharmacy/store'
 import { istToday } from '@/lib/dates/ist'
+import { labMedicineKind } from '@/lib/billing/lab-medicine'
 
 export async function POST(
   request: NextRequest,
@@ -122,6 +123,19 @@ export async function POST(
     // charges tab and can be removed in one go if it was forwarded in error.
     const groupId = crypto.randomUUID()
 
+    // Lab and medicine lines arrive "to collect" — excluded, the client's default
+    // (PRD v2 CR-15). A forward is one click for many lines, so nobody is asked
+    // per line here; the Charges tab offers Collect now / Included on each.
+    const itemIds = [...new Set(items.map((item: any) => item.charge_item_id).filter(Boolean))]
+    const categoryById = new Map<string, string>()
+    if (itemIds.length > 0) {
+      const { data: catalogue } = await supabase
+        .from('charge_items')
+        .select('id, category')
+        .in('id', itemIds)
+      for (const row of catalogue ?? []) categoryById.set(row.id, row.category)
+    }
+
     const { data: charges, error: chargeError } = await supabase
       .from('patient_charges')
       .insert(
@@ -142,6 +156,7 @@ export async function POST(
           charge_date: item.service_date ?? istToday(),
           charge_group_id: groupId,
           source_sheet_id: sheet.id,
+          lab_medicine_status: labMedicineKind(categoryById.get(item.charge_item_id)) ? 'to_collect' : null,
           created_by: user.id,
           updated_by: user.id,
         }))

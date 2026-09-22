@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { requireBilling } from '@/lib/billing/authz';
 import { getActiveClosures } from '@/lib/ledger/closure';
-import { PAYMENT_KINDS, recordPayment, validatePayment, type PaymentKind } from '@/lib/billing/payments';
+import { isDeskPaymentKind, recordPayment, validatePayment, type PaymentKind } from '@/lib/billing/payments';
 
 export async function GET(
   request: NextRequest,
@@ -67,8 +67,12 @@ export async function GET(
 
 /**
  * Record a payment. It always comes with its ledger credit — the two are one
- * record now (lib/billing/payments.ts, PRD v2 CR-12). `kind: 'registration'`
- * records the registration fee (CR-11), at most once per bill.
+ * record now (lib/billing/payments.ts, PRD v2 CR-12).
+ *
+ * `kind` is the payment's label: regular (default), advance, discharge or misc,
+ * as the desk picks; or registration, for the registration fee's "Collect now"
+ * (CR-11, at most once per bill). Lab and medicine payments are made from the
+ * charge they belong to (…/charges/[chargeId]/lab-medicine), never here.
  */
 export async function POST(
   request: NextRequest,
@@ -82,11 +86,19 @@ export async function POST(
     const { id: patientId } = await params;
     const body = await request.json().catch(() => ({}));
 
-    const kind: PaymentKind = body.kind === undefined || body.kind === null || body.kind === ''
-      ? 'payment'
-      : body.kind;
-    if (!(PAYMENT_KINDS as readonly string[]).includes(kind)) {
-      return NextResponse.json({ error: 'Invalid payment kind' }, { status: 400 });
+    // 'payment' is what clients sent before labels existed; it means regular.
+    const kind: PaymentKind =
+      body.kind === undefined || body.kind === null || body.kind === '' || body.kind === 'payment'
+        ? 'regular'
+        : body.kind;
+    if (kind === 'lab' || kind === 'medicine') {
+      return NextResponse.json(
+        { error: 'Lab and medicine payments are collected from their charge on the Charges tab' },
+        { status: 400 }
+      );
+    }
+    if (!isDeskPaymentKind(kind) && kind !== 'registration') {
+      return NextResponse.json({ error: 'Invalid payment label' }, { status: 400 });
     }
 
     // Every rule that can be checked without writing is checked here, before

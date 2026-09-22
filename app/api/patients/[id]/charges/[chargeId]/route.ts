@@ -36,7 +36,7 @@ export async function PATCH(
 
     const { data: charge } = await supabase
       .from('patient_charges')
-      .select('created_by, patient_billing_id')
+      .select('created_by, patient_billing_id, amount, qty, lab_medicine_status')
       .eq('id', chargeId)
       .maybeSingle()
 
@@ -46,6 +46,23 @@ export async function PATCH(
 
     if (user.role !== 'ADMIN' && charge.created_by !== user.id) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    // A collected lab/medicine charge was paid at its amount. Changing the amount
+    // here would leave the payment disagreeing with it (PRD v2 CR-15).
+    if (
+      charge.lab_medicine_status === 'collected' &&
+      (('amount' in body && Number(body.amount) !== Number(charge.amount)) ||
+        ('qty' in body && Number(body.qty) !== Number(charge.qty ?? 1)))
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            'This charge has been collected. Delete its payment on the Payments tab first, then change the amount and collect it again.',
+          code: 'LAB_MEDICINE_COLLECTED',
+        },
+        { status: 409 }
+      )
     }
 
     // Omitted means unchanged, so a partial edit cannot blank the rest of the row.
@@ -124,7 +141,7 @@ export async function DELETE(
 
     const { data: charge } = await supabase
       .from('patient_charges')
-      .select('created_by, patient_billing_id, charge_group_id')
+      .select('created_by, patient_billing_id, charge_group_id, lab_medicine_status')
       .eq('id', chargeId)
       .maybeSingle()
 
@@ -134,6 +151,30 @@ export async function DELETE(
 
     if (user.role !== 'ADMIN' && charge.created_by !== user.id) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    // A collected lab/medicine charge goes only after its payment does, so money
+    // taken for it never loses the charge that explains it (PRD v2 CR-15).
+    let collectedInScope = charge.lab_medicine_status === 'collected'
+    if (!collectedInScope && deleteGroup && charge.charge_group_id) {
+      const { data: collectedRows } = await supabase
+        .from('patient_charges')
+        .select('id')
+        .eq('charge_group_id', charge.charge_group_id)
+        .eq('patient_id', patientId)
+        .eq('lab_medicine_status', 'collected')
+        .limit(1)
+      collectedInScope = (collectedRows ?? []).length > 0
+    }
+    if (collectedInScope) {
+      return NextResponse.json(
+        {
+          error:
+            'This charge has been collected. Delete its payment on the Payments tab first, then delete the charge.',
+          code: 'LAB_MEDICINE_COLLECTED',
+        },
+        { status: 409 }
+      )
     }
 
     let removed = 1

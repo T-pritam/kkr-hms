@@ -10,10 +10,9 @@ import {
 } from '@/app/api/patients/[id]/billing/route'
 import { call } from '../../helpers/request'
 import { signInAs, signOut } from '../../helpers/auth'
-import { db, createFakeClient } from '../../helpers/fake-supabase'
+import { db } from '../../helpers/fake-supabase'
 import { aPatient, aBilling, aCharge, aReferral } from '../../helpers/seed'
 import { TODAY, THIS_MONTH } from '../../setup'
-import { recalculatePatientBilling } from '@/lib/recalculate-billing'
 
 const read = (patientId: string) =>
   call(getBilling, 'GET', `/api/patients/${patientId}/billing`, { params: { id: patientId } })
@@ -109,9 +108,10 @@ describe('POST /api/patients/[id]/billing', () => {
     expect(status).toBe(200)
     expect(body.id).toEqual(expect.any(String))
 
+    // A base charge sent by an older client is ignored: packages are gone (PRD v2 CR-15).
     expect(db.rows('patient_billing')[0]).toMatchObject({
       patient_id: 'p1',
-      base_charge: 20000,
+      base_charge: 0,
       referral_commission_amount: 3000,
       joined_date: '2026-02-14',
       month_year: '2026-02',
@@ -176,7 +176,7 @@ describe('POST /api/patients/[id]/billing', () => {
 })
 
 describe('PATCH /api/patients/[id]/billing', () => {
-  it('updates the base charge and the referral commission', async () => {
+  it('updates the referral commission, and ignores a base charge', async () => {
     await signInAs('ADMIN', { userId: 'u-admin' })
     aBilling({ id: 'b1', patient_id: 'p1' })
 
@@ -184,7 +184,7 @@ describe('PATCH /api/patients/[id]/billing', () => {
 
     expect(status).toBe(200)
     expect(db.find('patient_billing', (r) => r.id === 'b1')).toMatchObject({
-      base_charge: 20000,
+      base_charge: 0,
       referral_commission_amount: 3000,
       updated_by: 'u-admin',
     })
@@ -260,11 +260,10 @@ describe('PATCH /api/patients/[id]/billing', () => {
   })
 
   /**
-   * BUGS.md #16/#23, resolved — patient_billing now has both columns
-   * (supabase/migrations/20260805000001_patient_billing_package_flags.sql), so the
-   * "included in package" checkboxes the billing tab always sends no longer 500.
+   * The "included in package" flags went with the package (PRD v2 CR-15). An
+   * older client still sending them gets a 200, and nothing is stored.
    */
-  it('should accept the "included in package" flags the UI sends', async () => {
+  it('ignores the old "included in package" flags', async () => {
     await signInAs('ADMIN')
     aBilling({ id: 'b1', patient_id: 'p1' })
 
@@ -272,29 +271,14 @@ describe('PATCH /api/patients/[id]/billing', () => {
       billing_id: 'b1',
       base_charge: 20000,
       doctor_fees_included_in_package: true,
-    })
-
-    expect(status).toBe(200)
-    expect(db.find('patient_billing', (r) => r.id === 'b1')).toMatchObject({
-      doctor_fees_included_in_package: true,
-    })
-  })
-
-  it('excludes the referral commission from total_charges once marked included in the package', async () => {
-    await signInAs('ADMIN')
-    aBilling({ id: 'b1', patient_id: 'p1', base_charge: 20000, referral_commission_amount: 3000 })
-
-    const { status } = await update('p1', {
-      billing_id: 'b1',
       referral_commission_included_in_package: true,
     })
 
     expect(status).toBe(200)
-
-    await recalculatePatientBilling(createFakeClient(db) as any, 'b1')
-
-    // 20000 base only — the 3000 commission is already in the package, not added on top.
-    expect(Number(db.find('patient_billing', (r) => r.id === 'b1')!.total_charges)).toBe(20000)
+    const billing = db.find('patient_billing', (r) => r.id === 'b1')!
+    expect(billing.base_charge).toBe(0)
+    expect(billing.doctor_fees_included_in_package).not.toBe(true)
+    expect(billing.referral_commission_included_in_package).not.toBe(true)
   })
 
   /** BUGS.md #24, resolved — the billing row must belong to the patient in the URL. */
@@ -310,86 +294,29 @@ describe('PATCH /api/patients/[id]/billing', () => {
 })
 
 /**
- * Neither a base charge nor a referral is required. What the route has to stop is
- * a package flag set with no package behind it — stored literally, that would tell
- * lib/recalculate-billing.ts the doctor's fees were covered by a base charge of
- * zero, and drop them off the bill.
+ * The patient's bill after PRD v2 CR-15: charges are internal and nothing is
+ * owed against them, so total_charges is the charges alone — no base package,
+ * and never the referral commission (it is the patient's expense).
  */
-describe('PATCH /api/patients/[id]/billing — optional base charge', () => {
-  it('accepts a billing record with no base charge and no referral', async () => {
+describe('PATCH /api/patients/[id]/billing — no package', () => {
+  it('rejects a negative commission', async () => {
     await signInAs('ADMIN')
     aBilling({ id: 'b1', patient_id: 'p1' })
 
-    const { status } = await update('p1', { billing_id: 'b1', base_charge: 0 })
-
-    expect(status).toBe(200)
-  })
-
-  it('forces both package flags off when there is no base charge', async () => {
-    await signInAs('ADMIN')
-    aBilling({ id: 'b1', patient_id: 'p1' })
-
-    await update('p1', {
-      billing_id: 'b1',
-      base_charge: 0,
-      referral_commission_included_in_package: true,
-      doctor_fees_included_in_package: true,
-    })
-
-    expect(db.find('patient_billing', (r) => r.id === 'b1')).toMatchObject({
-      referral_commission_included_in_package: false,
-      doctor_fees_included_in_package: false,
-    })
-  })
-
-  it('clears the flags when an existing base charge is removed', async () => {
-    await signInAs('ADMIN')
-    aBilling({
-      id: 'b1',
-      patient_id: 'p1',
-      base_charge: 20000,
-      doctor_fees_included_in_package: true,
-    })
-
-    await update('p1', { billing_id: 'b1', base_charge: 0 })
-
-    expect(db.find('patient_billing', (r) => r.id === 'b1')!.doctor_fees_included_in_package).toBe(false)
-  })
-
-  it('keeps the flags when a base charge is present but not being changed', async () => {
-    await signInAs('ADMIN')
-    aBilling({ id: 'b1', patient_id: 'p1', base_charge: 20000 })
-
-    await update('p1', { billing_id: 'b1', doctor_fees_included_in_package: true })
-
-    expect(db.find('patient_billing', (r) => r.id === 'b1')!.doctor_fees_included_in_package).toBe(true)
-  })
-
-  it('rejects a negative base charge or commission', async () => {
-    await signInAs('ADMIN')
-    aBilling({ id: 'b1', patient_id: 'p1' })
-
-    expect((await update('p1', { billing_id: 'b1', base_charge: -1 })).status).toBe(400)
     expect(
       (await update('p1', { billing_id: 'b1', referral_commission_amount: -500 })).status,
     ).toBe(400)
   })
 
-  it('keeps a commission off the bill when there is no package', async () => {
+  it('keeps the commission off the bill', async () => {
     await signInAs('ADMIN')
     aBilling({ id: 'b1', patient_id: 'p1' })
     aCharge({ patient_billing_id: 'b1', amount: 12000, qty: 1 })
 
-    await update('p1', {
-      billing_id: 'b1',
-      base_charge: 0,
-      referral_commission_amount: 2000,
-    })
+    await update('p1', { billing_id: 'b1', referral_commission_amount: 2000 })
 
     const billing = db.find('patient_billing', (r) => r.id === 'b1')!
-    // The commission is recorded and still settled through Finance...
     expect(Number(billing.referral_commission_amount)).toBe(2000)
-    // ...but the patient owes only the itemised charges.
     expect(Number(billing.total_charges)).toBe(12000)
   })
 })

@@ -128,6 +128,8 @@ export function aCharge(overrides: Row = {}): Row {
     billing_mode: 'one_time',
     charge_group_id: null,
     source_sheet_id: null,
+    lab_medicine_status: null,
+    collected_installment_id: null,
     created_by: null,
     ...overrides,
   })[0]
@@ -232,7 +234,7 @@ export function anInstallment(overrides: Row = {}): Row {
     remarks: null,
     created_by: null,
     ledger_transaction_id: null,
-    kind: 'payment',
+    kind: 'regular',
     ...overrides,
   })[0]
 }
