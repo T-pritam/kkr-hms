@@ -88,9 +88,9 @@
 | CR | Title | Req | Priority | Depends on | Waiting on | Status |
 |---|---|:-:|:-:|---|---|:-:|
 | [CR-01](#cr-01--own-row-rule-view-all-closed-lock-req-1) | Own-row rule, view-all, closed lock, enforced on the server | 1 | P0 | — | — | 🔲 |
-| [CR-02](#cr-02--petty-cash-log-req-2-7) | Petty cash log (with an edit history, Q-70) | 2, 7 | P1 | CR-01 | — | 🔲 |
-| [CR-03](#cr-03--employee-advance-for-reception-req-3) | Employee advance for reception | 3 | P1 | CR-01, CR-02 | — | 🔲 |
-| [CR-04](#cr-04--reception-doctor-visit-pricing-referral-commission--payouts-req-4) | Reception: doctor pricing, referral commission & payouts | 4 | P2 | CR-01, CR-13 | — | 🔲 |
+| [CR-02](#cr-02--petty-cash-log-req-2-7) | Petty cash log (with an edit history, Q-70) | 2, 7 | P1 | CR-01 | deploy | 🟡 |
+| [CR-03](#cr-03--employee-advance-for-reception-req-3) | Employee advance for reception | 3 | P1 | CR-01, CR-02 | deploy | 🟡 |
+| [CR-04](#cr-04--reception-doctor-visit-pricing-referral-commission--payouts-req-4) | Reception: doctor pricing, referral commission & payouts | 4 | P2 | CR-01, CR-13 | deploy | 🟡 |
 | [CR-05](#cr-05--ledger-log-all-entries-simple-fetching--ux-req-5) | Ledger log: all entries, simpler fetching & UX | 5 | P0 | CR-01 | — | 🔲 |
 | [CR-06](#cr-06--closing-entries-req-6) | Closing: bulk close + "Not closed" tab | 6 | P1 | CR-05 | — | 🔲 |
 | [CR-07](#cr-07--admin-expenses-are-general-expenses-req-7) | Admin expenses = general expenses | 7 | P2 | — | — | 🔲 |
@@ -99,7 +99,7 @@
 | [CR-10](#cr-10--admin-finance-restructure-req-10) | Admin finance restructure (log views) | 10 | P2 | CR-02, CR-05 – CR-07 | — | 🔲 |
 | [CR-11](#cr-11--registration-fee-at-registration-req-11) | Registration fee at registration | 11 | **P0** | — | — | ✅ |
 | [CR-12](#cr-12--a-payment-and-its-ledger-entry-stay-one-record) | A payment and its ledger entry stay one record | gap | P0 | — | — | ✅ |
-| [CR-13](#cr-13--one-payout-path) | One payout path for doctor fees & referral commission | gap | P2 | CR-05 | — | 🔲 |
+| [CR-13](#cr-13--one-payout-path) | One payout path for doctor fees & referral commission | gap | P2 | CR-05 | deploy | 🟡 |
 | [CR-14](#cr-14--india-ist-dates-everywhere) | India (IST) dates everywhere | gap | P1 | — | — | ✅ |
 | [CR-15](#cr-15--patient-money-income-expenses-lab-and-medicine-included-or-not-req-12) | Patient money: charges internal; lab & medicine excluded/included; payment labels; package removed | 12, 9 | P1 | CR-12 | — | ✅ |
 | [CR-16](#cr-16--patient-overview-dashboard-req-12) | Patient Overview (dashboard) | 12 | P1 | CR-15 | — | ✅ |
@@ -114,19 +114,25 @@ Priorities are from Q-56 and Q-76 ("as proposed"), with CR-11 at P0 from the cli
 ```
  Phase 1 (P0)                        Phase 2 (P1)                     Phase 3 (P2)
  ────────────                        ────────────                     ────────────
- ✅ CR-11 Registration fee         🟡 CR-06 Closing                     CR-04 Pricing & payouts by reception
+ ✅ CR-11 Registration fee         🟡 CR-06 Closing                  🟡 CR-04 Pricing & payouts by reception
  ✅ CR-12 Payment ⇄ ledger         🟡 CR-08 Retire day close            CR-07 Admin expenses
- ✅ CR-14 IST dates                   CR-02 Petty cash                  CR-10 Finance restructure
- 🟡 CR-01 Rules on the server         CR-03 Advances by reception       CR-13 One payout path
+ ✅ CR-14 IST dates                🟡 CR-02 Petty cash                  CR-10 Finance restructure
+ 🟡 CR-01 Rules on the server      🟡 CR-03 Advances by reception     🟡 CR-13 One payout path
  🟡 CR-05 Ledger log               ✅ CR-15 Patient money & labels
                                    ✅ CR-16 Patient Overview
 ```
 
-**Built so far** (branches `feature/v2-registration-fee-payments` → `feature/v2-patient-money`):
-- CR-11, CR-12, CR-14 (registration fee, payment ⇄ ledger, IST dates) and CR-15, CR-16 (patient money, Overview)
-- all 59 test files pass: 1,762 tests, plus 31 tests that record still-open bugs
+**Built so far**
+
+| | On | What |
+|---|---|---|
+| ✅ **Live** | `main` | CR-11, CR-12, CR-14 (registration fee, payment ⇄ ledger, IST dates) · CR-15, CR-16 (patient money, Overview) · **phase 1**: CR-01, CR-05, CR-06, CR-08 |
+| 🟡 **Phase 2** | `feature/v2-ledger-desk-finance` | CR-02 petty cash · CR-03 advances paid by the desk · CR-04 reception pricing and payouts · CR-13 one payout path |
+| 🔲 **Phase 3** | — | CR-07 admin expenses · CR-10 finance restructure |
+
+- 57 test files pass: 1,689 tests, plus 25 that record still-open bugs
 - typecheck clean · `next build` passes
-- BUGS #21 is resolved; BUGS #19 is half resolved
+- BUGS resolved along the way: #19 (half), #21, #33 (gone with Verify), #43, #49, #50, #55
 
 ---
 
@@ -287,7 +293,7 @@ Each CR follows the same shape: client text → today → target → code touche
 - [ ] AC-01.8 A Lab technician can't record a payment. ✅ *on the branch*
 
 ### CR-02 — Petty cash log (Req 2, 7)
-**Priority** P1 · **Status** 🔲 ready (Q-70, edit history, is optional)
+**Priority** P1 · **Status** 🟡 built on `feature/v2-ledger-desk-finance` (phase 2), not deployed
 
 > *All receptionist expenses (e.g., expenses added in the ledger and employee advances) are paid from petty cash that the admin gives to receptionists. Petty cash is a single shared amount used by all receptionists across shifts. Add a separate petty cash log showing both credits (admin giving cash) and debits (receptionist expenses), like a bank statement: credit/debit, date, and reason. This log has no status. It is only a log, visible to both admin and receptionists. For each credit, record which receptionist it was given to. This is for information only (so others know who received it) and has no other effect.*
 
@@ -309,16 +315,16 @@ Each CR follows the same shape: client text → today → target → code touche
 - [P] Table `petty_cash_entries` (§8.1); page `/petty-cash`; API `/api/petty-cash`. The "Add Expense" button moves here from the ledger page (Q-23).
 
 **Acceptance criteria**
-- [ ] AC-02.1 Admin adds a top-up. It appears as a credit, "given to Priya", on the log both roles see.
-- [ ] AC-02.2 Reception adds an expense (reason required). It appears as a debit on the petty cash log and **not** in the Ledger.
-- [ ] AC-02.3 A reception-paid advance (CR-03) appears as a debit.
-- [ ] AC-02.4 A running balance is shown, and a negative balance shows a warning without blocking.
-- [ ] AC-02.5 The log has no status column and no close action.
-- [ ] AC-02.6 Reception can't add or change top-ups. It can edit/delete its own debits at any time, but not other people's.
-- [ ] AC-02.7 An opening balance can be entered once at go-live.
+- [x] AC-02.1 Admin adds a top-up. It appears as a credit, "given to Priya", on the log both roles see.
+- [x] AC-02.2 Reception adds an expense (reason required). It appears as a debit on the petty cash log and **not** in the Ledger.
+- [x] AC-02.3 A reception-paid advance (CR-03) appears as a debit, linked to the advance.
+- [x] AC-02.4 A running balance is shown on every row, and a negative balance warns without blocking.
+- [x] AC-02.5 The log has no status column and no close action.
+- [x] AC-02.6 Reception can't add or change top-ups. It can edit/delete its own debits at any time, but not other people's.
+- [x] AC-02.7 An opening balance can be entered once, ever (a partial unique index, and a 409).
 
 ### CR-03 — Employee advance for reception (Req 3)
-**Priority** P1 · **Status** 🔲 ready
+**Priority** P1 · **Status** 🟡 built on `feature/v2-ledger-desk-finance` (phase 2), not deployed
 
 > *Add an Employee Advance section to the receptionist view so receptionists can pay advances to employees. Receptionists must NOT see other employee details such as salary, present days, or remaining amount to settle. Advance details must show which user gave the advance.*
 
@@ -335,14 +341,14 @@ Each CR follows the same shape: client text → today → target → code touche
 - [P] The employee picker returns only code, name and designation. The advance and its petty cash debit are written together, and a failed petty cash write removes the advance.
 
 **Acceptance criteria**
-- [ ] AC-03.1 No salary, present days or remaining amount appears on screen **or in any API response** for reception (tests check the response bodies).
-- [ ] AC-03.2 Reception pays ₹2,000. The advance is saved, the month's advance total updates for payroll, and a ₹2,000 petty cash debit is created.
-- [ ] AC-03.3 "Given by: <receptionist>" shows in reception's view and in admin's Advance Log.
-- [ ] AC-03.4 An advance over the cap is refused with the generic message, and so is one against a settled month.
-- [ ] AC-03.5 The owner edits or deletes an advance, the petty cash debit changes with it, and both are locked once the month is settled.
+- [x] AC-03.1 No salary, present days or remaining amount appears on screen **or in any API response** for reception; the advance-limits endpoint is admin-only (`advance:limits`).
+- [x] AC-03.2 Reception pays ₹2,000. The advance is saved, the month's advance total updates for payroll, and a ₹2,000 petty cash debit is created.
+- [x] AC-03.3 Who gave it is the logged-in user (`created_by`), shown in both views.
+- [x] AC-03.4 An advance over the cap is refused with the generic message, and so is one against a settled month.
+- [x] AC-03.5 The owner edits or deletes an advance, the petty cash debit changes with it, and both are locked once the month is settled.
 
 ### CR-04 — Reception: doctor visit pricing, referral commission & payouts (Req 4)
-**Priority** P2 · **Status** 🔲 ready (Q-71, Q-72 answered)
+**Priority** P2 · **Status** 🟡 built on `feature/v2-ledger-desk-finance` (phase 2), not deployed
 
 > *Receptionists can add doctor visit pricing, referral commission, and related data. Rule #1 (permissions) applies here.* The Q-19 answer adds: *"they can add fees to doctor and mark them paid also".*
 
@@ -356,11 +362,11 @@ Each CR follows the same shape: client text → today → target → code touche
 - [P] Store `amount_set_by` on fee rows and `referral_commission_set_by` on the bill. Save the fee schedule one rate at a time, so each rate keeps its owner. Payouts go through the single payout path (CR-13).
 
 **Acceptance criteria**
-- [ ] AC-04.1 Reception sets a referral commission and becomes its owner. Another receptionist can't change it; admin can.
-- [ ] AC-04.2 Reception prices a fee row and becomes its owner. Once it's paid, nobody but admin (after reopening) changes it.
-- [ ] AC-04.3 Admin-set prices are read-only to reception.
-- [ ] AC-04.4 Reception pays a doctor fee. It is booked per Q-71 and appears in the Ledger as OUT, Open.
-- [ ] AC-04.5 Q-72: visit purposes are managed now; manual ledger rows and merging the employee ledgers come later.
+- [x] AC-04.1 Reception sets a referral commission and becomes its owner (`referral_commission_set_by`); an admin-set one is read-only to them.
+- [x] AC-04.2 Reception prices a fee row and becomes its owner (`amount_set_by`). A paid fee is locked until it is un-paid.
+- [x] AC-04.3 Admin-set prices are read-only to reception (403 `NOT_YOUR_ENTRY`).
+- [x] AC-04.4 Reception pays a doctor fee. It appears in the Ledger as OUT, Open; an admin's is born Closed.
+- [x] AC-04.5 Q-72: reception manages visit purposes, manual fee rows and merges. Manual *ledger* rows and merging the employee ledgers come later.
 
 ### CR-05 — Ledger log: all entries, simple fetching & UX (Req 5)
 **Priority** P0 · **Status** 🟡 built on `feature/v2-ledger-desk-finance` (phase 1), not deployed
@@ -567,7 +573,7 @@ Decided for the removal (all in CR-15):
 - [ ] AC-12.5 Checked on production after deploy (§8.4).
 
 ### CR-13 — One payout path
-**From gaps G-09 … G-12** · **Priority** P2 · **Status** 🔲 ready
+**From gaps G-09 … G-12** · **Priority** P2 · **Status** 🟡 built on `feature/v2-ledger-desk-finance` (phase 2), not deployed
 
 - [D] Q-37 = B: whichever screen a doctor fee or referral commission is paid from, it writes exactly one ledger OUT. Un-paying reverses it, and the payout's ledger row can't be deleted on its own.
 - [D] Q-37 (b): paying a different amount than priced updates the fee total to the amount paid.
@@ -577,10 +583,21 @@ Decided for the removal (all in CR-15):
 - [D] Q-71 = A: reception pays from the day's collections, and the OUT is born Open (closed at ⑦).
 
 **Acceptance criteria**
-- [ ] AC-13.1 Paying from the patient tab creates a ledger OUT.
-- [ ] AC-13.2 Un-paying removes that ledger OUT.
-- [ ] AC-13.3 Paying ₹2,500 against a priced ₹3,000 leaves the fee total at ₹2,500, and the bill recalculates.
-- [ ] AC-13.4 Q-71 = A: a payout by reception comes from the day's collections and is born Open.
+- [x] AC-13.1 Paying from the patient tab creates a ledger OUT — it created none before.
+- [x] AC-13.2 Un-paying removes that ledger OUT, unless it is already closed (then the admin reopens it first).
+- [x] AC-13.3 Paying ₹2,500 against a priced ₹3,000 leaves the fee total at ₹2,500, and the bill recalculates.
+- [x] AC-13.4 Q-71 = A: a payout by reception comes from the day's collections and is born Open.
+
+**What phase 2 built** (CR-02, CR-03, CR-04, CR-13 — branch `feature/v2-ledger-desk-finance`)
+
+| Part | Where |
+|---|---|
+| Migration: `petty_cash_entries` (statement rows, one opening balance ever, an advance debit linked to its advance) and `petty_cash_entry_history`; `advances.petty_cash_entry_id`; `doctor_visit_settlements.amount_set_by` / `ledger_transaction_id`; `patient_billing.referral_commission_set_by` / `referral_ledger_transaction_id` | `supabase/migrations/20260924000002_petty_cash.sql` — **applied 2026-09-23** |
+| Petty cash: one pool, a running balance, no status, negative allowed with a warning; the desk fixes its own rows at any time and every change is kept | `lib/petty-cash/entries.ts`, `lib/petty-cash/authz.ts`, `app/api/petty-cash`, `app/petty-cash/page.tsx` |
+| Advances: reception pays them, the debit comes out of the float, and editing or deleting one moves the debit with it. Payroll figures are stripped from every response, and the limits endpoint is admin-only. The cap now applies on **both** advance routes (BUGS #55) | `lib/employees/advances.ts`, `app/api/employees/advances` (+`[id]`), `app/api/employees/for-advance`, `components/employees/pay-advance-modal.tsx` |
+| Reception prices doctor fees, sets the referral commission, manages visit purposes, and pays both out. Whoever last set an amount owns it, so an admin-set price is read-only to the desk | `lib/billing/authz.ts` (`payout:read`/`payout:write`), the settlement and billing routes, the fee schedule |
+| One payout path: every payout writes exactly one ledger OUT and keeps its id, so un-paying removes it. The patient tab used to write none at all | `lib/billing/payouts.ts`, `app/api/doctor-settlements/settle`, `app/api/finances/*` |
+| Tests | `tests/api/petty-cash/petty-cash.test.ts` (21) and `tests/api/employees/advance-from-desk.test.ts` (14), plus the permission and payout tests updated across billing, finances, fee schedule and employees |
 
 ### CR-14 — India (IST) dates everywhere
 **From gap G-30** · **Priority** P1 · **Status** 🟡 built on the branch
@@ -983,13 +1000,13 @@ Everything not marked 🟡 is **[P]**.
 | `patient_billing.registration_fee_status` (pending / collected / waived; empty on older bills) | CR-11 | 🟡 |
 | Ledger source `registration` added to `dlt_source_check` | CR-11 | 🟡 |
 | `patient_billing.joined_date` / `month_year` filled on the 8 bills that lack them | G-26 | 🟡 |
-| `daily_ledger_transactions.status`: `pending/verified` → `open/closed`, plus `closed_at`, `closed_by`, `close_batch_id`; new `ledger_close_batches` (note, amount received) | CR-06 | |
-| New `petty_cash_entries`: date, direction, amount, mode, reason, given_to, kind (topup / expense / advance), advance link, created_by, updated_by (+ history table if Q-70) | CR-02 | |
-| `advances`: `petty_cash_entry_id`; "given by" = `created_by` user | CR-03 | |
+| `daily_ledger_transactions.status`: `pending/verified` → `open/closed`, plus `closed_at`, `closed_by`, `close_batch_id`, `reopened_*`; new `ledger_close_batches` (note, amount received) | CR-06 | ✅ |
+| New `petty_cash_entries`: date, direction, amount, mode, reason, given_to, kind (opening / topup / expense / advance), advance link, created_by, updated_by, **plus `petty_cash_entry_history`** (Q-70) | CR-02 | 🟡 |
+| `advances`: `petty_cash_entry_id`; "given by" = `created_by` user | CR-03 | 🟡 |
 | `expenses`: `created_by`, `updated_by`, `payment_mode` | CR-07 | |
-| `doctor_visit_settlements.amount_set_by`, `patient_billing.referral_commission_set_by`, and a link from each payout to its ledger row | CR-04, CR-13 | |
+| `doctor_visit_settlements.amount_set_by` + `ledger_transaction_id`, `patient_billing.referral_commission_set_by` + `referral_ledger_transaction_id` | CR-04, CR-13 | 🟡 |
 | 🟡 `patient_charges.lab_medicine_status` (included / to_collect / collected) + `collected_installment_id`; installment `kind` becomes the payment label (regular / advance / discharge / misc / lab / medicine / registration; old rows → regular); a **Lab** catalogue category; the base package turned into a charge line and its flags cleared; `total_charges` = charges only | CR-15 | 🟡 |
-| `daily_ledger_closures`, `daily_ledger_shift_settlements`: frozen, read-only | CR-08 | |
+| `daily_ledger_closures`, `daily_ledger_shift_settlements`: frozen, read-only | CR-08 | ✅ |
 
 ### 8.2 APIs
 
@@ -1197,4 +1214,5 @@ The baseline `PRD.md` §10 questions were carried into round 1: Q1 → Q-37 · Q
 | 2026-09-23 | Round 3 answered (§9.1): nothing is open. Separately collected lab/medicine money is **passed on** (Q-82); an **Included** amount is **income, not an expense** (Q-83), so the worked example's Net is ₹22,100; a third answer **Excluded — collect later** added at save (Q-87); the pharmacy bill attach stays as a record only (Q-84). **CR-16 built** on `feature/v2-patient-money`: `GET /api/patients/[id]/overview` and the Overview tab, now the first tab. 59 test files, 1,762 tests pass; typecheck and `next build` clean | Claude |
 | 2026-09-23 | **The three migrations applied to production** (`20260922000001`, `20260922000002`, `20260923000001`), with the client's go-ahead, and verified row by row (§8.4). The app code is still on the two feature branches, not deployed | Claude |
 | 2026-09-23 | `feature/v2-patient-money` **merged to `main`** (auto-deploy), so CR-11, CR-12, CR-14, CR-15 and CR-16 are ✅ live. **Phase 1 built** on `feature/v2-ledger-desk-finance`: CR-01 (the own-row rule, the closed lock and the missing guards, on the server), CR-05 (one ledger log — everyone's entries, filters, paging, totals), CR-06 (closing per row, in bulk, with a note and the amount counted; reopen with a reason) and CR-08 (the day-based ledger, shift settlements and the Finances Transactions/Day Close tabs retired). Migration `20260924000001` applied: 15 rows closed, 17 open | Claude |
+| 2026-09-23 | **Phase 2 built** on `feature/v2-ledger-desk-finance`: CR-02 (the petty cash log — one shared float, a statement with a running balance, no status, an edit history), CR-03 (reception pays advances, out of petty cash, with every payroll figure stripped from the responses and the cap finally applied on both routes — BUGS #55), CR-04 (reception prices doctor fees, sets the referral commission, manages visit purposes and pays both out; whoever last set an amount owns it) and CR-13 (one payout path: every payout writes exactly one ledger OUT and keeps its id, so un-paying reverses it — the patient tab wrote none at all before). Migration `20260924000002` applied. Also fixed: BUGS #43 (a payout no longer divides by zero visits) | Claude |
 

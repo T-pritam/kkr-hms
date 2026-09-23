@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { verifyAuth } from '@/lib/auth/verify';
+import { canModify } from '@/lib/authz/ownership';
+import { requireBilling } from '@/lib/billing/authz';
+import { unpayDoctorFee } from '@/lib/billing/payouts';
 import { recalculatePatientBilling } from '@/lib/recalculate-billing';
 
 /**
@@ -24,17 +26,9 @@ export async function PUT(
   { params }: { params: Promise<{ settlementId: string }> }
 ) {
   try {
-    const authResult = await verifyAuth(request);
-    if (!authResult.isValid || !authResult.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    if (authResult.user.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Only admins can update settlements' },
-        { status: 403 }
-      );
-    }
+    const auth = await requireBilling(request, 'doctor-fee:write');
+    if (auth.response) return auth.response;
+    const authResult = { user: auth.user };
 
     const supabase = await createClient();
     const { settlementId } = await params;
@@ -69,6 +63,25 @@ export async function PUT(
     const wantsVisitCountChange = !isAutoTracked && body.visit_count !== undefined;
     const isPricingUpdate = wantsAmountChange || wantsVisitCountChange;
 
+    // Whoever last set the amount owns it (Q-20 = A): reception may price an
+    // unpriced row and re-price its own, but not one an admin has set. An
+    // unset row belongs to nobody yet, so anyone at the desk may price it.
+    if (wantsAmountChange && currentSettlement.amount_set_by) {
+      const allowed = canModify(authResult.user, { created_by: currentSettlement.amount_set_by });
+      if (!allowed.ok) {
+        return NextResponse.json(
+          {
+            error:
+              allowed.code === 'NOT_YOUR_ENTRY'
+                ? 'An admin set this fee, so only an admin can change it'
+                : allowed.error,
+            code: allowed.code,
+          },
+          { status: allowed.status }
+        );
+      }
+    }
+
     // A settled row's pricing is locked. Changing it — or plainly unsettling it —
     // both flip `settled` back to false, which conflicts with a newer pending row
     // for the same (cycle, doctor, purpose) if one has since been created by sync.
@@ -80,18 +93,15 @@ export async function PUT(
 
     if (currentSettlement.settled === true && wantsToUnsettle) {
       wasSettled = true;
-      const { error: unsetError } = await supabase
-        .from('doctor_visit_settlements')
-        .update({
-          settled: false,
-          settlement_date: null,
-          settlement_amount: null,
-          settled_by: null,
-          updated_by: authResult.user.id,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', settlementId);
+      // Un-paying removes the ledger OUT this payout wrote (CR-13, AC-13.2).
+      // Money that came back must not stay in the books as money that left.
+      const reversed = await unpayDoctorFee(supabase, authResult.user, currentSettlement);
 
+      if (!reversed.ok) {
+        return NextResponse.json({ error: reversed.error, code: reversed.code }, { status: reversed.status });
+      }
+
+      const unsetError: any = null;
       if (unsetError?.code === '23505') {
         return NextResponse.json(
           {
@@ -146,6 +156,7 @@ export async function PUT(
       }
 
       updateData.amount_per_visit = amount;
+      updateData.amount_set_by = authResult.user.id;
     }
 
     // total_amount is a stored column, not derived by the database — every branch
@@ -282,17 +293,9 @@ export async function DELETE(
   { params }: { params: Promise<{ settlementId: string }> }
 ) {
   try {
-    const authResult = await verifyAuth(request);
-    if (!authResult.isValid || !authResult.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    if (authResult.user.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Only admins can delete settlements' },
-        { status: 403 }
-      );
-    }
+    const auth = await requireBilling(request, 'doctor-fee:write');
+    if (auth.response) return auth.response;
+    const authResult = { user: auth.user };
 
     const supabase = await createClient();
     const { settlementId } = await params;

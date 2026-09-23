@@ -136,13 +136,25 @@ export async function PUT(
     }
 
     if (toSet.length > 0) {
+      // Who first set a rate is part of the own-row rule (CR-01), so saving the
+      // sheet must not rewrite it. The old upsert sent `created_by` for every
+      // row, which handed every rate on the sheet to whoever saved last.
+      const { data: existing } = await supabase
+        .from('doctor_fee_schedule')
+        .select('visit_purpose_id')
+        .eq('doctor_id', doctorId)
+        .in('visit_purpose_id', toSet.map(entry => entry.visit_purpose_id))
+
+      const known = new Set((existing ?? []).map((row: any) => row.visit_purpose_id))
+
       const { error } = await supabase.from('doctor_fee_schedule').upsert(
         toSet.map(entry => ({
           doctor_id: doctorId,
           visit_purpose_id: entry.visit_purpose_id,
           fee: entry.fee,
           is_active: true,
-          created_by: user.id,
+          // Only a rate that did not exist gets an author.
+          ...(known.has(entry.visit_purpose_id) ? {} : { created_by: user.id }),
           updated_by: user.id,
         })),
         { onConflict: 'doctor_id,visit_purpose_id' }

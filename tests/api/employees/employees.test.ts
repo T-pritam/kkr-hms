@@ -409,7 +409,8 @@ describe('/api/employees/advances', () => {
    * per-employee route enforces the advance limit. An advance far beyond the salary is
    * accepted here, leaving a negative final salary.
    */
-  it.fails('should refuse an advance beyond the salary cap', async () => {
+  /** Was BUGS.md #55: this endpoint skipped the cap the other one applied. */
+  it('refuses an advance beyond the salary cap', async () => {
     await signInAs('ADMIN')
     anEmployee({ id: 'e1', base_salary: 27000 })
 
@@ -488,7 +489,7 @@ describe('POST /api/employees/[id]/salary/advances — the capped route', () => 
     })
 
     expect(status).toBe(400)
-    expect(body.error).toBe('Salary is already settled. No further advances can be added.')
+    expect(body.error).toBe('That salary month is settled, so no more advances can be added to it')
   })
 
   it('caps against the calculated salary once a record exists', async () => {
@@ -512,6 +513,9 @@ describe('POST /api/employees/[id]/salary/advances — the capped route', () => 
   it('rolls the new advance into the salary record', async () => {
     await signInAs('ADMIN')
     anEmployee({ id: 'e1', base_salary: 27000 })
+    // The month's advances are re-summed, not incremented, so the existing one
+    // has to be there — that is what makes the total self-correcting.
+    anAdvance({ employee_id: 'e1', amount: 2000, month_year: THIS_MONTH })
     aSalaryRecord({
       id: '1',
       employee_id: 'e1',

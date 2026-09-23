@@ -40,14 +40,17 @@ describe('billing — authentication and roles', () => {
     expect((await create('p1', {})).status).toBe(200)
   })
 
-  it.each(['DOCTOR', 'NURSE', 'RECEPTIONIST'] as const)('refuses %s on PATCH', async (role) => {
+  /**
+   * Reception sets the referral person and the commission now (CR-04, Q-19 e).
+   * A doctor, a nurse or the lab still cannot.
+   */
+  it.each(['DOCTOR', 'NURSE', 'LAB_TECHNICIAN'] as const)('refuses %s on PATCH', async (role) => {
     await signInAs(role)
     aBilling({ id: 'b1', patient_id: 'p1' })
 
-    const { status, body } = await update('p1', { billing_id: 'b1', base_charge: 5000 })
+    const { status } = await update('p1', { billing_id: 'b1', base_charge: 5000 })
 
     expect(status).toBe(403)
-    expect(body.error).toBe('Only admins can update billing')
     expect(Number(db.find('patient_billing', (r) => r.id === 'b1')!.base_charge)).toBe(0)
   })
 })

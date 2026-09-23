@@ -12,11 +12,14 @@ import { inr, percentOf } from '@/lib/format/currency'
 import { toCsv, downloadCsv, csvFilename } from '@/lib/export/csv'
 import { generateAdvanceLogPDF, monthLabel } from '@/lib/pdf/advance-log-pdf'
 import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch'
+import { useUser } from '@/hooks/use-user'
+import { PayAdvanceModal } from '@/components/employees/pay-advance-modal'
 import {
   AlertTriangle,
   Download,
   FileSpreadsheet,
   FileText,
+  HandCoins,
   Search,
   Users,
   Wallet,
@@ -30,8 +33,11 @@ import {
  * advance was one employee, one month, behind a row click on the payroll
  * screen.
  *
- * It is read-only for everyone: paying an advance still happens from the
- * salary page, behind `advance:write`.
+ * Reception reads it and pays from it now (PRD v2 CR-03, requirement 3), so the
+ * payroll figures beside each advance — base salary, and the share of it drawn
+ * — appear only for the roles that may see them. The API strips them from the
+ * response as well, which is what actually protects them (AC-03.1); this page
+ * simply has nothing to draw when they are absent.
  */
 
 interface AdvanceRow {
@@ -88,6 +94,13 @@ const date = (value: string | null | undefined) =>
     : '—'
 
 export default function AdvanceLogPage() {
+  const { user } = useUser()
+  // Admin and doctor keep payroll; reception sees people and amounts only.
+  const seesPayroll = user?.role === 'ADMIN' || user?.role === 'DOCTOR'
+
+  const [paying, setPaying] = useState(false)
+  const [pettyCashBalance, setPettyCashBalance] = useState<number | null>(null)
+
   const [rows, setRows] = useState<AdvanceRow[]>([])
   const [byEmployee, setByEmployee] = useState<EmployeeSubtotal[]>([])
   const [summary, setSummary] = useState<Summary | null>(null)
@@ -109,15 +122,29 @@ export default function AdvanceLogPage() {
     return () => clearTimeout(timer)
   }, [search])
 
-  // The employee picker.
+  // The employee picker. Reception gets the lean list — code, name and
+  // designation — because /api/employees carries salaries (CR-03).
   useEffect(() => {
-    fetch('/api/employees?status=all', { credentials: 'include' })
+    const url = seesPayroll ? '/api/employees?status=all' : '/api/employees/for-advance'
+    fetch(url, { credentials: 'include' })
       .then(res => (res.ok ? res.json() : null))
       .then(body => {
         if (body?.success) setEmployees(body.data || [])
       })
       .catch(() => {})
+  }, [seesPayroll])
+
+  // What the float holds, so the desk knows what it can pay out of it.
+  const fetchPettyCash = useCallback(() => {
+    fetch('/api/petty-cash', { credentials: 'include' })
+      .then(res => (res.ok ? res.json() : null))
+      .then(body => setPettyCashBalance(body?.totals?.balance ?? null))
+      .catch(() => {})
   }, [])
+
+  useEffect(() => {
+    if (!seesPayroll) fetchPettyCash()
+  }, [seesPayroll, fetchPettyCash])
 
   const fetchLog = useCallback(async () => {
     try {
@@ -231,6 +258,10 @@ export default function AdvanceLogPage() {
             </p>
           </div>
           <div className="flex gap-2 w-full sm:w-auto">
+            <Button onClick={() => setPaying(true)} className="flex-1 sm:flex-none">
+              <HandCoins size={18} className="mr-2" />
+              Pay advance
+            </Button>
             <Button
               variant="outline"
               onClick={exportCsv}
@@ -335,12 +366,14 @@ export default function AdvanceLogPage() {
               <div className="px-4 py-3 border-b border-border">
                 <h2 className="text-sm font-semibold text-foreground">By employee</h2>
                 <p className="text-xs text-muted mt-0.5">
-                  Share of the month&apos;s salary already drawn.
+                  {seesPayroll
+                    ? "Share of the month's salary already drawn."
+                    : 'What each person has drawn this month.'}
                 </p>
               </div>
               <div className="divide-y divide-border">
                 {byEmployee.map(emp => {
-                  const share = percentOf(emp.total, emp.base_salary)
+                  const share = seesPayroll ? percentOf(emp.total, emp.base_salary) : null
                   const heavy = share !== null && share >= ADVANCE_WARN_PERCENT
 
                   return (
@@ -357,7 +390,7 @@ export default function AdvanceLogPage() {
                         </div>
                         <div className="text-xs text-muted mt-0.5">
                           {emp.designation || '—'} · {emp.count} advance{emp.count === 1 ? '' : 's'}
-                          {emp.base_salary > 0 && <> · base {inr(emp.base_salary)}</>}
+                          {seesPayroll && emp.base_salary > 0 && <> · base {inr(emp.base_salary)}</>}
                         </div>
                       </div>
                       <div className="flex items-center gap-3 shrink-0">
@@ -481,6 +514,18 @@ export default function AdvanceLogPage() {
           </>
         )}
       </div>
+
+      <PayAdvanceModal
+        isOpen={paying}
+        onClose={() => setPaying(false)}
+        onSuccess={() => {
+          setPaying(false)
+          void fetchLog()
+          if (!seesPayroll) fetchPettyCash()
+        }}
+        monthYear={month}
+        pettyCashBalance={seesPayroll ? null : pettyCashBalance}
+      />
     </DashboardLayout>
   )
 }

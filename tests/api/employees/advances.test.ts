@@ -69,12 +69,31 @@ describe('advance log — who can see it', () => {
     expect((await validation('e1')).status).toBe(403)
   })
 
-  it('forbids RECEPTIONIST from reading the log or the advance limits it quotes', async () => {
+  /**
+   * Reception reads the log now (CR-03, requirement 3) but never the limits:
+   * "how much of this salary is left" is the payroll figure it must not see.
+   */
+  it('lets RECEPTIONIST read the log, but not the advance limits it quotes', async () => {
     await signInAs('RECEPTIONIST')
     anEmployee({ id: 'e1', base_salary: 27000 })
 
-    expect((await log()).status).toBe(403)
+    expect((await log()).status).toBe(200)
     expect((await validation('e1')).status).toBe(403)
+  })
+
+  /** AC-03.1: the figures are absent from the response, not hidden on screen. */
+  it('sends reception no salary figures in the log', async () => {
+    await signInAs('RECEPTIONIST')
+    const employee = anEmployee({ id: 'e1', name: 'Asha', base_salary: 27000 })
+    anAdvance({ employee_id: employee.id, amount: 1000, month_year: THIS_MONTH })
+
+    const { body } = await log()
+    const serialised = JSON.stringify(body)
+
+    expect(body.data).toHaveLength(1)
+    expect(serialised).not.toContain('27000')
+    expect(serialised).not.toContain('base_salary')
+    expect(body.by_employee[0]).not.toHaveProperty('base_salary')
   })
 })
 
@@ -83,7 +102,7 @@ describe('advance log — who can pay one', () => {
    * The hole this closes. Both of these returned 200/201 for every signed-in
    * role, including a lab technician.
    */
-  it.each(['LAB_TECHNICIAN', 'NURSE', 'RECEPTIONIST'] as const)(
+  it.each(['LAB_TECHNICIAN', 'NURSE'] as const)(
     'forbids %s from paying an advance',
     async (role) => {
       await signInAs(role)

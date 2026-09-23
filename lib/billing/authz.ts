@@ -28,6 +28,8 @@ export type BillingCapability =
   | 'doctor-fee:write'
   | 'pharmacy-charge:write'
   | 'payment:write'
+  | 'payout:read'
+  | 'payout:write'
 
 const EVERYONE: UserRole[] = ['ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST', 'LAB_TECHNICIAN']
 
@@ -61,16 +63,28 @@ export const BILLING_CAPABILITIES: Record<BillingCapability, UserRole[]> = {
   // it stops being reversible bookkeeping, so it is admin.
   'charge-sheet:forward': ['ADMIN'],
 
-  // The package: base charge, referral commission, and the settled flags.
-  'billing:write': ['ADMIN'],
+  // The referral person, the commission, and the settled flags. Reception sets
+  // these now (Q-19 e); who may change a *particular* amount is the own-row
+  // rule, on `referral_commission_set_by` (Q-20 = A).
+  'billing:write': ['ADMIN', 'RECEPTIONIST'],
 
-  // What kinds of visit exist. Config, and settlements group on it — renaming or
-  // retiring one reshapes every future payout.
-  'visit-purpose:write': ['ADMIN'],
+  // What kinds of visit exist. Reception manages these (Q-19 h, Q-72): they are
+  // the list it prices against, and a new purpose is desk work.
+  'visit-purpose:write': ['ADMIN', 'RECEPTIONIST'],
 
-  // What a doctor is paid. Admin only for the obvious reason: a doctor must not
-  // be able to set their own rate.
-  'doctor-fee:write': ['ADMIN'],
+  // What a doctor is paid. Reception prices these at the desk (Q-19 a–c); a
+  // doctor still cannot set their own rate, which is why DOCTOR is absent.
+  'doctor-fee:write': ['ADMIN', 'RECEPTIONIST'],
+
+  // The payout worklists: which fees and commissions are still to be paid.
+  // Whoever may pay one needs to see it, and nobody else does — this is the
+  // hospital's money leaving, not a patient's bill.
+  'payout:read': ['ADMIN', 'DOCTOR', 'RECEPTIONIST'],
+
+  // Handing the money over — a doctor's fee or a referral commission. Reception
+  // pays these from the day's collections, and the ledger OUT is born Open
+  // until an admin closes it (Q-19 f, Q-71 = A).
+  'payout:write': ['ADMIN', 'RECEPTIONIST'],
 }
 
 export interface BillingUser {

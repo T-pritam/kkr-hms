@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireEmployee } from '@/lib/employees/authz'
 import { validateAdvance, firstError } from '@/lib/employees/validate'
+import {
+  assertAdvanceAllowed,
+  recordAdvance,
+  redactPayroll,
+  seesPayroll,
+} from '@/lib/employees/advances'
 import { safeSearch } from '@/lib/api/query'
 
 /**
@@ -12,10 +18,13 @@ import { safeSearch } from '@/lib/api/query'
  * employee, one month, behind a row click on the salary page. It now backs
  * `/employees/advances`, the month-wise log across all staff.
  *
- * The cap on how much may be advanced is *not* enforced here, exactly as
- * before. That rule lives in lib/salary-advance-validation.ts and is applied by
- * `POST /api/employees/[id]/salary/advances`. The difference between the two
- * endpoints is long-standing (BUGS.md #55) and deliberately left alone.
+ * The cap **is** enforced here now, through lib/employees/advances.ts — the two
+ * endpoints used to disagree, so the same advance was refused on one screen and
+ * accepted on the other (BUGS.md #55).
+ *
+ * Reception reads this log too (CR-03), so every response goes through
+ * `redactPayroll`: base salary, present days and the remaining allowance never
+ * leave the server for a receptionist.
  */
 
 const LOG_SELECT = `
@@ -149,8 +158,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: rows,
-      by_employee: subtotals(rows),
+      data: redactPayroll(rows, auth.user.role),
+      by_employee: redactPayroll(subtotals(rows), auth.user.role),
       summary: {
         month_year: monthYear,
         total_amount: totalAmount,
@@ -210,57 +219,42 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
     }
 
-    const { data: advance, error: advError } = await supabase
-      .from('advances')
-      .insert({
+    // The cap, and the settled-month block, before anything is written.
+    const allowed = await assertAdvanceAllowed(supabase, {
+      employeeId: employee_id,
+      monthYear: month_year,
+      amount: parseFloat(amount),
+      role: user.role,
+    })
+    if (!allowed.ok) {
+      return NextResponse.json({ error: allowed.error, code: allowed.code }, { status: allowed.status })
+    }
+
+    // An advance the desk pays comes out of the float; an admin's does not, as
+    // petty cash is the money the admin hands *to* the desk (CR-02, Q-13).
+    const result = await recordAdvance(
+      supabase,
+      user,
+      {
         employee_id,
         amount: parseFloat(amount),
         date_given,
         month_year,
         remarks: remarks || null,
-        // Who handed over the cash, and who was at the keyboard. Neither was
-        // recorded anywhere before.
         given_by: given_by?.trim() || null,
-        created_by: user.id,
-        updated_by: user.id,
-      })
-      .select()
-      .single()
+      },
+      { fromPettyCash: !seesPayroll(user.role), employeeName: employee.name },
+    )
 
-    if (advError) throw advError
-
-    // Unchanged: re-sum the advances table and write the totals back.
-    const { data: salaryRecord } = await supabase
-      .from('salary_payments')
-      .select('id, calculated_salary, total_advance')
-      .eq('employee_id', employee_id)
-      .eq('month_year', month_year)
-      .maybeSingle()
-
-    if (salaryRecord) {
-      const { data: allAdvances } = await supabase
-        .from('advances')
-        .select('amount')
-        .eq('employee_id', employee_id)
-        .eq('month_year', month_year)
-
-      const totalAdvance = allAdvances?.reduce((sum: number, adv: any) => sum + parseFloat(adv.amount), 0) || 0
-      const finalSalary = salaryRecord.calculated_salary - totalAdvance
-
-      await supabase
-        .from('salary_payments')
-        .update({
-          total_advance: totalAdvance,
-          final_salary: finalSalary,
-          updated_by: user.id,
-        })
-        .eq('id', salaryRecord.id)
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error, code: result.code }, { status: result.status })
     }
 
     return NextResponse.json({
       success: true,
       message: 'Advance payment recorded successfully',
-      data: { ...advance, employee_name: employee.name },
+      data: redactPayroll({ ...result.advance, employee_name: employee.name }, user.role),
+      petty_cash_entry: result.pettyCashEntry,
     }, { status: 201 })
   } catch (error: any) {
     console.error('Error creating advance:', error)

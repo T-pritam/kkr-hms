@@ -22,7 +22,7 @@ export async function GET(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const auth = await requireEmployee(request, 'advance:read')
+    const auth = await requireEmployee(request, 'advance:limits')
     if (auth.response) return auth.response
 
     const { id: employeeId } = await context.params

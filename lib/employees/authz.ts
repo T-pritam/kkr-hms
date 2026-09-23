@@ -21,8 +21,10 @@
  * signed-in user, a lab technician included, could pay an advance out of any
  * employee's salary and read their payroll figures. `advance:write` closes that.
  *
- * Reception has no capability in this module at all — no employee records, no
- * salary figures, no advance log, no paying an advance out.
+ * Reception now has exactly two: reading the advance log and paying an advance
+ * (PRD v2 CR-03, requirement 3). It still has no employee records and no salary
+ * figures — lib/employees/advances.ts strips those from the responses, because
+ * a redacted screen backed by a full API is not privacy.
  */
 
 import type { NextRequest, NextResponse } from 'next/server'
@@ -39,6 +41,7 @@ export type EmployeeCapability =
   | 'salary:list'
   | 'advance:read'
   | 'advance:write'
+  | 'advance:limits'
 
 /** What the existing guard actually admits, kept as-is. */
 const PAYROLL: UserRole[] = ['ADMIN', 'DOCTOR']
@@ -57,11 +60,17 @@ export const EMPLOYEE_CAPABILITIES: Record<EmployeeCapability, UserRole[]> = {
   // The employee-salary list.
   'salary:list':     PAYROLL,
 
-  // Reading the advance log.
-  'advance:read':    PAYROLL,
+  // Reading the advance log. Reception sees the advances and the people, never
+  // the payroll figures beside them (CR-03, Q-18).
+  'advance:read':    [...PAYROLL, 'RECEPTIONIST'],
 
-  // Paying one out.
-  'advance:write':   PAYROLL,
+  // Paying one out. The desk pays these from petty cash (CR-02).
+  'advance:write':   [...PAYROLL, 'RECEPTIONIST'],
+
+  // How much of this employee's salary is still available to advance. That is
+  // the payroll figure reception must not see, so the desk is told only
+  // "ask an admin" when it goes over (Q-16 = A, AC-03.1).
+  'advance:limits':  PAYROLL,
 }
 
 export interface EmployeeUser {

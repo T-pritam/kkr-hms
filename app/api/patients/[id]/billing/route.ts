@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { verifyAuth } from '@/lib/auth/verify';
+import { canModify } from '@/lib/authz/ownership';
 import { requireBilling } from '@/lib/billing/authz';
+import {
+  payReferralCommission,
+  unpayReferralCommission,
+  validatePayout,
+} from '@/lib/billing/payouts';
 import { recalculatePatientBilling } from '@/lib/recalculate-billing';
 import { validateBillingHeader } from '@/lib/billing/validate';
 import { firstError } from '@/lib/patients/validate';
@@ -161,14 +167,10 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const authResult = await verifyAuth(request);
-    if (!authResult.isValid || !authResult.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    if (authResult.user.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Only admins can update billing' }, { status: 403 });
-    }
+    // Reception sets the referral person and the commission now (Q-19 e).
+    const auth = await requireBilling(request, 'billing:write');
+    if (auth.response) return auth.response;
+    const authResult = { user: auth.user };
 
     const supabase = await createClient();
     const { id } = await params;
@@ -184,7 +186,7 @@ export async function PATCH(
 
     const { data: target } = await supabase
       .from('patient_billing')
-      .select('id, patient_id')
+      .select('id, patient_id, referral_settled, referral_commission_set_by, referral_ledger_transaction_id, referral_commission_amount')
       .eq('id', body.billing_id)
       .maybeSingle();
 
@@ -193,6 +195,32 @@ export async function PATCH(
         { error: 'That billing record does not belong to this patient' },
         { status: 404 }
       );
+    }
+
+    // Whoever last set the commission owns it (Q-20 = A), and a paid one is
+    // locked until it is un-paid — the amount and the debit must agree.
+    const changingAmount =
+      body.referral_commission_amount !== undefined &&
+      Number(body.referral_commission_amount) !== Number(target.referral_commission_amount ?? 0);
+
+    if (changingAmount) {
+      const allowed = canModify(authResult.user, {
+        created_by: target.referral_commission_set_by ?? authResult.user.id,
+        locked: Boolean(target.referral_settled),
+        lockReason: 'This commission has been paid. Un-pay it before changing the amount.',
+      });
+      if (!allowed.ok) {
+        return NextResponse.json(
+          {
+            error:
+              allowed.code === 'NOT_YOUR_ENTRY'
+                ? 'An admin set this commission, so only an admin can change it'
+                : allowed.error,
+            code: allowed.code,
+          },
+          { status: allowed.status }
+        );
+      }
     }
 
     const check = validateBillingHeader(body);
@@ -209,6 +237,7 @@ export async function PATCH(
 
     if (body.referral_commission_amount !== undefined) {
       updateData.referral_commission_amount = body.referral_commission_amount;
+      if (changingAmount) updateData.referral_commission_set_by = authResult.user.id;
     }
     if (body.referral_settlement_notes !== undefined) {
       updateData.referral_settlement_notes = body.referral_settlement_notes;
@@ -222,8 +251,40 @@ export async function PATCH(
     if (body.referral_settlement_transaction_ref !== undefined) {
       updateData.referral_transaction_ref = body.referral_settlement_transaction_ref;
     }
-    if (body.referral_settled !== undefined) {
-      updateData.referral_settled = body.referral_settled;
+    if (body.referral_settled !== undefined && body.referral_settled !== target.referral_settled) {
+      // Paying is not a flag: it moves money, so it goes through the one payout
+      // path, which writes (or removes) the ledger OUT (CR-13).
+      if (body.referral_settled === true) {
+        const details = validatePayout({
+          payment_method: body.referral_settlement_payment_method,
+          transaction_reference: body.referral_settlement_transaction_ref,
+          notes: body.referral_settlement_notes,
+        });
+        if (!details.ok) {
+          return NextResponse.json(
+            { error: details.error, fieldErrors: details.fieldErrors },
+            { status: details.status }
+          );
+        }
+
+        const paid = await payReferralCommission(
+          supabase,
+          authResult.user,
+          { ...target, id: body.billing_id, patient_id: patientId },
+          { details: details.value }
+        );
+        if (!paid.ok) {
+          return NextResponse.json({ error: paid.error, code: paid.code }, { status: paid.status });
+        }
+      } else {
+        const reversed = await unpayReferralCommission(supabase, authResult.user, {
+          ...target,
+          id: body.billing_id,
+        });
+        if (!reversed.ok) {
+          return NextResponse.json({ error: reversed.error, code: reversed.code }, { status: reversed.status });
+        }
+      }
     }
     if (body.referral_settlement_date !== undefined) {
       updateData.referral_settlement_date = body.referral_settlement_date;

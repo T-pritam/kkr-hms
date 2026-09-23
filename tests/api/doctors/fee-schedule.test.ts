@@ -45,13 +45,19 @@ describe('/api/visit-purposes', () => {
     expect((await purposes()).status).toBe(200)
   })
 
-  it.each(['DOCTOR', 'NURSE', 'RECEPTIONIST'] as const)(
+  // Reception manages the purposes it prices against (CR-04, Q-19 h).
+  it.each(['DOCTOR', 'NURSE', 'LAB_TECHNICIAN'] as const)(
     'refuses to let %s add a purpose',
     async (role) => {
       await signInAs(role)
       expect((await addPurpose({ name: 'Operation' })).status).toBe(403)
     },
   )
+
+  it('lets reception add a purpose', async () => {
+    await signInAs('RECEPTIONIST')
+    expect((await addPurpose({ name: 'Operation' })).status).toBe(201)
+  })
 
   it('hides retired purposes unless asked for them', async () => {
     await signInAs('ADMIN')
@@ -121,8 +127,8 @@ describe('/api/doctors/[id]/fee-schedule', () => {
     expect((await setSchedule('d1', { schedule: [] })).status).toBe(401)
   })
 
-  /** A doctor must not be able to set their own rate. */
-  it.each(['DOCTOR', 'NURSE', 'RECEPTIONIST'] as const)(
+  /** A doctor must not be able to set their own rate; reception may (Q-19 a). */
+  it.each(['DOCTOR', 'NURSE', 'LAB_TECHNICIAN'] as const)(
     'refuses to let %s change a rate card',
     async (role) => {
       await signInAs(role)
@@ -131,6 +137,28 @@ describe('/api/doctors/[id]/fee-schedule', () => {
       expect((await setSchedule(doctor.id, { schedule: [] })).status).toBe(403)
     },
   )
+
+  it('lets reception set a rate, and keeps the first author of each rate', async () => {
+    await signInAs('ADMIN', { userId: 'u-admin' })
+    const doctor = aDoctor({ id: 'd1' })
+    const purpose = aVisitPurpose({ id: 'vp1', name: 'Round', code: 'round' })
+
+    await setSchedule(doctor.id, { schedule: [{ visit_purpose_id: purpose.id, fee: 300 }] })
+    expect(db.rows('doctor_fee_schedule')[0].created_by).toBe('u-admin')
+
+    // Saving the sheet again, as someone else, must not hand them the rate.
+    await signInAs('RECEPTIONIST', { userId: 'u-recep' })
+    const { status } = await setSchedule(doctor.id, {
+      schedule: [{ visit_purpose_id: purpose.id, fee: 400 }],
+    })
+
+    expect(status).toBe(200)
+    expect(db.rows('doctor_fee_schedule')[0]).toMatchObject({
+      fee: 400,
+      created_by: 'u-admin',
+      updated_by: 'u-recep',
+    })
+  })
 
   it('404s for a doctor that does not exist', async () => {
     await signInAs('ADMIN')

@@ -502,8 +502,9 @@ describe('GET /api/finances/summary', () => {
 })
 
 describe('POST /api/finances/doctor-settlements — pay out', () => {
-  it.each(['NURSE', 'RECEPTIONIST'] as const)('refuses %s', async (role) => {
-    await signInAs(role)
+  // Reception prices and pays doctor fees now (CR-04, Q-19 f); the lab does not.
+  it('refuses LAB_TECHNICIAN', async () => {
+    await signInAs('LAB_TECHNICIAN')
 
     expect((await settlements()).status).toBe(403)
     expect((await paySettlements({ settlement_ids: ['s1'], payment_method: 'cash' })).status).toBe(403)
@@ -672,8 +673,8 @@ describe('POST /api/finances/doctor-settlements — pay out', () => {
 })
 
 describe('/api/finances/referral-commissions', () => {
-  it.each(['NURSE', 'RECEPTIONIST'] as const)('refuses %s', async (role) => {
-    await signInAs(role)
+  it('refuses LAB_TECHNICIAN', async () => {
+    await signInAs('LAB_TECHNICIAN')
 
     expect((await commissions()).status).toBe(403)
     expect((await payCommission({ billing_ids: ['b1'], payment_method: 'cash' })).status).toBe(403)

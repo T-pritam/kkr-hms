@@ -17,6 +17,8 @@ import {
   X,
   FlaskConical,
   ReceiptText,
+  Wallet,
+  HandCoins,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
@@ -101,6 +103,19 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
       href: '/ledger/summary',
       icon: BookOpen,
       roles: ['ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST'],
+    },
+    // The desk's float, and the advances paid from it (CR-02, CR-03).
+    {
+      name: 'Petty Cash',
+      href: '/petty-cash',
+      icon: Wallet,
+      roles: ['ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST'],
+    },
+    {
+      name: 'Employee Advance',
+      href: '/employees/advances',
+      icon: HandCoins,
+      roles: ['RECEPTIONIST'],
     },
     {
       name: 'Admin Panel',

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireEmployee } from '@/lib/employees/authz'
 import { validateAdvance, firstError } from '@/lib/employees/validate'
-import { validateSalaryAdvance, isAdvanceAmountValid } from '@/lib/salary-advance-validation'
+import { assertAdvanceAllowed, recordAdvance, redactPayroll, seesPayroll } from '@/lib/employees/advances'
 
 /**
  * Record a salary advance against one employee's month.
@@ -13,9 +13,11 @@ import { validateSalaryAdvance, isAdvanceAmountValid } from '@/lib/salary-advanc
  * advance out of anyone's salary. `advance:write` closes that; the roles are
  * the same ADMIN|DOCTOR every other route in the module already used.
  *
- * Everything downstream of the guard is unchanged: the settled-month block, the
- * cap from lib/salary-advance-validation.ts, and the way `total_advance` and
- * `final_salary` are written back all behave exactly as they did.
+ * The settled-month block, the cap and the way `total_advance` and
+ * `final_salary` are written back now live in lib/employees/advances.ts, shared
+ * with `POST /api/employees/advances` — the two used to disagree (BUGS.md #55).
+ * Reception reaches this route too (CR-03): its advance comes out of petty cash
+ * and its response carries no payroll figures.
  */
 export async function POST(
   request: NextRequest,
@@ -41,7 +43,7 @@ export async function POST(
 
     const { data: employee, error: empError } = await supabase
       .from('employees')
-      .select('id, name, base_salary')
+      .select('id, name')
       .eq('id', employeeId)
       .single()
 
@@ -49,104 +51,41 @@ export async function POST(
       return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
     }
 
-    const { data: salaryRecord, error: salaryError } = await supabase
-      .from('salary_payments')
-      .select('id, calculated_salary, total_advance, status, base_salary')
-      .eq('employee_id', employeeId)
-      .eq('month_year', month_year)
-      .maybeSingle()
-
-    if (salaryError && salaryError.code !== 'PGRST116') throw salaryError
-
-    const { data: existingAdvances, error: advError } = await supabase
-      .from('advances')
-      .select('amount')
-      .eq('employee_id', employeeId)
-      .eq('month_year', month_year)
-
-    if (advError) throw advError
-
-    // Postgres numerics can arrive as strings; coerce once here so the cap
-    // maths below is never comparing a string to a number.
-    const baseSalary = parseFloat(
-      String(salaryRecord?.base_salary ?? employee.base_salary ?? 0)
-    ) || 0
-
-    const salaryData = {
-      baseSalary,
-      salaryRecord: salaryRecord ? {
-        calculated_salary: parseFloat(salaryRecord.calculated_salary?.toString() || '0'),
-        total_advance: parseFloat(salaryRecord.total_advance?.toString() || '0'),
-        status: salaryRecord.status || 'pending',
-        settled_on: null,
-      } : null,
-      currentAdvances: existingAdvances || [],
-    }
-
-    if (salaryRecord && salaryRecord.status === 'settled') {
-      return NextResponse.json(
-        { error: 'Salary is already settled. No further advances can be added.' },
-        { status: 400 }
-      )
-    }
-
-    const validation = validateSalaryAdvance(salaryData)
-
-    if (!validation.isAllowed) {
-      return NextResponse.json(
-        { error: validation.reason || 'Cannot add advance at this time' },
-        { status: 400 }
-      )
-    }
-
     const proposedAmount = parseFloat(amount)
-    const amountValidation = isAdvanceAmountValid(salaryData, proposedAmount)
 
-    if (!amountValidation.valid) {
-      return NextResponse.json(
-        { error: amountValidation.reason || 'Invalid advance amount' },
-        { status: 400 }
-      )
+    const allowed = await assertAdvanceAllowed(supabase, {
+      employeeId,
+      monthYear: month_year,
+      amount: proposedAmount,
+      role: user.role,
+    })
+    if (!allowed.ok) {
+      return NextResponse.json({ error: allowed.error, code: allowed.code }, { status: allowed.status })
     }
 
-    const { data: advance, error: insertError } = await supabase
-      .from('advances')
-      .insert({
+    const result = await recordAdvance(
+      supabase,
+      user,
+      {
         employee_id: employeeId,
         amount: proposedAmount,
         date_given,
         month_year,
         remarks: remarks || null,
-        // Who handed over the cash, and who was at the keyboard.
         given_by: given_by?.trim() || null,
-        created_by: user.id,
-        updated_by: user.id,
-      })
-      .select()
-      .single()
+      },
+      { fromPettyCash: !seesPayroll(user.role), employeeName: employee.name },
+    )
 
-    if (insertError) throw insertError
-
-    if (salaryRecord) {
-      const currentTotal = parseFloat(salaryRecord.total_advance?.toString() || '0')
-      const newTotal = currentTotal + proposedAmount
-      const calculatedSalary = parseFloat(salaryRecord.calculated_salary?.toString() || '0')
-      const newFinalSalary = calculatedSalary - newTotal
-
-      await supabase
-        .from('salary_payments')
-        .update({
-          total_advance: newTotal,
-          final_salary: newFinalSalary,
-          updated_by: user.id,
-        })
-        .eq('id', salaryRecord.id)
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error, code: result.code }, { status: result.status })
     }
 
     return NextResponse.json({
       success: true,
       message: 'Advance recorded successfully',
-      data: advance,
+      data: redactPayroll(result.advance, user.role),
+      petty_cash_entry: result.pettyCashEntry,
     })
   } catch (error: any) {
     console.error('Error adding advance:', error)

@@ -1,14 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createLedgerTransactions } from '@/lib/ledger/transactions'
-import {
-  verifyToken,
-  getAccessToken,
-  getRefreshToken,
-  generateAccessToken,
-  generateRefreshToken,
-  setAuthCookies,
-} from '@/lib/auth/jwt'
+import { requireBilling } from '@/lib/billing/authz'
+import { payReferralCommission, validatePayout } from '@/lib/billing/payouts'
 import { istToday } from '@/lib/dates/ist'
 
 /**
@@ -18,46 +11,10 @@ import { istToday } from '@/lib/dates/ist'
  */
 export async function GET(request: NextRequest) {
   try {
-    // Token refresh logic
-    let accessToken = await getAccessToken()
-    if (!accessToken) {
-      const refreshToken = await getRefreshToken()
-      if (!refreshToken) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
+    const auth = await requireBilling(request, 'payout:read')
+    if (auth.response) return auth.response
 
-      const refreshPayload = await verifyToken(refreshToken)
-      if (!refreshPayload) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
 
-      accessToken = await generateAccessToken({
-        userId: refreshPayload.userId,
-        email: refreshPayload.email,
-        role: refreshPayload.role,
-      })
-
-      const newRefreshToken = await generateRefreshToken({
-        userId: refreshPayload.userId,
-        email: refreshPayload.email,
-        role: refreshPayload.role,
-      })
-
-      await setAuthCookies(accessToken, newRefreshToken)
-    }
-
-    const payload = await verifyToken(accessToken)
-    if (!payload) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // Admin and Doctor only
-    if (payload.role !== 'ADMIN' && payload.role !== 'DOCTOR') {
-      return NextResponse.json(
-        { error: 'Forbidden. Admin or Doctor access required.' },
-        { status: 403 }
-      )
-    }
 
     const searchParams = request.nextUrl.searchParams
     const settled = searchParams.get('settled')
@@ -141,133 +98,66 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    // Token refresh logic
-    let accessToken = await getAccessToken()
-    if (!accessToken) {
-      const refreshToken = await getRefreshToken()
-      if (!refreshToken) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
-      const refreshPayload = await verifyToken(refreshToken)
-      if (!refreshPayload) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
-      accessToken = await generateAccessToken({
-        userId: refreshPayload.userId,
-        email: refreshPayload.email,
-        role: refreshPayload.role,
-      })
-
-      const newRefreshToken = await generateRefreshToken({
-        userId: refreshPayload.userId,
-        email: refreshPayload.email,
-        role: refreshPayload.role,
-      })
-
-      await setAuthCookies(accessToken, newRefreshToken)
-    }
-
-    const payload = await verifyToken(accessToken)
-    if (!payload) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // Admin only
-    if (payload.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Forbidden. Admin access required.' },
-        { status: 403 }
-      )
-    }
+    const auth = await requireBilling(request, 'payout:write')
+    if (auth.response) return auth.response
+    const { user } = auth
 
     const body = await request.json()
-    const {
-      billing_ids,
-      payment_method,
-      transaction_reference,
-      settlement_notes,
-    } = body
+    const { billing_ids } = body
 
     if (!billing_ids || !Array.isArray(billing_ids) || billing_ids.length === 0) {
-      return NextResponse.json(
-        { error: 'billing_ids array is required' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'billing_ids array is required' }, { status: 400 })
     }
 
-    if (!payment_method) {
+    const details = validatePayout({
+      payment_method: body.payment_method,
+      transaction_reference: body.transaction_reference,
+      notes: body.settlement_notes,
+    })
+    if (!details.ok) {
       return NextResponse.json(
-        { error: 'payment_method is required' },
-        { status: 400 }
+        { error: details.error, fieldErrors: details.fieldErrors },
+        { status: details.status }
       )
     }
 
     const supabase = await createClient()
 
-    const ledgerDate = istToday()
-
-    // Update billing records
-    const { data: updated, error: updateError } = await supabase
+    const { data: pending, error: readError } = await supabase
       .from('patient_billing')
-      .update({
-        referral_settled: true,
-        referral_settlement_date: new Date().toISOString(),
-        referral_settlement_notes: settlement_notes,
-        updated_by: payload.userId,
-        updated_at: new Date().toISOString(),
-      })
+      .select('*')
       .in('id', billing_ids)
       .eq('referral_settled', false)
-      .select(`
-        *,
-        patient:patients(*)
-      `)
 
-    if (updateError) throw updateError
+    if (readError) throw readError
 
-    // Create ledger entries for each commission, through the shared write path.
-    if (updated && updated.length > 0) {
-      const result = await createLedgerTransactions(
-        supabase,
-        updated.map((billing: any) => ({
-          transaction_date: ledgerDate,
-          transaction_type: 'debit' as const,
-          source: 'referral_commission' as const,
-          amount: billing.referral_commission_amount,
-          payment_mode: payment_method,
-          reference_number: transaction_reference,
-          patient_id: billing.patient_id,
-          description: `Referral commission - ${billing.patient?.name || 'Unknown Patient'}`,
-          notes: settlement_notes,
-          created_by: payload.userId,
-          created_by_role: payload.role,
-        })),
-        { allowedSources: ['referral_commission'] }
-      )
+    const settled: any[] = []
+
+    // One path for every payout (CR-13): the commission is marked paid only
+    // once its ledger OUT exists, and that row is kept on the bill so un-paying
+    // can remove it again.
+    for (const billing of pending ?? []) {
+      const result = await payReferralCommission(supabase, user, billing, { details: details.value })
 
       if (!result.ok) {
-        console.error('Referral commission ledger entries rejected:', result.error)
         return NextResponse.json(
           { success: false, error: result.error, ...(result.code ? { code: result.code } : {}) },
           { status: result.status }
         )
       }
+
+      settled.push(billing.id)
     }
 
     return NextResponse.json({
       success: true,
-      message: `${updated?.length || 0} commission(s) settled successfully`,
-      data: updated,
+      message: `${settled.length} commission(s) settled successfully`,
+      data: settled,
     })
   } catch (error: any) {
     console.error('Error settling referral commissions:', error)
     return NextResponse.json(
-      {
-        success: false,
-        error: error.message || 'Failed to settle referral commissions',
-      },
+      { success: false, error: error.message || 'Failed to settle referral commissions' },
       { status: 500 }
     )
   }

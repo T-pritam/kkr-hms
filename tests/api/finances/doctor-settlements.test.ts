@@ -36,14 +36,49 @@ describe('doctor settlements — access control', () => {
     expect((await remove('s1'))?.status).toBe(401)
   })
 
-  it.each(['DOCTOR', 'NURSE', 'RECEPTIONIST'] as const)('refuses %s on every verb', async (role) => {
+  /**
+   * Reception prices and pays these now (PRD v2 CR-04, requirement 4: *"they
+   * can add fees to doctor and mark them paid also"*). A doctor still cannot —
+   * nobody sets their own rate — and neither can a nurse or the lab.
+   */
+  it.each(['DOCTOR', 'NURSE', 'LAB_TECHNICIAN'] as const)('refuses %s on every verb', async (role) => {
     await signInAs(role)
     aSettlement({ id: 's1' })
 
-    expect((await price('s1', { amount_per_visit: 1 })).body.error).toBe('Only admins can update settlements')
-    expect((await merge({ settlement_ids: ['s1', 's2'] })).body.error).toBe('Only admins can merge settlements')
+    expect((await price('s1', { amount_per_visit: 1 })).status).toBe(403)
+    expect((await merge({ settlement_ids: ['s1', 's2'] })).status).toBe(403)
     expect((await remove('s1')).status).toBe(403)
     expect((await settle({ settlement_id: 's1', settlement_amount: 1 })).status).toBe(403)
+  })
+
+  it('lets reception price a fee and pay it', async () => {
+    await signInAs('RECEPTIONIST', { userId: 'u-recep' })
+    aSettlement({ id: 's1', visit_count: 2, settled: false })
+
+    expect((await price('s1', { amount_per_visit: 500 })).status).toBe(200)
+    expect(row('s1').amount_set_by).toBe('u-recep')
+
+    const { status } = await settle({
+      settlement_id: 's1',
+      settlement_amount: 1000,
+      payment_method: 'cash',
+    })
+
+    expect(status).toBe(200)
+    expect(row('s1').settled).toBe(true)
+  })
+
+  it('will not let reception re-price a fee an admin set', async () => {
+    await signInAs('ADMIN', { userId: 'u-admin' })
+    aSettlement({ id: 's1', visit_count: 1 })
+    await price('s1', { amount_per_visit: 900 })
+
+    await signInAs('RECEPTIONIST', { userId: 'u-recep' })
+    const { status, body } = await price('s1', { amount_per_visit: 100 })
+
+    expect(status).toBe(403)
+    expect(body.code).toBe('NOT_YOUR_ENTRY')
+    expect(row('s1').amount_per_visit).toBe(900)
   })
 })
 
@@ -281,9 +316,7 @@ describe('POST /api/doctor-settlements/settle — single', () => {
     await signInAs('ADMIN')
 
     expect((await settle({})).body.error).toBe('Either settlement_id or settlement_ids must be provided')
-    expect((await settle({ settlement_id: 's1' })).body.error).toBe(
-      'settlement_id and settlement_amount are required'
-    )
+    expect((await settle({ settlement_id: 's1' })).body.error).toBe('The amount paid must be more than 0')
   })
 
   it('rejects a non-positive amount', async () => {
@@ -292,13 +325,17 @@ describe('POST /api/doctor-settlements/settle — single', () => {
 
     const { status, body } = await settle({ settlement_id: 's1', settlement_amount: -100 })
     expect(status).toBe(400)
-    expect(body.error).toBe('settlement_amount must be greater than 0')
+    expect(body.error).toBe('The amount paid must be more than 0')
   })
 
   it('returns 404 for an unknown settlement', async () => {
     await signInAs('ADMIN')
 
-    const { status, body } = await settle({ settlement_id: 'missing', settlement_amount: 1000 })
+    const { status, body } = await settle({
+      settlement_id: 'missing',
+      settlement_amount: 1000,
+      payment_method: 'cash',
+    })
     expect(status).toBe(404)
     expect(body.error).toBe('Settlement not found')
   })
@@ -315,11 +352,13 @@ describe('POST /api/doctor-settlements/settle — single', () => {
     })
 
     expect(status).toBe(200)
-    expect(body.message).toBe('Doctor visit fees settled successfully')
+    expect(body.message).toBe('Successfully settled 1 doctor visit(s)')
 
     expect(row('s1')).toMatchObject({
       settled: true,
       settlement_amount: 4500,
+      // What was paid is what the fee cost (Q-37 b).
+      total_amount: 4500,
       amount_per_visit: 1500,
       payment_method: 'cash',
       settlement_notes: 'March batch',
@@ -330,17 +369,94 @@ describe('POST /api/doctor-settlements/settle — single', () => {
   })
 
   /**
-   * Known defect — see BUGS.md #43. Sync creates settlements with visit_count 0, and this
-   * endpoint divides the amount by that count, writing Infinity into amount_per_visit.
+   * CR-13, the point of the whole module: this route used to mark fees paid and
+   * write nothing to the ledger, while the Finances screen wrote the debit. The
+   * same payout was money out on one screen and invisible on the other.
    */
-  it.fails('should refuse to settle a settlement with no visits', async () => {
+  it('books exactly one ledger OUT, and links it to the settlement', async () => {
+    await signInAs('ADMIN', { userId: 'u-admin' })
+    aDoctor({ id: 'd1', name: 'Dr Rao' })
+    aSettlement({ id: 's1', doctor_id: 'd1', visit_count: 2, settled: false })
+
+    await settle({ settlement_id: 's1', settlement_amount: 3000, payment_method: 'cash' })
+
+    const debits = db.rows('daily_ledger_transactions')
+    expect(debits).toHaveLength(1)
+    expect(debits[0]).toMatchObject({
+      transaction_type: 'debit',
+      source: 'doctor_settlement',
+      amount: 3000,
+      description: 'Doctor fee — Dr Rao',
+      // An admin's payout is born Closed (Q-25 = A).
+      status: 'closed',
+    })
+    expect(row('s1').ledger_transaction_id).toBe(debits[0].id)
+  })
+
+  it("leaves a receptionist's payout Open, for the admin to close (Q-71)", async () => {
+    await signInAs('RECEPTIONIST', { userId: 'u-recep' })
+    aSettlement({ id: 's1', visit_count: 1, settled: false })
+
+    await settle({ settlement_id: 's1', settlement_amount: 800, payment_method: 'cash' })
+
+    expect(db.rows('daily_ledger_transactions')[0]).toMatchObject({
+      status: 'open',
+      created_by: 'u-recep',
+    })
+  })
+
+  it('takes the ledger OUT back when the fee is un-paid (AC-13.2)', async () => {
+    await signInAs('RECEPTIONIST', { userId: 'u-recep' })
+    aSettlement({ id: 's1', visit_count: 1, settled: false })
+
+    await settle({ settlement_id: 's1', settlement_amount: 800, payment_method: 'cash' })
+    expect(db.count('daily_ledger_transactions')).toBe(1)
+
+    const { status } = await price('s1', { settled: false })
+
+    expect(status).toBe(200)
+    expect(db.count('daily_ledger_transactions')).toBe(0)
+    expect(row('s1')).toMatchObject({ settled: false, ledger_transaction_id: null })
+  })
+
+  /**
+   * An admin's payout is born Closed (Q-25 = A), and a closed entry is reopened
+   * before anything touches it (Q-04 = B, AC-06.3) — including the reversal of
+   * the payout that wrote it. The two rules meet here.
+   */
+  it('refuses to un-pay while its ledger entry is closed', async () => {
     await signInAs('ADMIN')
-    aSettlement({ id: 's1', visit_count: 0 })
+    aSettlement({ id: 's1', visit_count: 1, settled: false })
 
-    const { status } = await settle({ settlement_id: 's1', settlement_amount: 4500 })
+    await settle({ settlement_id: 's1', settlement_amount: 800, payment_method: 'cash' })
+    expect(db.rows('daily_ledger_transactions')[0].status).toBe('closed')
 
-    expect(status).toBe(400)
+    const { status, body } = await price('s1', { settled: false })
+
+    expect(status).toBe(409)
+    expect(body.code).toBe('ENTRY_LOCKED')
+    expect(row('s1').settled).toBe(true)
+    expect(db.count('daily_ledger_transactions')).toBe(1)
+  })
+
+  /**
+   * Was BUGS.md #43. Sync creates settlements with visit_count 0, and this
+   * endpoint divided the amount by that count, writing Infinity into
+   * amount_per_visit. The shared payout path treats "no visits" as one.
+   */
+  it('keeps the per-visit rate finite when the settlement has no visits', async () => {
+    await signInAs('ADMIN')
+    aSettlement({ id: 's1', visit_count: 0, settled: false })
+
+    const { status } = await settle({
+      settlement_id: 's1',
+      settlement_amount: 4500,
+      payment_method: 'cash',
+    })
+
+    expect(status).toBe(200)
     expect(Number.isFinite(Number(row('s1').amount_per_visit))).toBe(true)
+    expect(row('s1').amount_per_visit).toBe(4500)
   })
 })
 
@@ -349,7 +465,7 @@ describe('POST /api/doctor-settlements/settle — bulk', () => {
     await signInAs('ADMIN')
 
     const { body } = await settle({ settlement_ids: ['s1'] })
-    expect(body.error).toBe('settlement_amount_each is required')
+    expect(body.error).toBe('The amount paid must be more than 0')
   })
 
   it('rejects an empty list', async () => {
@@ -363,7 +479,7 @@ describe('POST /api/doctor-settlements/settle — bulk', () => {
     await signInAs('ADMIN')
 
     const { body } = await settle({ settlement_ids: ['s1'], settlement_amount_each: 0 })
-    expect(body.error).toBe('settlement_amount_each is required')
+    expect(body.error).toBe('The amount paid must be more than 0')
   })
 
   it('returns 404 when none of the ids exist', async () => {
@@ -371,7 +487,7 @@ describe('POST /api/doctor-settlements/settle — bulk', () => {
 
     const { status, body } = await settle({ settlement_ids: ['nope'], settlement_amount_each: 100 })
     expect(status).toBe(404)
-    expect(body.error).toBe('Settlements not found')
+    expect(body.error).toBe('Settlement not found')
   })
 
   it('settles each one for the same amount', async () => {
@@ -379,7 +495,11 @@ describe('POST /api/doctor-settlements/settle — bulk', () => {
     aSettlement({ id: 's1', visit_count: 2, settled: false })
     aSettlement({ id: 's2', visit_count: 4, settled: false })
 
-    const { status } = await settle({ settlement_ids: ['s1', 's2'], settlement_amount_each: 4000 })
+    const { status } = await settle({
+      settlement_ids: ['s1', 's2'],
+      settlement_amount_each: 4000,
+      payment_method: 'cash',
+    })
 
     expect(status).toBe(200)
     expect(row('s1')).toMatchObject({ settled: true, settlement_amount: 4000, amount_per_visit: 2000 })

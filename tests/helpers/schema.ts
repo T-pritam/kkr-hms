@@ -18,6 +18,8 @@ export const SCHEMA: Record<string, string[]> = {
     'id', 'employee_id', 'amount', 'date_given', 'month_year', 'remarks', 'created_at',
     // 20260804000003 — who handed it over, and who recorded it
     'given_by', 'created_by', 'updated_by', 'updated_at',
+    // 20260924000002 — the petty cash debit that paid it (CR-03)
+    'petty_cash_entry_id',
   ],
 
   daily_ledger_closures: [
@@ -53,6 +55,13 @@ export const SCHEMA: Record<string, string[]> = {
   ledger_close_batches: [
     'id', 'note', 'amount_received', 'row_count', 'closed_at', 'closed_by',
   ],
+  petty_cash_entries: [
+    'id', 'entry_date', 'direction', 'kind', 'amount', 'payment_mode', 'reason',
+    'given_to', 'advance_id', 'created_at', 'created_by', 'updated_at', 'updated_by',
+  ],
+  petty_cash_entry_history: [
+    'id', 'entry_id', 'action', 'before', 'after', 'changed_at', 'changed_by',
+  ],
 
   doctor_fee_schedule: [
     // 20260808000004 — per-doctor, per-purpose rate card
@@ -71,6 +80,8 @@ export const SCHEMA: Record<string, string[]> = {
     'visit_purpose_id',
     // 20260812000001 — who marked it settled, distinct from who last edited it
     'settled_by',
+    // 20260924000002 — who last set the amount, and the ledger OUT that paid it
+    'amount_set_by', 'ledger_transaction_id',
   ],
 
   doctors: [
@@ -221,6 +232,8 @@ export const SCHEMA: Record<string, string[]> = {
     'referral_settlement_given_by',
     // 20260922000001 — pending / collected / waived; null on older bills
     'registration_fee_status',
+    // 20260924000002 — who set the commission, and the ledger OUT that paid it
+    'referral_commission_set_by', 'referral_ledger_transaction_id',
   ],
 
   patient_billing_installments: [
