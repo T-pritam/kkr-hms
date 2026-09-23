@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, User, Stethoscope, DollarSign, CreditCard, FileText, Receipt, FlaskConical } from 'lucide-react';
+import { ArrowLeft, User, Stethoscope, DollarSign, CreditCard, FileText, Receipt, FlaskConical, LayoutDashboard } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
+import OverviewTab from '@/components/patients/overview-tab';
 import PatientInfoTab from '@/components/patients/patient-info-tab';
 import DoctorVisitsTab from '@/components/patients/doctor-visits-tab';
 import ChargesTab from '@/components/patients/charges-tab';
@@ -14,14 +15,14 @@ import LabHistoryTab from '@/components/patients/lab-history-tab';
 import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch';
 import { formatAgeSex } from '@/lib/patients/age';
 
-type Tab = 'info' | 'visits' | 'charges' | 'payments' | 'lab' | 'casesheet' | 'billing';
+type Tab = 'overview' | 'info' | 'visits' | 'charges' | 'payments' | 'lab' | 'casesheet' | 'billing';
 
 export default function PatientDetailsPage() {
   const params = useParams();
   const router = useRouter();
   const patientId = params.id as string;
 
-  const [activeTab, setActiveTab] = useState<Tab>('info');
+  const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [patientData, setPatientData] = useState<any>(null);
   const [billing, setBilling] = useState<any>(null);
   const [isCreatingBilling, setIsCreatingBilling] = useState(false);
@@ -127,6 +128,7 @@ export default function PatientDetailsPage() {
   };
 
   const tabs = [
+    { id: 'overview' as Tab, label: 'Overview', icon: LayoutDashboard },
     { id: 'info' as Tab, label: 'Patient Info', icon: User },
     { id: 'visits' as Tab, label: 'Doctor Visits', icon: Stethoscope },
     { id: 'charges' as Tab, label: 'Charges', icon: DollarSign },
@@ -224,6 +226,14 @@ export default function PatientDetailsPage() {
 
           {/* Tab Content */}
           <div className="animate-fadeIn">
+            {activeTab === 'overview' && (
+              <OverviewTab
+                patientId={patientId}
+                billingId={billing?.id}
+                onCreateBilling={createBilling}
+              />
+            )}
+
             {activeTab === 'info' && patientData && (
               <PatientInfoTab patient={patientData} />
             )}

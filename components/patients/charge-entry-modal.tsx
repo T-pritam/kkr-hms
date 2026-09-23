@@ -23,7 +23,7 @@ import { istToday } from '@/lib/dates/ist'
 const LAB_MEDICINE_LABEL: Record<string, string> = { lab: 'Lab', pharmacy: 'Medicine' }
 
 interface LabMedicineAnswer {
-  choice: 'collect' | 'included'
+  choice: 'collect' | 'later' | 'included'
   payment_method: string
   transaction_reference: string
 }
@@ -315,13 +315,13 @@ export function ChargeEntryModal({
 
         if (labMedicine && labAnswer) {
           payload.lab_medicine =
-            labAnswer.choice === 'included'
-              ? { choice: 'included' }
-              : {
+            labAnswer.choice === 'collect'
+              ? {
                   choice: 'collect',
                   payment_method: labAnswer.payment_method,
                   transaction_reference: labAnswer.transaction_reference || null,
                 }
+              : { choice: labAnswer.choice }
         }
       } else {
         payload.charge_date = form.charge_date
@@ -377,7 +377,9 @@ export function ChargeEntryModal({
   const submitLabel = () => {
     if (mode === 'edit') return 'Save changes'
     if (labMedicine && labAnswer) {
-      return labAnswer.choice === 'collect' ? `Save & collect ${money(preview.total)}` : 'Save (included)'
+      if (labAnswer.choice === 'collect') return `Save & collect ${money(preview.total)}`
+      if (labAnswer.choice === 'later') return 'Save (collect later)'
+      return 'Save (included)'
     }
     if (isRange && days > 1) return `Add ${days} lines`
     return 'Add charge'
@@ -453,6 +455,22 @@ export function ChargeEntryModal({
                 )}
               </div>
             )}
+            <label className="flex items-start gap-2 text-sm text-foreground">
+              <input
+                type="radio"
+                name="lab-medicine-choice"
+                checked={labAnswer.choice === 'later'}
+                onChange={() => setLabAnswer({ ...labAnswer, choice: 'later' })}
+                className="mt-1"
+              />
+              <span>
+                <strong>Excluded — collect later</strong>
+                <span className="block text-xs text-muted">
+                  The charge reads &quot;collect {money(preview.total)} from the patient&quot; until someone
+                  presses Collect now on the Charges tab.
+                </span>
+              </span>
+            </label>
             <label className="flex items-start gap-2 text-sm text-foreground">
               <input
                 type="radio"

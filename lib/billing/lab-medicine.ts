@@ -4,11 +4,14 @@
  * The client's rules (2026-09-22):
  *   - Only lab and medicine charges ask this question; every other charge is
  *     internal knowledge and moves no money.
- *   - **Excluded** is the default. It means the desk collects the amount now, as
- *     its own payment labelled Lab or Medicine, which shows in the Ledger with
- *     the patient: "12/26 Ramesh Kumar (Medicine)".
+ *   - **Excluded** is the default: the amount is collected from the patient
+ *     separately, as its own payment labelled Lab or Medicine, which shows in
+ *     the Ledger with the patient: "12/26 Ramesh Kumar (Medicine)". The desk
+ *     either takes it there and then, or marks it to collect later.
  *   - **Included** means the patient's regular payments already cover it, so
- *     nothing extra is collected.
+ *     nothing extra is collected. That money stays with the hospital; the lab or
+ *     pharmacy bills the hospital separately (2026-09-23), so nothing is booked
+ *     as an expense here.
  *   - The desk is asked at the moment of saving (an alert), defaulting to
  *     excluded. All money comes in through the desk.
  *
@@ -42,7 +45,14 @@ export function labMedicineKind(category: string | null | undefined): LabMedicin
 }
 
 export interface LabMedicineChoice {
-  choice: 'collect' | 'included'
+  /**
+   * What the desk answered when saving:
+   *   collect   take the money now — a payment tagged Lab/Medicine
+   *   later     excluded, but not collected yet: the charge reads
+   *             "collect ₹x from the patient" and waits for Collect now
+   *   included  the patient's regular payments already cover it
+   */
+  choice: 'collect' | 'later' | 'included'
   /** Only for `collect`. */
   payment?: {
     payment_method: string
@@ -64,12 +74,13 @@ export function parseLabMedicineChoice(
 
   const r = raw as Record<string, unknown>
   if (r.choice === 'included') return { ok: true, value: { choice: 'included' } }
+  if (r.choice === 'later') return { ok: true, value: { choice: 'later' } }
 
   if (r.choice !== 'collect') {
     return {
       ok: false,
       status: 400,
-      error: 'Say whether this is collected separately now or included in the payments',
+      error: 'Say whether this is collected now, collected later, or included in the payments',
       fieldErrors: { 'lab_medicine.choice': 'Choose one' },
     }
   }

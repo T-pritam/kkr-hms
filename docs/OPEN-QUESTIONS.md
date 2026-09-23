@@ -2,88 +2,48 @@
 
 Everything still waiting on an answer, in one place. The PRD is [`PRD-v2.md`](PRD-v2.md); answered questions are logged in its §9.
 
-**How to answer:** reply by ID, e.g. `Q-82: A`, `Q-80: as proposed`, or free text. After your answers, the PRD is updated and the questions move to its answer log.
+**How to answer:** reply by ID, e.g. `Q-90: A`, `Q-91: as proposed`, or free text. After your answers, the PRD is updated and the questions move to its answer log.
 
-**★ Answer these first.** They decide the patient's Net and the lab/pharmacy payouts (CR-15, CR-16): **Q-82, Q-83.**
-
-The rest confirm how something was **built** while waiting. Each says what the app does now, and "as proposed" keeps it.
-
-_Last updated 2026-09-22 · 11 open_
+_Last updated 2026-09-23 · **0 open**_
 
 ---
 
-### Patient money (CR-15, CR-16)
+## Nothing is waiting on you
 
-**Q-82 ★ — Money collected separately for lab or medicine: whose money is it?**
-When a lab or medicine charge is *Excluded*, the desk collects it now as its own payment tagged Lab or Medicine. That payment counts in the patient's total bill. Is it:
-- **A** passed on to the lab or pharmacy, so it's **not** the hospital's income and doesn't count in the hospital's Net; or
-- **B** the hospital's own income (for example, if the lab or pharmacy is the hospital's)?
+Rounds 1, 2 and 3 (Q-01 … Q-87) are all answered, and the answers are logged in [`PRD-v2.md` §9](PRD-v2.md#9-open-questions).
 
-Worked example (PRD-v2, CR-15): the total bill is ₹39,100, with a ₹9,000 medicine charge collected separately. **A** gives Net ₹19,100; **B** gives Net ₹28,100.
+The last round settled the patient's money for good:
 
-*Proposed:* **A**. You described the lab and pharmacy as different entities, and your point 4 counts lab/medicine as an expense only when included.
+- Money collected separately for lab or medicine is **passed on** to the lab or pharmacy — not the hospital's income (Q-82).
+- A lab or medicine charge marked **Included** is **hospital income, not an expense**; it is recorded for the logs and to see what the patient used (Q-83).
+- A lab or medicine charge can now be **collected now**, **collected later** ("collect ₹x from the patient"), or **included** (Q-87).
+- The pharmacy bill attach stays as a **record only**, for a patient who wants the full bill; it touches no finance figure (Q-84).
 
-**Q-83 ★ — Paying the lab or pharmacy.**
-You answered Q-61 "as proposed": included lab/medicine amounts become pending payouts to the lab or pharmacy, and paying them writes a ledger OUT, like doctor fees. What about amounts collected separately (Excluded) that get handed over (Q-82 = A)?
-- **A** Track them the same way: one payout list, pending → paid.
-- **B** Track only the included ones; separately collected money counts as handed over straight away.
-- **C** Track no lab/pharmacy payouts at all; they're just figures ("distributing is their headache", Q-60).
+So, for one stay: **Net = (total bill − passed on) − doctor fees − referral commission**, admin only.
 
-*Proposed:* **A**.
+---
 
-**Q-81 — Unpaid doctor fees and referral commission in the Expenses tab.**
-You wrote *"showing in the expense tab for all the left offs"*.
-- **(a)** Paying one writes a ledger OUT. *Proposed:* yes.
-- **(b)** The Expenses tab also lists the ones not paid yet, per patient, as Paid or Pending, and "money out" counts only paid ones. *Proposed:* yes.
-- **(c)** For a patient's Net, they count as soon as they're priced, paid or not. *Proposed:* yes.
+## Parked by you, to raise again when you want them
 
-**Q-67 — The billing PDF given to the patient** *(you said: later)*.
-*Built now:* services used and payments (with their labels), with no balance, doctor fees or referral commission.
+These aren't questions — they're things you told me to leave for later. Say the word and they come back as a CR.
 
-### Built with a default — confirm or change
+| # | What | You said |
+|---|---|---|
+| Q-73 / Q-53 | **Refunds, discounts and printed receipts** | "Not now" (Q-73) |
+| Q-74 | **Readmission** — a separate bill per stay, with a stay picker (CR-17) | "Consider it as new patient admission for now": a returning patient is registered again |
+| Q-63 / Q-84 | **SmartPharma360** — pulling the medicine bill in instead of typing the amount | "No SmartPharma bill, place the amount directly (later integrate if needed)" |
+| Q-72 | **Manual ledger rows, and merging the employee ledgers** | "Later"; visit purposes come first |
 
-**Q-78 — Payment modes for collecting a lab or medicine charge.**
-*Built:* any mode (Cash / UPI / Card / Bank transfer / Cheque; UPI needs a reference), dated today. Restrict it to Cash/UPI like the registration fee?
+---
 
-*Proposed:* keep all modes.
+## What is being built next
 
-**Q-79 — Changing a lab or medicine charge after it's saved.**
-*Built:*
-- While "To collect" or "Included", it can be switched either way (**Collect now**, **Included**, **Collect separately**) by admin and reception.
-- Once **Collected**, its amount can't change and it can't be deleted until its payment is deleted on the Payments tab. That puts it back to "To collect".
+No CR is blocked. In the PRD's build order (§2), what's left is:
 
-The alternative is that editing or deleting the charge updates or deletes its payment automatically.
+1. **CR-01** — the own-row rule, view-all and the closed lock enforced on the server (P0).
+2. **CR-05** — the ledger log: every entry in one list, simpler fetching (P0).
+3. **CR-06 / CR-08** — closing entries, then retiring the day-based daily ledger (P1).
+4. **CR-02 / CR-03** — petty cash, and advances for reception (P1).
+5. **CR-04 / CR-07 / CR-10 / CR-13** — reception pricing and payouts, admin expenses, the finance restructure, one payout path (P2).
 
-*Proposed:* keep as built.
-
-**Q-80 — Payment labels.**
-*Built:*
-- **Labels:** Advance · Regular · Discharge · Misc, picked by the desk (default Regular, and changeable later on the payment). Lab · Medicine · Registration are set by the app and fixed.
-- **Display:** the Ledger and Payments show "12/26 Ramesh Kumar (Advance)".
-- **Existing data:** the payments already recorded become Regular.
-- **Discharge** is only a label; it doesn't discharge the patient.
-- **Scope:** labels are on **payments**. (Your note said "patient charges"; tell me if you meant labels on charges.)
-
-*Proposed:* keep as built.
-
-**Q-84 — SmartPharma360.**
-You said "no SmartPharma bill; place the amount directly". The Charges tab still has **Attach pharmacy bill** (SmartPharma360).
-- **(a)** Hide that button (on patients and on charge sheets) until you want the integration back?
-- **(b)** The 2 bills already attached have no included/excluded status and ask nothing. Leave them like that?
-
-*Proposed:* (a) hide it; (b) leave them.
-
-**Q-85 — X-Ray, CT and MRI.**
-*Built:* only "Lab Test" moved to the new Lab category. X-Ray, CT and MRI stay in Diagnostics as the hospital's own, so they don't ask included/excluded. Are any of them done by the outside lab?
-
-*Proposed:* keep as built.
-
-**Q-86 — Forwarding a quote (charge sheet) with lab or medicine lines.**
-*Built:* those lines arrive as "To collect", with **Collect now** and **Included** buttons on the Charges tab. Nobody is asked during a forward.
-
-*Proposed:* keep as built.
-
-**Q-87 — Lab and medicine charges made before this change.**
-*Built:* they show no status and ask nothing (their money was handled the old way).
-
-*Proposed:* keep as built.
+**Waiting on you instead:** deploying what's already built — CR-11, CR-12, CR-14, CR-15 and CR-16, on two branches with three migrations. The order and the smoke test are in [`PRD-v2.md` §8.4](PRD-v2.md#84-deploying-whats-built-cr-11-cr-12-cr-14-cr-15-cr-16).

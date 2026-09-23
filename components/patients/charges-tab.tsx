@@ -583,9 +583,13 @@ function ChargeDetailRow({
 }) {
   const bill = charge.pharmacy_bill;
   // Lab / medicine: included in the payments, to collect, or collected (CR-15).
+  // A lab/medicine charge saved before this existed has no status; it can still
+  // be decided (the client's Q-87: "mark it no status and later you can change").
   const status: string | null = charge.lab_medicine_status ?? null;
+  const isLabMedicine = ['lab', 'pharmacy'].includes(charge.charge_item?.category);
   const collected = status === 'collected';
   const payment = charge.collected_installment;
+  const undecided = isLabMedicine && !status;
 
   return (
     <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 px-4 py-3">
@@ -597,7 +601,9 @@ function ChargeDetailRow({
             <Badge variant="success" className="ml-2">Included in payments</Badge>
           )}
           {status === 'to_collect' && (
-            <Badge variant="warning" className="ml-2">To collect</Badge>
+            <Badge variant="warning" className="ml-2">
+              Excluded — collect {money(lineTotal(charge))} from the patient
+            </Badge>
           )}
           {collected && (
             <Badge variant="accent" className="ml-2">
@@ -641,7 +647,7 @@ function ChargeDetailRow({
         </span>
 
         <div className="flex flex-wrap gap-2">
-          {canDecide && status === 'to_collect' && (
+          {canDecide && (status === 'to_collect' || undecided) && (
             <>
               <button onClick={() => onCollect(charge)} className="text-success-text text-sm font-medium">
                 Collect now

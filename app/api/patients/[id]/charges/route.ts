@@ -166,8 +166,8 @@ export async function POST(
 
     /**
      * Lab and medicine ask one more thing, at the moment of saving (PRD v2 CR-15):
-     * collected separately now (the default — excluded), or included in the
-     * patient's payments. Checked here, before anything is written.
+     * collect it now, mark it excluded and collect later, or say the patient's
+     * payments already include it. Checked here, before anything is written.
      */
     const labMedicine = labMedicineKind(chargeItem?.category)
     const choice = labMedicine ? parseLabMedicineChoice(body.lab_medicine) : null
