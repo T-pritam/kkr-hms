@@ -33,6 +33,7 @@ import {
   aPatient,
   aReferral,
   aClosure,
+  aPettyCashEntry,
 } from '../../helpers/seed'
 import { THIS_MONTH, TODAY } from '../../setup'
 import {
@@ -42,7 +43,12 @@ import {
 } from '@/lib/finances/constants'
 
 const expenses = (query = {}) => call(listExpenses, 'GET', '/api/finances/expenses', { query })
-const createExpense = (body: unknown) => call(addExpense, 'POST', '/api/finances/expenses', { body })
+// Every expense needs a reason now (Q-39 = A); the tests that are not about
+// that rule get one by default, so they keep testing what they came to test.
+const createExpense = (body: any) =>
+  call(addExpense, 'POST', '/api/finances/expenses', {
+    body: body && typeof body === 'object' && !('remarks' in body) ? { remarks: 'March bill', ...body } : body,
+  })
 const updateExpense = (body: unknown) => call(editExpense, 'PUT', '/api/finances/expenses', { body })
 const deleteExpense = (query: Record<string, string>) =>
   call(removeExpense, 'DELETE', '/api/finances/expenses', { query })
@@ -338,166 +344,200 @@ describe('/api/finances/expenses', () => {
   })
 })
 
-describe('GET /api/finances/summary', () => {
+describe('GET /api/finances/summary — the Overview, on a cash basis (Q-36)', () => {
   it.each(['NURSE', 'RECEPTIONIST'] as const)('refuses %s', async (role) => {
     await signInAs(role)
     expect((await summary()).status).toBe(403)
   })
 
-  it('reports the requested month', async () => {
+  it('reports the requested month, and rejects a nonsense one', async () => {
     await signInAs('ADMIN')
 
     expect((await summary({ month_year: '2026-01' })).body.month_year).toBe('2026-01')
     expect((await summary()).body.month_year).toBe(THIS_MONTH)
+    expect((await summary({ month_year: 'last-year' })).status).toBe(400)
   })
 
-  it('sums patient payments made during the month as income', async () => {
-    await signInAs('ADMIN')
-    aBilling({ id: 'b1' })
-    anInstallment({ patient_billing_id: 'b1', amount: 5000, payment_date: '2026-03-05' })
-    anInstallment({ patient_billing_id: 'b1', amount: 3000, payment_date: '2026-03-20' })
-    anInstallment({ patient_billing_id: 'b1', amount: 9999, payment_date: '2026-02-20' })
+  describe('money in', () => {
+    it('counts every patient payment made in the month, whatever its label', async () => {
+      await signInAs('ADMIN')
+      aBilling({ id: 'b1' })
+      anInstallment({ patient_billing_id: 'b1', amount: 5000, payment_date: '2026-03-05', kind: 'regular' })
+      anInstallment({ patient_billing_id: 'b1', amount: 3000, payment_date: '2026-03-20', kind: 'advance' })
+      anInstallment({ patient_billing_id: 'b1', amount: 100, payment_date: '2026-03-20', kind: 'registration' })
+      anInstallment({ patient_billing_id: 'b1', amount: 900, payment_date: '2026-03-21', kind: 'medicine' })
+      anInstallment({ patient_billing_id: 'b1', amount: 9999, payment_date: '2026-02-20' })
 
-    const { body } = await summary({ month_year: THIS_MONTH })
+      const { body } = await summary({ month_year: THIS_MONTH })
 
-    expect(body.income.total_paid).toBe(8000)
-    expect(body.income.net_income).toBe(8000)
-  })
-
-  it('sums charges raised during the month, multiplied by quantity', async () => {
-    await signInAs('ADMIN')
-    aCharge({ amount: 500, qty: 3, charge_date: '2026-03-05' })
-    aCharge({ amount: 200, qty: 1, charge_date: '2026-03-06' })
-    aCharge({ amount: 9999, qty: 1, charge_date: '2026-02-05' })
-
-    expect((await summary({ month_year: THIS_MONTH })).body.income.total_charges).toBe(1700)
-  })
-
-  it('sums general expenses for the month', async () => {
-    await signInAs('ADMIN')
-    anExpense({ amount: 5000, month_year: THIS_MONTH })
-    anExpense({ amount: 3000, month_year: THIS_MONTH })
-    anExpense({ amount: 9999, month_year: '2026-02' })
-
-    expect((await summary({ month_year: THIS_MONTH })).body.expenses.general_expenses).toBe(8000)
-  })
-
-  it('counts a settled salary at its full value but an unsettled one only at the advance drawn', async () => {
-    await signInAs('ADMIN')
-    aSalaryRecord({ month_year: THIS_MONTH, status: 'settled', calculated_salary: 27000, total_advance: 5000 })
-    aSalaryRecord({ month_year: THIS_MONTH, status: 'pending', calculated_salary: 30000, total_advance: 4000 })
-
-    expect((await summary({ month_year: THIS_MONTH })).body.expenses.salary_expenses).toBe(31000)
-  })
-
-  it('sums ledger debits booked to expenses', async () => {
-    await signInAs('ADMIN')
-    aTransaction({ transaction_type: 'debit', source: 'expense', amount: 2500, transaction_date: '2026-03-05' })
-    aTransaction({ transaction_type: 'debit', source: 'opd', amount: 9999, transaction_date: '2026-03-05' })
-    aTransaction({ transaction_type: 'credit', source: 'expense', amount: 9999, transaction_date: '2026-03-05' })
-
-    expect((await summary({ month_year: THIS_MONTH })).body.expenses.ledger_expenses).toBe(2500)
-  })
-
-  it('derives profit and margin from income minus expenses', async () => {
-    await signInAs('ADMIN')
-    aBilling({ id: 'b1' })
-    anInstallment({ patient_billing_id: 'b1', amount: 10000, payment_date: '2026-03-05' })
-    anExpense({ amount: 4000, month_year: THIS_MONTH })
-
-    const { body } = await summary({ month_year: THIS_MONTH })
-
-    expect(body.expenses.total_expenses).toBe(4000)
-    expect(body.profit.net_profit).toBe(6000)
-    expect(body.profit.profit_margin).toBe(60)
-  })
-
-  it('reports a zero margin when there was no income', async () => {
-    await signInAs('ADMIN')
-    anExpense({ amount: 4000, month_year: THIS_MONTH })
-
-    const { body } = await summary({ month_year: THIS_MONTH })
-    expect(body.profit.profit_margin).toBe(0)
-    expect(body.profit.net_profit).toBe(-4000)
-  })
-
-  it('reports outstanding doctor fees and commissions across all months', async () => {
-    await signInAs('ADMIN')
-    aSettlement({ settled: false, total_amount: 4500 })
-    aSettlement({ settled: false, total_amount: 2000 })
-    aSettlement({ settled: true, total_amount: 9999 })
-    aSettlement({ settled: false, total_amount: 8888, deleted_at: '2026-03-01T00:00:00.000Z' })
-    aBilling({ referral_settled: false, referral_commission_amount: 3000 })
-    aBilling({ referral_settled: true, referral_commission_amount: 9999 })
-
-    const { body } = await summary({ month_year: THIS_MONTH })
-
-    expect(body.pending_settlements.doctor_fees).toBe(6500)
-    expect(body.pending_settlements.doctor_count).toBe(2)
-    expect(body.pending_settlements.referral_commissions).toBe(3000)
-  })
-
-  it('lists the month’s ledger transactions', async () => {
-    await signInAs('ADMIN')
-    aTransaction({ id: 't1', transaction_date: '2026-03-05' })
-    aTransaction({ id: 't2', transaction_date: '2026-02-05' })
-
-    const { body } = await summary({ month_year: THIS_MONTH })
-    expect(body.recent_transactions.map((t: any) => t.id)).toEqual(['t1'])
-  })
-
-  /**
-   * BUGS.md #16/#23, resolved — patient_billing now has both package-flag columns
-   * (supabase/migrations/20260805000001_patient_billing_package_flags.sql), so the
-   * summary's billing query no longer errors and these figures read real values again.
-   */
-  it('should report referral commission for the month', async () => {
-    await signInAs('ADMIN')
-    aBilling({ month_year: THIS_MONTH, referral_commission_amount: 3000 })
-
-    expect((await summary({ month_year: THIS_MONTH })).body.income.total_commission).toBe(3000)
-  })
-
-  it('should report doctor fees for the month', async () => {
-    await signInAs('ADMIN')
-    aBilling({ month_year: THIS_MONTH, total_doctor_fees: 6500 })
-
-    expect((await summary({ month_year: THIS_MONTH })).body.expenses.doctor_fees).toBe(6500)
-  })
-
-  /** PRD v2 Q-32 / CR-15: charges are internal and nothing is owed against them. */
-  it('no longer reports pending receivables', async () => {
-    await signInAs('ADMIN')
-    aBilling({ month_year: THIS_MONTH, total_charges: 26500, patient_paid_amount: 7000 })
-
-    expect((await summary({ month_year: THIS_MONTH })).body.income).not.toHaveProperty('pending_receivables')
-  })
-
-  /** PRD v2 CR-15: doctor fees and commission are always the patient's expense. */
-  it('counts doctor fees and commission even on a bill that says they were in a package', async () => {
-    await signInAs('ADMIN')
-    aBilling({
-      month_year: THIS_MONTH,
-      total_doctor_fees: 6500,
-      referral_commission_amount: 3000,
-      doctor_fees_included_in_package: true,
-      referral_commission_included_in_package: true,
+      expect(body.income.total_paid).toBe(9000)
     })
 
-    const { body } = await summary({ month_year: THIS_MONTH })
-    expect(body.expenses.doctor_fees).toBe(6500)
-    expect(body.expenses.referral_commissions).toBe(3000)
+    it('counts OPD receipts beside them, which it never did', async () => {
+      await signInAs('ADMIN')
+      aTransaction({ transaction_type: 'credit', source: 'opd', amount: 1200, transaction_date: '2026-03-05' })
+      aTransaction({ transaction_type: 'credit', source: 'opd', amount: 9999, transaction_date: '2026-02-05' })
+
+      const { body } = await summary({ month_year: THIS_MONTH })
+
+      expect(body.income.opd_receipts).toBe(1200)
+      expect(body.income.money_in).toBe(1200)
+    })
+
+    /** Charges are internal and move no money (CR-15). */
+    it('counts no charges at all', async () => {
+      await signInAs('ADMIN')
+      aCharge({ amount: 500, qty: 3, charge_date: '2026-03-05' })
+
+      const { body } = await summary({ month_year: THIS_MONTH })
+
+      expect(body.income).not.toHaveProperty('total_charges')
+      expect(body.income.money_in).toBe(0)
+    })
+
+    it('no longer reports pending receivables (Q-32 = A)', async () => {
+      await signInAs('ADMIN')
+      aBilling({ month_year: THIS_MONTH, total_charges: 26500, patient_paid_amount: 7000 })
+
+      expect((await summary({ month_year: THIS_MONTH })).body.income).not.toHaveProperty('pending_receivables')
+    })
   })
 
-  /**
-   * Known defect — see BUGS.md #51. The payment-mode breakdown is computed and then left
-   * out of the response, while the client type declares it — so it is always undefined.
-   */
-  it.fails('should return the payment mode breakdown the client expects', async () => {
-    await signInAs('ADMIN')
-    aTransaction({ transaction_date: '2026-03-05', payment_mode: 'cash', transaction_type: 'credit', amount: 1000 })
+  describe('money out', () => {
+    it('counts general expenses for the month', async () => {
+      await signInAs('ADMIN')
+      anExpense({ amount: 5000, month_year: THIS_MONTH })
+      anExpense({ amount: 3000, month_year: THIS_MONTH })
+      anExpense({ amount: 9999, month_year: '2026-02' })
 
-    expect((await summary({ month_year: THIS_MONTH })).body.payment_mode_breakdown).toBeDefined()
+      expect((await summary({ month_year: THIS_MONTH })).body.expenses.general_expenses).toBe(8000)
+    })
+
+    /** Q-69 = A: the float reaches the log as one line — what the desk spent. */
+    it('counts what the desk spent from petty cash, and neither top-ups nor advances', async () => {
+      await signInAs('ADMIN')
+      aPettyCashEntry({ kind: 'expense', direction: 'out', amount: 450, entry_date: '2026-03-05' })
+      aPettyCashEntry({ kind: 'expense', direction: 'out', amount: 1200, entry_date: '2026-03-06' })
+      aPettyCashEntry({ kind: 'topup', direction: 'in', amount: 5000, entry_date: '2026-03-01' })
+      aPettyCashEntry({ kind: 'advance', direction: 'out', amount: 2000, entry_date: '2026-03-07', advance_id: 1 })
+      aPettyCashEntry({ kind: 'expense', direction: 'out', amount: 9999, entry_date: '2026-02-05' })
+
+      expect((await summary({ month_year: THIS_MONTH })).body.expenses.petty_cash).toBe(1650)
+    })
+
+    it('counts a settled salary in full and an unsettled one at the advances drawn', async () => {
+      await signInAs('ADMIN')
+      aSalaryRecord({ month_year: THIS_MONTH, status: 'settled', calculated_salary: 27000, total_advance: 5000 })
+      aSalaryRecord({ month_year: THIS_MONTH, status: 'pending', calculated_salary: 30000, total_advance: 4000 })
+
+      expect((await summary({ month_year: THIS_MONTH })).body.expenses.salary_expenses).toBe(31000)
+    })
+
+    /**
+     * The change that makes profit mean something: a fee is counted when it is
+     * paid, not when it is priced. The old summary added up every fee on every
+     * bill in the month, paid or not, and called the result an expense.
+     */
+    it('counts doctor fees and commissions only once they are actually paid', async () => {
+      await signInAs('ADMIN')
+      // Priced, unpaid: it is money the hospital owes, not money it has spent.
+      aBilling({ month_year: THIS_MONTH, total_doctor_fees: 6500, referral_commission_amount: 3000 })
+      // Paid: the ledger debit each payout writes (CR-13).
+      aTransaction({ transaction_type: 'debit', source: 'doctor_settlement', amount: 2200, transaction_date: '2026-03-05' })
+      aTransaction({ transaction_type: 'debit', source: 'referral_commission', amount: 800, transaction_date: '2026-03-06' })
+      aTransaction({ transaction_type: 'debit', source: 'doctor_settlement', amount: 9999, transaction_date: '2026-02-05' })
+
+      const { body } = await summary({ month_year: THIS_MONTH })
+
+      expect(body.expenses.doctor_fees).toBe(2200)
+      expect(body.expenses.referral_commissions).toBe(800)
+    })
+
+    /** Desk expenses booked to the ledger before petty cash existed (CR-07). */
+    it('still counts the legacy ledger expenses, for the months they fall in', async () => {
+      await signInAs('ADMIN')
+      aTransaction({ transaction_type: 'debit', source: 'expense', amount: 2500, transaction_date: '2026-03-05' })
+      aTransaction({ transaction_type: 'debit', source: 'opd', amount: 9999, transaction_date: '2026-03-05' })
+      aTransaction({ transaction_type: 'credit', source: 'expense', amount: 9999, transaction_date: '2026-03-05' })
+
+      expect((await summary({ month_year: THIS_MONTH })).body.expenses.ledger_expenses).toBe(2500)
+    })
+
+    it('adds the parts up to the total', async () => {
+      await signInAs('ADMIN')
+      anExpense({ amount: 4000, month_year: THIS_MONTH })
+      aPettyCashEntry({ kind: 'expense', direction: 'out', amount: 500, entry_date: '2026-03-05' })
+      aSalaryRecord({ month_year: THIS_MONTH, status: 'settled', calculated_salary: 20000 })
+      aTransaction({ transaction_type: 'debit', source: 'doctor_settlement', amount: 1000, transaction_date: '2026-03-05' })
+
+      expect((await summary({ month_year: THIS_MONTH })).body.expenses.total_expenses).toBe(25500)
+    })
+  })
+
+  describe('profit', () => {
+    it('is money in minus money out', async () => {
+      await signInAs('ADMIN')
+      aBilling({ id: 'b1' })
+      anInstallment({ patient_billing_id: 'b1', amount: 10000, payment_date: '2026-03-05' })
+      anExpense({ amount: 4000, month_year: THIS_MONTH })
+
+      const { body } = await summary({ month_year: THIS_MONTH })
+
+      expect(body.expenses.total_expenses).toBe(4000)
+      expect(body.profit.net_profit).toBe(6000)
+      expect(body.profit.profit_margin).toBe(60)
+      expect(body.profit.is_profit).toBe(true)
+    })
+
+    it('reports a zero margin when nothing came in', async () => {
+      await signInAs('ADMIN')
+      anExpense({ amount: 4000, month_year: THIS_MONTH })
+
+      const { body } = await summary({ month_year: THIS_MONTH })
+      expect(body.profit.profit_margin).toBe(0)
+      expect(body.profit.net_profit).toBe(-4000)
+      expect(body.profit.is_profit).toBe(false)
+    })
+  })
+
+  /** Q-81 (b): priced but unpaid, listed per patient, and never in money out. */
+  describe('what is still owed', () => {
+    it('lists outstanding doctor fees and commissions across all months', async () => {
+      await signInAs('ADMIN')
+      aSettlement({ settled: false, total_amount: 4500 })
+      aSettlement({ settled: false, total_amount: 2000 })
+      aSettlement({ settled: true, total_amount: 9999 })
+      aSettlement({ settled: false, total_amount: 8888, deleted_at: '2026-03-01T00:00:00.000Z' })
+      aBilling({ referral_settled: false, referral_commission_amount: 3000 })
+      aBilling({ referral_settled: true, referral_commission_amount: 9999 })
+
+      const { body } = await summary({ month_year: THIS_MONTH })
+
+      expect(body.pending_settlements.doctor_fees).toBe(6500)
+      expect(body.pending_settlements.doctor_count).toBe(2)
+      expect(body.pending_settlements.referral_commissions).toBe(3000)
+      expect(body.pending_settlements.total).toBe(9500)
+      expect(body.pending_settlements.rows).toHaveLength(3)
+    })
+
+    it('keeps them out of money out', async () => {
+      await signInAs('ADMIN')
+      aSettlement({ settled: false, total_amount: 4500 })
+      aBilling({ month_year: THIS_MONTH, referral_settled: false, referral_commission_amount: 3000 })
+
+      const { body } = await summary({ month_year: THIS_MONTH })
+
+      expect(body.expenses.total_expenses).toBe(0)
+      expect(body.profit.net_profit).toBe(0)
+    })
+  })
+
+  /** The ledger is its own screen now (CR-08). */
+  it('no longer carries a transaction list', async () => {
+    await signInAs('ADMIN')
+    aTransaction({ id: 't1', transaction_date: '2026-03-05' })
+
+    expect((await summary({ month_year: THIS_MONTH })).body).not.toHaveProperty('recent_transactions')
   })
 })
 

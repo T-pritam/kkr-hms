@@ -399,6 +399,27 @@ export function aTransaction(overrides: Row = {}): Row {
   })[0]
 }
 
+/** A row on the desk's petty cash statement (PRD v2 CR-02). */
+export function aPettyCashEntry(overrides: Row = {}): Row {
+  const kind = (overrides.kind as string) ?? 'expense'
+  return db.seed('petty_cash_entries', {
+    id: overrides.id ?? nextId('petty'),
+    entry_date: TODAY,
+    direction: kind === 'topup' || kind === 'opening' ? 'in' : 'out',
+    kind,
+    amount: 500,
+    payment_mode: 'cash',
+    reason: 'Auto fare',
+    given_to: null,
+    advance_id: null,
+    created_at: NOW.toISOString(),
+    created_by: null,
+    updated_at: null,
+    updated_by: null,
+    ...overrides,
+  })[0]
+}
+
 export function aClosure(overrides: Row = {}): Row {
   return db.seed('daily_ledger_closures', {
     id: overrides.id ?? nextId('closure'),

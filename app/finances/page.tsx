@@ -43,17 +43,21 @@ import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch'
 import { expenseTypeLabel } from '@/lib/format/expense'
 import { istMonth } from '@/lib/dates/ist'
 
+/**
+ * The Overview is cash-basis now (PRD v2 CR-10, Q-36): money that actually
+ * moved this month. Charges never appear — they are internal (CR-15) — and a
+ * doctor fee or commission counts when it is paid, not when it is priced.
+ */
 interface FinancialSummary {
   month_year: string
   income: {
-    total_charges: number
     total_paid: number
-    total_commission: number
-    net_income: number
-    billing_count: number
+    opd_receipts: number
+    money_in: number
   }
   expenses: {
     general_expenses: number
+    petty_cash: number
     salary_expenses: number
     ledger_expenses: number
     referral_commissions: number
@@ -70,9 +74,15 @@ interface FinancialSummary {
     doctor_count: number
     referral_commissions: number
     referral_count: number
+    total: number
+    rows: Array<{
+      kind: 'doctor_fee' | 'referral_commission'
+      id: string
+      amount: number
+      who: string
+      patient?: { id: string; patient_id: string; name: string } | null
+    }>
   }
-  recent_transactions: any[]
-  payment_mode_breakdown: any
 }
 
 export default function FinancesPage() {
@@ -352,15 +362,15 @@ export default function FinancesPage() {
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted flex items-center gap-2">
                     <ArrowDownCircle className="h-4 w-4 text-success-text" />
-                    Total Revenue
+                    Money in
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <p className="text-2xl sm:text-3xl font-bold text-foreground">
-                    {formatCurrency(summary.income.total_paid)}
+                    {formatCurrency(summary.income.money_in)}
                   </p>
                   <p className="text-xs sm:text-sm text-muted mt-1">
-                    {summary.income.billing_count} billing records
+                    patient payments and OPD receipts
                   </p>
                 </CardContent>
               </Card>
@@ -439,22 +449,21 @@ export default function FinancesPage() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="flex justify-between items-center pb-2 border-b border-border">
-                    {/* Charges are internal — what patients used, not money owed (PRD v2 CR-15). */}
-                    <span className="text-muted">Services used (reference)</span>
-                    <span className="font-semibold text-foreground">
-                      {formatCurrency(summary.income.total_charges)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center pb-2 border-b border-border">
-                    <span className="text-muted">Amount Received</span>
+                    <span className="text-muted">Patient payments</span>
                     <span className="font-semibold text-success-text">
                       {formatCurrency(summary.income.total_paid)}
                     </span>
                   </div>
+                  <div className="flex justify-between items-center pb-2 border-b border-border">
+                    <span className="text-muted">OPD receipts</span>
+                    <span className="font-semibold text-success-text">
+                      {formatCurrency(summary.income.opd_receipts)}
+                    </span>
+                  </div>
                   <div className="flex justify-between items-center pt-2">
-                    <span className="font-semibold text-foreground">Net Income</span>
+                    <span className="font-semibold text-foreground">Money in</span>
                     <span className="font-bold text-xl text-success-text">
-                      {formatCurrency(summary.income.net_income)}
+                      {formatCurrency(summary.income.money_in)}
                     </span>
                   </div>
                 </CardContent>
@@ -533,6 +542,22 @@ export default function FinancesPage() {
                     >
                       <Download className="h-3.5 w-3.5 text-muted" />
                     </button>
+                  </div>
+
+                  {/* Petty cash — what the desk spent, as one line (Q-69 = A) */}
+                  <div className="flex items-center py-2 px-2 border-b border-border hover:bg-surface-hover rounded-lg transition-colors group">
+                    <Link
+                      href="/petty-cash"
+                      className="flex-1 flex justify-between items-center cursor-pointer"
+                    >
+                      <span className="text-muted group-hover:text-foreground flex items-center gap-1 transition-colors">
+                        Petty cash spent
+                        <ChevronRight className="h-3.5 w-3.5 opacity-0 group-hover:opacity-60 transition-opacity" />
+                      </span>
+                      <span className="font-semibold text-foreground">
+                        {formatCurrency(summary.expenses.petty_cash)}
+                      </span>
+                    </Link>
                   </div>
 
                   {/* Ledger Expenses — the log itself, filtered to expense debits (CR-08) */}
@@ -780,7 +805,9 @@ export default function FinancesPage() {
                           <th className="text-left py-3 px-4 text-muted font-medium">Expense Type</th>
                           <th className="text-left py-3 px-4 text-muted font-medium">Date</th>
                           <th className="text-right py-3 px-4 text-muted font-medium">Amount</th>
+                          <th className="text-left py-3 px-4 text-muted font-medium hidden md:table-cell">Mode</th>
                           <th className="text-left py-3 px-4 text-muted font-medium hidden sm:table-cell">Remarks</th>
+                          <th className="text-left py-3 px-4 text-muted font-medium hidden md:table-cell">Added by</th>
                           <th className="text-center py-3 px-4 text-muted font-medium">Actions</th>
                         </tr>
                       </thead>
@@ -800,8 +827,14 @@ export default function FinancesPage() {
                             <td className="py-3 px-4 text-right text-primary font-semibold">
                               {formatCurrency(expense.amount)}
                             </td>
+                            <td className="py-3 px-4 text-muted hidden md:table-cell text-sm capitalize">
+                              {(expense.payment_mode || 'cash').replace('_', ' ')}
+                            </td>
                             <td className="py-3 px-4 text-muted hidden sm:table-cell text-sm">
                               {expense.remarks || '-'}
+                            </td>
+                            <td className="py-3 px-4 text-muted hidden md:table-cell text-sm">
+                              {expense.created_by_user?.username || '—'}
                             </td>
                             <td className="py-3 px-4 text-center">
                               <div className="flex items-center justify-center gap-2">
@@ -834,6 +867,60 @@ export default function FinancesPage() {
                 )}
               </CardContent>
             </Card>
+
+            {/*
+              Priced but not yet paid (Q-81 b). These are the hospital's
+              left-offs: they are listed here so nothing is forgotten, and they
+              are deliberately absent from Money out, because no money has left.
+            */}
+            {summary.pending_settlements.rows.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    <span>Still to pay</span>
+                    <span className="text-base font-semibold text-warning-text">
+                      {formatCurrency(summary.pending_settlements.total)}
+                    </span>
+                  </CardTitle>
+                  <p className="text-sm text-muted">
+                    Doctor fees and referral commissions already priced. They are not counted in
+                    money out until they are paid.
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  <div className="divide-y divide-border">
+                    {summary.pending_settlements.rows.map((row) => (
+                      <div
+                        key={`${row.kind}-${row.id}`}
+                        className="flex items-center justify-between py-2 gap-3"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-foreground truncate">
+                            {row.kind === 'doctor_fee' ? row.who : 'Referral commission'}
+                          </p>
+                          {row.patient && (
+                            <Link
+                              href={`/patients/${row.patient.id}`}
+                              className="text-xs text-muted hover:text-primary"
+                            >
+                              {row.patient.patient_id} {row.patient.name}
+                            </Link>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="px-2 py-0.5 text-xs rounded-full bg-warning-subtle text-warning-text border border-warning/30">
+                            Pending
+                          </span>
+                          <span className="font-semibold text-foreground">
+                            {formatCurrency(row.amount)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
         )}
       </div>

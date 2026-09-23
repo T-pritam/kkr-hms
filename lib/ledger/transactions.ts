@@ -44,7 +44,13 @@ export const PAYMENT_MODES: PaymentMode[] = ['cash', 'upi', 'card', 'bank_transf
  * PRD v2 CR-12). A bare ledger row claiming to be one would count as money
  * received that no bill knows about.
  */
-export const USER_SOURCES: LedgerSource[] = ['opd', 'expense']
+/**
+ * `expense` is gone from this list (CR-07, Q-07 = A): the desk's spending is a
+ * petty cash debit and the admin's is a general expense, so neither belongs in
+ * the ledger any more. The rows already booked stay readable — the Overview
+ * still counts them for the months they fall in — but nothing writes another.
+ */
+export const USER_SOURCES: LedgerSource[] = ['opd']
 
 export interface LedgerTransactionInput {
   transaction_date: string

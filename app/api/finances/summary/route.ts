@@ -1,275 +1,89 @@
+/**
+ * GET /api/finances/summary?month_year=YYYY-MM — the Overview (PRD v2, CR-10).
+ *
+ * The figures and the reasoning behind them live in lib/finances/overview.ts:
+ * money that actually moved in the month, on a cash basis (Q-36). This route is
+ * the guard, the month, and the shape the screen reads.
+ *
+ * The response keeps the old key names where they still mean the same thing, so
+ * the Finances page and the PDF did not need rewriting around it. What is gone
+ * is gone on purpose: `total_charges` (charges are internal, CR-15),
+ * `pending_receivables` (nothing is owed, Q-32 = A) and `recent_transactions`
+ * (the ledger is its own screen now, CR-08).
+ */
+
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import {
-  verifyToken,
-  getAccessToken,
-  getRefreshToken,
-  generateAccessToken,
-  generateRefreshToken,
-  setAuthCookies,
-} from '@/lib/auth/jwt'
+import { requireBilling } from '@/lib/billing/authz'
+import { financeOverview } from '@/lib/finances/overview'
 import { istMonth } from '@/lib/dates/ist'
 
-/**
- * GET /api/finances/summary
- * Query params: month_year (YYYY-MM format, defaults to current month)
- * Returns comprehensive financial summary for the specified month
- */
 export async function GET(request: NextRequest) {
   try {
-    // Token refresh logic
-    let accessToken = await getAccessToken()
-    if (!accessToken) {
-      const refreshToken = await getRefreshToken()
-      if (!refreshToken) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
+    // The Overview is revenue and profit, which reception does not see (Q-05).
+    const auth = await requireBilling(request, 'finance:read')
+    if (auth.response) return auth.response
 
-      const refreshPayload = await verifyToken(refreshToken)
-      if (!refreshPayload) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
+    const monthYear = request.nextUrl.searchParams.get('month_year') || istMonth()
 
-      accessToken = await generateAccessToken({
-        userId: refreshPayload.userId,
-        email: refreshPayload.email,
-        role: refreshPayload.role,
-      })
-
-      const newRefreshToken = await generateRefreshToken({
-        userId: refreshPayload.userId,
-        email: refreshPayload.email,
-        role: refreshPayload.role,
-      })
-
-      await setAuthCookies(accessToken, newRefreshToken)
-    }
-
-    const payload = await verifyToken(accessToken)
-    if (!payload) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // Admin and Doctor only
-    if (payload.role !== 'ADMIN' && payload.role !== 'DOCTOR') {
+    if (!/^\d{4}-\d{2}$/.test(monthYear)) {
       return NextResponse.json(
-        { error: 'Forbidden. Admin or Doctor access required.' },
-        { status: 403 }
+        { success: false, error: 'month_year must look like 2026-09' },
+        { status: 400 },
       )
     }
 
-    const searchParams = request.nextUrl.searchParams
-    const monthYear =
-      searchParams.get('month_year') ||
-      istMonth()
-
     const supabase = await createClient()
-
-    // Calculate date range for the month
-    const [year, month] = monthYear.split('-').map(Number)
-    const startDate = `${monthYear}-01`
-    const endDate = `${monthYear}-${new Date(year, month, 0).getDate()}`
-
-    // ===== INCOME: Aggregate by transaction dates =====
-
-    // Revenue from installment payments in this month (by payment_date)
-    const { data: monthInstallments } = await supabase
-      .from('patient_billing_installments')
-      .select('amount, payment_date, patient_billing_id')
-      .gte('payment_date', startDate)
-      .lte('payment_date', endDate)
-
-    const totalPaid =
-      monthInstallments?.reduce((sum, i) => sum + (Number(i.amount) || 0), 0) || 0
-
-    // Get unique billing IDs that had transactions this month
-    const activeBillingIds = new Set(
-      monthInstallments?.map((i) => i.patient_billing_id).filter(Boolean) || []
-    )
-
-    // Charges incurred in this month (by charge_date)
-    const { data: monthCharges } = await supabase
-      .from('patient_charges')
-      .select('amount, qty, charge_date')
-      .gte('charge_date', startDate)
-      .lte('charge_date', endDate)
-
-    const totalCharges =
-      monthCharges?.reduce((sum, c) => sum + (Number(c.amount) * (Number(c.qty) || 1)), 0) || 0
-
-    // Commission and doctor fees from billings that belong to this month (by
-    // month_year). Both are always the patient's expense, paid out of their money
-    // (PRD v2 CR-15) — the package that could "include" them is gone.
-    //
-    // There is no "pending receivables" any more: charges are internal and
-    // nothing is owed against them, so nothing is waiting to be collected (Q-32).
-    const { data: patientBilling } = await supabase
-      .from('patient_billing')
-      .select('referral_commission_amount, total_doctor_fees')
-      .eq('month_year', monthYear)
-
-    const totalCommission =
-      patientBilling?.reduce((sum, b) => sum + (Number(b.referral_commission_amount) || 0), 0) || 0
-
-    const totalDoctorFees =
-      patientBilling?.reduce((sum, b) => sum + (Number(b.total_doctor_fees) || 0), 0) || 0
-
-    // Billing count: billings from this month + those with transactions this month
-    const billingCount = new Set([
-      ...(patientBilling ? Array.from({ length: patientBilling.length }, (_, i) => i) : []),
-      ...activeBillingIds,
-    ]).size || patientBilling?.length || 0
-
-    // ===== EXPENSES =====
-
-    // General expenses
-    const { data: expenses } = await supabase
-      .from('expenses')
-      .select('*')
-      .eq('month_year', monthYear)
-
-    const totalExpense =
-      expenses?.reduce((sum, e) => sum + (Number(e.amount) || 0), 0) || 0
-
-    // Salaries
-    const { data: salaries } = await supabase
-      .from('salary_payments')
-      .select('*')
-      .eq('month_year', monthYear)
-
-    const totalSalary =
-      salaries?.reduce((sum, s) => {
-        if (s.status === 'settled') {
-          return sum + (Number(s.calculated_salary) || 0)
-        } else {
-          return sum + (Number(s.total_advance) || 0)
-        }
-      }, 0) || 0
-
-    // Ledger debit expenses
-    const { data: ledgerExpenses } = await supabase
-      .from('daily_ledger_transactions')
-      .select('*')
-      .gte('transaction_date', startDate)
-      .lte('transaction_date', endDate)
-      .eq('transaction_type', 'debit')
-      .eq('source', 'expense')
-
-    const ledgerExpenseTotal =
-      ledgerExpenses?.reduce((sum, t) => sum + (Number(t.amount) || 0), 0) || 0
-
-    // ===== TOTALS: Commission & doctor fees are expenses =====
-    const totalExpenses = totalExpense + totalSalary + ledgerExpenseTotal + totalCommission + totalDoctorFees
-    const netIncome = totalPaid
-    const netProfit = netIncome - totalExpenses
-
-    // ===== PENDING SETTLEMENTS (global, not month-filtered) =====
-    const { data: unsettledDoctorVisits } = await supabase
-      .from('doctor_visit_settlements')
-      .select('*, doctor:doctors(*), patient:patients(*)')
-      .eq('settled', false)
-      .is('deleted_at', null)
-
-    const totalUnsettledDoctorFees =
-      unsettledDoctorVisits?.reduce((sum, d) => sum + (Number(d.total_amount) || 0), 0) || 0
-
-    const { data: unsettledReferrals } = await supabase
-      .from('patient_billing')
-      .select('*, patient:patients(*)')
-      .eq('referral_settled', false)
-      .gt('referral_commission_amount', 0)
-
-    const totalUnsettledCommissions =
-      unsettledReferrals?.reduce(
-        (sum, r) => sum + (Number(r.referral_commission_amount) || 0),
-        0
-      ) || 0
-
-    // ===== TRANSACTIONS for the month =====
-    const { data: recentTransactions } = await supabase
-      .from('daily_ledger_transactions')
-      .select(`
-        id,
-        transaction_date,
-        transaction_type,
-        source,
-        amount,
-        payment_mode,
-        description,
-        status,
-        reference_number,
-        patient_id,
-        users!created_by(id, username),
-        created_at,
-        patient:patients(id, name, patient_id)
-      `)
-      .gte('transaction_date', startDate)
-      .lte('transaction_date', endDate)
-      .order('transaction_date', { ascending: false })
-      .order('created_at', { ascending: false })
-
-    // Payment mode breakdown
-    const { data: allTransactions } = await supabase
-      .from('daily_ledger_transactions')
-      .select('payment_mode, amount, transaction_type')
-      .gte('transaction_date', startDate)
-      .lte('transaction_date', endDate)
-
-    const paymentModeBreakdown = allTransactions?.reduce(
-      (acc: any, t: any) => {
-        const mode = t.payment_mode || 'other'
-        if (!acc[mode]) acc[mode] = { credit: 0, debit: 0 }
-        if (t.transaction_type === 'credit') {
-          acc[mode].credit += Number(t.amount) || 0
-        } else {
-          acc[mode].debit += Number(t.amount) || 0
-        }
-        return acc
-      },
-      {}
-    )
+    const overview = await financeOverview(supabase, monthYear)
 
     return NextResponse.json({
       success: true,
       data: {
-        month_year: monthYear,
+        month_year: overview.month_year,
+
+        // What came in. `total_paid` is every patient payment, whatever its
+        // label; OPD receipts are counted beside it, which they never were.
         income: {
-          total_charges: totalCharges,
-          total_paid: totalPaid,
-          total_commission: totalCommission,
-          net_income: netIncome,
-          billing_count: patientBilling?.length || 0,
+          total_paid: overview.money_in.patient_payments,
+          opd_receipts: overview.money_in.opd_receipts,
+          money_in: overview.money_in.total,
         },
+
+        // What went out — and only what actually went out. Doctor fees and
+        // commissions are counted when they are paid, not when they are priced,
+        // which is what used to make profit a comparison of two different bases.
         expenses: {
-          general_expenses: totalExpense,
-          salary_expenses: totalSalary,
-          ledger_expenses: ledgerExpenseTotal,
-          referral_commissions: totalCommission,
-          doctor_fees: totalDoctorFees,
-          total_expenses: totalExpenses,
+          general_expenses: overview.money_out.general_expenses,
+          petty_cash: overview.money_out.petty_cash,
+          salary_expenses: overview.money_out.salary,
+          doctor_fees: overview.money_out.doctor_fees_paid,
+          referral_commissions: overview.money_out.referral_commissions_paid,
+          ledger_expenses: overview.money_out.legacy_ledger_expenses,
+          total_expenses: overview.money_out.total,
         },
+
         profit: {
-          net_profit: netProfit,
-          is_profit: netProfit >= 0,
-          profit_margin: netIncome > 0 ? (netProfit / netIncome) * 100 : 0,
+          net_profit: overview.profit.amount,
+          is_profit: overview.profit.is_profit,
+          profit_margin: overview.profit.margin,
         },
+
+        // Priced, not yet paid (Q-81 b). Shown as Pending; never in money out.
         pending_settlements: {
-          doctor_fees: totalUnsettledDoctorFees,
-          doctor_count: unsettledDoctorVisits?.length || 0,
-          referral_commissions: totalUnsettledCommissions,
-          referral_count: unsettledReferrals?.length || 0,
+          doctor_fees: overview.pending.doctor_fees,
+          doctor_count: overview.pending.doctor_count,
+          referral_commissions: overview.pending.referral_commissions,
+          referral_count: overview.pending.referral_count,
+          total: overview.pending.total,
+          rows: overview.pending.rows,
         },
-        recent_transactions: recentTransactions || [],
       },
     })
   } catch (error: any) {
     console.error('Error fetching financial summary:', error)
     return NextResponse.json(
-      {
-        success: false,
-        error: error.message || 'Failed to fetch financial summary',
-      },
-      { status: 500 }
+      { success: false, error: error.message || 'Failed to fetch financial summary' },
+      { status: 500 },
     )
   }
 }

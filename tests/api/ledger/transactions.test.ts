@@ -338,134 +338,32 @@ describe('DELETE /api/ledger/transactions/[id]', () => {
 })
 
 /**
- * The expense category the form always collected and never sent.
- *
- * The modal has rendered a `required` category select since it was written, and
- * built a POST body that left it out. The API never destructured it and the
- * table had no column for it, so every ledger debit ever recorded lost the one
- * field that classified it — silently, with a success toast. These are the
- * regression tests for that.
+ * Desk spending left the ledger entirely (PRD v2 CR-07, Q-07 = A): the desk
+ * spends from petty cash and the admin records a general expense. The rows
+ * already booked stay readable, and the Overview still counts them for their
+ * months — but nothing writes another one.
  */
-describe('ledger expenses — the category', () => {
-  const expense = (over: Record<string, unknown> = {}) =>
-    create({
+describe('ledger expenses — moved out', () => {
+  it('refuses a new expense entry, whoever asks', async () => {
+    await signInAs('ADMIN')
+
+    const { status, body } = await create({
       ...validTransaction,
       transaction_type: 'debit',
       source: 'expense',
       description: 'Gauze and gloves',
       expense_category: 'supplies',
-      ...over,
     })
 
-  it('persists the category on an expense', async () => {
-    await signInAs('ADMIN')
-
-    const { status } = await expense()
-
-    expect(status).toBe(201)
-    expect(db.rows('daily_ledger_transactions')[0].expense_category).toBe('supplies')
-  })
-
-  it('requires one on an expense', async () => {
-    await signInAs('ADMIN')
-
-    const { status, body } = await expense({ expense_category: undefined })
     expect(status).toBe(400)
-    expect(body.error).toContain('Expense category must be one of')
+    expect(body.error).toBe('Invalid source')
     expect(db.count('daily_ledger_transactions')).toBe(0)
   })
 
-  it('rejects a category outside the list', async () => {
-    await signInAs('ADMIN')
+  it('still lets an OPD receipt through', async () => {
+    await signInAs('RECEPTIONIST')
 
-    const { status } = await expense({ expense_category: 'bribes' })
-    expect(status).toBe(400)
-  })
-
-  it.each([undefined, null, '', '   '])(
-    'rejects "other" with a detail of %p',
-    async (expense_category_detail) => {
-      await signInAs('ADMIN')
-
-      const { status, body } = await expense({
-        expense_category: 'other',
-        expense_category_detail,
-      })
-
-      expect(status).toBe(400)
-      expect(body.error).toBe('Describe the expense when the category is Other')
-    },
-  )
-
-  it('stores the detail for "other", trimmed', async () => {
-    await signInAs('ADMIN')
-
-    const { status } = await expense({
-      expense_category: 'other',
-      expense_category_detail: '  Courier charges  ',
-    })
-
-    expect(status).toBe(201)
-    expect(db.rows('daily_ledger_transactions')[0].expense_category_detail).toBe('Courier charges')
-  })
-
-  it('discards a detail on a category that does not take one', async () => {
-    await signInAs('ADMIN')
-
-    await expense({ expense_category: 'supplies', expense_category_detail: 'should not stick' })
-    expect(db.rows('daily_ledger_transactions')[0].expense_category_detail).toBeNull()
-  })
-
-  /** A credit or an OPD collection must not drift into carrying a category. */
-  it('nulls the pair on a non-expense row even if the client sends them', async () => {
-    await signInAs('ADMIN')
-
-    const { status } = await create({
-      ...validTransaction,
-      expense_category: 'supplies',
-      expense_category_detail: 'nope',
-    })
-
-    expect(status).toBe(201)
-    const row = db.rows('daily_ledger_transactions')[0]
-    expect(row.expense_category).toBeNull()
-    expect(row.expense_category_detail).toBeNull()
-  })
-
-  it('lets an edit change the category', async () => {
-    await signInAs('ADMIN', { userId: 'u1' })
-    aTransaction({ id: 't1', source: 'expense', created_by: 'u1', expense_category: 'supplies' })
-
-    const { status } = await update('t1', { expense_category: 'maintenance' })
-
-    expect(status).toBe(200)
-    expect(transactionRow('t1').expense_category).toBe('maintenance')
-  })
-
-  it('refuses an edit that switches to "other" without a detail', async () => {
-    await signInAs('ADMIN', { userId: 'u1' })
-    aTransaction({ id: 't1', source: 'expense', created_by: 'u1', expense_category: 'supplies' })
-
-    const { status, body } = await update('t1', { expense_category: 'other' })
-
-    expect(status).toBe(400)
-    expect(body.error).toBe('Describe the expense when the category is Other')
-  })
-
-  it('clears a stranded detail when switching away from "other"', async () => {
-    await signInAs('ADMIN', { userId: 'u1' })
-    aTransaction({
-      id: 't1',
-      source: 'expense',
-      created_by: 'u1',
-      expense_category: 'other',
-      expense_category_detail: 'Courier charges',
-    })
-
-    const { status } = await update('t1', { expense_category: 'staff' })
-
-    expect(status).toBe(200)
-    expect(transactionRow('t1').expense_category_detail).toBeNull()
+    expect((await create(validTransaction)).status).toBe(201)
   })
 })
 

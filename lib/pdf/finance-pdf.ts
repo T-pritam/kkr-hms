@@ -257,9 +257,9 @@ export async function generateIncomePDF(monthYear: string, summary: any) {
   hdr(h, 'Income Report', getMonthLabel(monthYear))
 
   boxRow(h, [
-    { label: 'Amount Received',     value: fmt(summary.income.total_paid),          accent: C.green },
-    { label: 'Services Used (ref.)', value: fmt(summary.income.total_charges),      accent: C.navy },
-    { label: 'Billing Records',     value: String(summary.income.billing_count),   accent: C.teal },
+    { label: 'Patient Payments', value: fmt(summary.income.total_paid),     accent: C.green },
+    { label: 'OPD Receipts',     value: fmt(summary.income.opd_receipts),   accent: C.navy },
+    { label: 'Money In',         value: fmt(summary.income.money_in),       accent: C.teal },
   ])
 
   sec(h, 'PATIENT PAYMENT TRANSACTIONS')
@@ -309,7 +309,7 @@ export async function generateExpenseBreakdownPDF(monthYear: string, summary: an
   boxRow(h, [
     { label: 'Salary Payments',  value: fmt(exp.salary_expenses),   accent: C.navy },
     { label: 'General Expenses', value: fmt(exp.general_expenses),  accent: C.orange },
-    { label: 'Ledger Expenses',  value: fmt(exp.ledger_expenses),   accent: C.teal },
+    { label: 'Petty Cash',       value: fmt(exp.petty_cash),        accent: C.teal },
   ])
 
   // Row 2: 3 boxes
@@ -331,7 +331,8 @@ export async function generateExpenseBreakdownPDF(monthYear: string, summary: an
   const rows: [string, number][] = [
     ['Salary Payments',      exp.salary_expenses],
     ['General Expenses',     exp.general_expenses],
-    ['Ledger Expenses',      exp.ledger_expenses],
+    ['Petty Cash',           exp.petty_cash],
+    ['Ledger (legacy)',      exp.ledger_expenses],
     ['Doctor Fees',          exp.doctor_fees || 0],
     ['Referral Commissions', exp.referral_commissions],
   ]
@@ -379,7 +380,7 @@ export async function generateMonthlyFinancePDF(monthYear: string, summary: any)
 
   const isProfit = summary.profit.is_profit
   boxRow(h, [
-    { label: 'Net Revenue',    value: fmt(summary.income.net_income),                               accent: C.green },
+    { label: 'Money In',       value: fmt(summary.income.money_in),                                 accent: C.green },
     { label: 'Total Expenses', value: fmt(summary.expenses.total_expenses),                         accent: C.red },
     { label: isProfit ? 'Net Profit' : 'Net Loss', value: fmt(Math.abs(summary.profit.net_profit)), accent: isProfit ? C.green : C.orange },
     { label: 'Profit Margin',  value: `${summary.profit.profit_margin.toFixed(1)}%`,                accent: C.teal },
@@ -429,12 +430,13 @@ export async function generateMonthlyFinancePDF(monthYear: string, summary: any)
   h.y += TH_H
 
   const incRows = [
-    ['Services Used (ref.)', fmt(summary.income.total_charges)],
-    ['Amount Received',      fmt(summary.income.total_paid)],
+    ['Patient Payments', fmt(summary.income.total_paid)],
+    ['OPD Receipts',     fmt(summary.income.opd_receipts)],
   ]
   const expRows = [
     ['Salary',      fmt(summary.expenses.salary_expenses)],
     ['General',     fmt(summary.expenses.general_expenses)],
+    ['Petty cash',  fmt(summary.expenses.petty_cash)],
     ['Ledger',      fmt(summary.expenses.ledger_expenses)],
     ['Doctor Fees', fmt(summary.expenses.doctor_fees || 0)],
     ['Referral',    fmt(summary.expenses.referral_commissions)],
@@ -463,7 +465,7 @@ export async function generateMonthlyFinancePDF(monthYear: string, summary: any)
   h.doc.setFillColor(...C.navy); h.doc.rect(rx, h.y, halfW, TTL_H, 'F')
   h.bold(8.5); h.doc.setTextColor(...C.white)
   h.doc.text('NET INCOME', M + 4, h.y + 6.5)
-  h.doc.text(fmt(summary.income.net_income), lRE, h.y + 6.5, { align: 'right' })
+  h.doc.text(fmt(summary.income.money_in), lRE, h.y + 6.5, { align: 'right' })
   h.doc.text('TOTAL EXPENSES', rx + 4, h.y + 6.5)
   h.doc.text(fmt(summary.expenses.total_expenses), rRE, h.y + 6.5, { align: 'right' })
   h.doc.setTextColor(...C.dark)

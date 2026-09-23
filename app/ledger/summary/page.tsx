@@ -36,7 +36,6 @@ import {
   Wallet,
 } from 'lucide-react'
 import { OpdEntryModal } from '@/components/ledger/opd-entry-modal'
-import { ExpenseEntryModal } from '@/components/ledger/expense-entry-modal'
 import { EditTransactionModal } from '@/components/ledger/edit-transaction-modal'
 import { AddPatientInstallmentModal } from '@/components/ledger/add-patient-installment-modal'
 import { CloseEntriesDialog } from '@/components/ledger/close-entries-dialog'
@@ -136,7 +135,6 @@ export default function LedgerPage() {
 
   const [showPayment, setShowPayment] = useState(false)
   const [showOpd, setShowOpd] = useState(false)
-  const [showExpense, setShowExpense] = useState(false)
   const [editing, setEditing] = useState<Entry | null>(null)
   const [closing, setClosing] = useState<'close' | 'reopen' | null>(null)
 
@@ -243,9 +241,12 @@ export default function LedgerPage() {
             <Button variant="outline" onClick={() => setShowOpd(true)}>
               <Plus className="h-4 w-4 mr-1" /> Add OPD receipt
             </Button>
-            <Button variant="outline" onClick={() => setShowExpense(true)}>
-              <Plus className="h-4 w-4 mr-1" /> Add expense
-            </Button>
+            <Link
+              href="/petty-cash"
+              className="inline-flex items-center rounded-md border border-border px-4 py-2 text-sm hover:bg-surface-hover"
+            >
+              Petty cash
+            </Link>
           </div>
         </div>
 
@@ -577,15 +578,6 @@ export default function LedgerPage() {
         onClose={() => setShowOpd(false)}
         onSuccess={() => {
           setShowOpd(false)
-          void fetchEntries()
-        }}
-        selectedDate={istToday()}
-      />
-      <ExpenseEntryModal
-        isOpen={showExpense}
-        onClose={() => setShowExpense(false)}
-        onSuccess={() => {
-          setShowExpense(false)
           void fetchEntries()
         }}
         selectedDate={istToday()}

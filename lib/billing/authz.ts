@@ -30,6 +30,8 @@ export type BillingCapability =
   | 'payment:write'
   | 'payout:read'
   | 'payout:write'
+  | 'finance:read'
+  | 'expense:write'
 
 const EVERYONE: UserRole[] = ['ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST', 'LAB_TECHNICIAN']
 
@@ -75,6 +77,14 @@ export const BILLING_CAPABILITIES: Record<BillingCapability, UserRole[]> = {
   // What a doctor is paid. Reception prices these at the desk (Q-19 a–c); a
   // doctor still cannot set their own rate, which is why DOCTOR is absent.
   'doctor-fee:write': ['ADMIN', 'RECEPTIONIST'],
+
+  // Revenue, profit and the general expenses log. Hidden from reception
+  // (Q-05); a doctor keeps the access they already had.
+  'finance:read': ['ADMIN', 'DOCTOR'],
+
+  // Recording what the hospital spent. A general expense is the admin's, and
+  // never petty cash — that is the desk's float (requirement 7, CR-07).
+  'expense:write': ['ADMIN'],
 
   // The payout worklists: which fees and commissions are still to be paid.
   // Whoever may pay one needs to see it, and nobody else does — this is the

@@ -186,6 +186,8 @@ export const SCHEMA: Record<string, string[]> = {
   expenses: [
     'id', 'expense_type', 'amount', 'expense_date', 'month_year', 'remarks', 'created_at',
     'expense_type_detail',
+    // 20260924000003 — how it was paid, and who recorded it (CR-07)
+    'payment_mode', 'created_by', 'updated_by', 'updated_at',
   ],
 
   lab_interpretation_templates: [

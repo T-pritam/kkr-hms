@@ -4,7 +4,7 @@ Everything still waiting on an answer, in one place. The PRD is [`PRD-v2.md`](PR
 
 **How to answer:** reply by ID, e.g. `Q-90: A`, `Q-91: as proposed`, or free text. After your answers, the PRD is updated and the questions move to its answer log.
 
-_Last updated 2026-09-23 · **0 open**_
+_Last updated 2026-09-23 · **0 open** · every CR built_
 
 ---
 
@@ -36,14 +36,19 @@ These aren't questions — they're things you told me to leave for later. Say th
 
 ---
 
-## What is being built next
+## Everything is built
 
-No CR is blocked. In the PRD's build order (§2), what's left is:
+All twelve requirements are done, in three phases on 2026-09-23:
 
-1. **CR-01** — the own-row rule, view-all and the closed lock enforced on the server (P0).
-2. **CR-05** — the ledger log: every entry in one list, simpler fetching (P0).
-3. **CR-06 / CR-08** — closing entries, then retiring the day-based daily ledger (P1).
-4. **CR-02 / CR-03** — petty cash, and advances for reception (P1).
-5. **CR-04 / CR-07 / CR-10 / CR-13** — reception pricing and payouts, admin expenses, the finance restructure, one payout path (P2).
+| | What |
+|---|---|
+| ✅ Live on `main` | **Reqs 9, 11, 12** (CR-11, CR-12, CR-14, CR-15, CR-16) · **reqs 1, 5, 6, 8** (CR-01 permissions on the server, CR-05 one ledger log, CR-06 closing per row, CR-08 the day-based ledger retired) · **reqs 2, 3, 4** (CR-02 petty cash, CR-03 advances at the desk, CR-04 reception pricing and payouts, CR-13 one payout path) |
+| 🟡 On the branch | **Reqs 7, 10** (CR-07 admin expenses are general expenses, CR-10 the Finances Overview on a cash basis) — `feature/v2-ledger-desk-finance`, migration applied |
 
-**Waiting on you instead:** deploying what's already built — CR-11, CR-12, CR-14, CR-15 and CR-16, on two branches with three migrations. The order and the smoke test are in [`PRD-v2.md` §8.4](PRD-v2.md#84-deploying-whats-built-cr-11-cr-12-cr-14-cr-15-cr-16).
+Only **CR-17** is still parked, by your own answer to Q-74: a returning patient is registered again for now.
+
+**Worth a look when you next use it**, since these change what the screens say:
+
+- The Finances **Overview is cash-basis now**. A doctor fee or commission counts as money out when it is *paid*, not when it is priced — so profit compares like with like for the first time. What is priced and unpaid is listed under **Still to pay** on the Expenses tab.
+- The **ledger no longer takes expenses**. The desk spends from **Petty cash**; the admin records a **general expense**, which now needs a reason and keeps its payment mode and author.
+- An **admin's payout is born Closed**, and a closed ledger entry must be reopened before anything touches it — including un-paying that payout. Say the word if you would rather admins could reverse their own payout directly.

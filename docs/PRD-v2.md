@@ -6,8 +6,8 @@
 | **Doc type** | Change-set PRD: target behaviour + build tracker. The as-built description of today's app stays in [`PRD.md`](PRD.md) (the baseline). |
 | **Baseline code** | `main` @ `5f07acf` (2026-09-17) |
 | **Requirements source** | Client requirements 1–11 (2026-09-21) and requirement 12, patient money + patient dashboard (2026-09-22, clarified the same day). Each is quoted at the top of its CR. |
-| **Status** | Rounds 1, 2 and 3 answered (2026-09-22 / 23), with the include/exclude meaning corrected by you. **Nothing is open** ([`OPEN-QUESTIONS.md`](OPEN-QUESTIONS.md)). |
-| **Built** | Not deployed; migrations not applied (§8.4). CR-11, CR-12 and CR-14 are on `feature/v2-registration-fee-payments`. CR-15 and CR-16 are on `feature/v2-patient-money`, stacked on it. |
+| **Status** | Rounds 1, 2 and 3 answered (2026-09-22 / 23). **Nothing is open** ([`OPEN-QUESTIONS.md`](OPEN-QUESTIONS.md)), and **every CR is built** — CR-01 … CR-16, less CR-17 (dropped, Q-74). |
+| **Built** | Phases 1 and 2 are live on `main`, with their migrations applied. Phase 3 (CR-07, CR-10) is on `feature/v2-ledger-desk-finance`; its migration is applied (§8.4). |
 | **Last updated** | 2026-09-23 |
 
 ## How to use this doc
@@ -87,19 +87,19 @@
 
 | CR | Title | Req | Priority | Depends on | Waiting on | Status |
 |---|---|:-:|:-:|---|---|:-:|
-| [CR-01](#cr-01--own-row-rule-view-all-closed-lock-req-1) | Own-row rule, view-all, closed lock, enforced on the server | 1 | P0 | — | — | 🔲 |
-| [CR-02](#cr-02--petty-cash-log-req-2-7) | Petty cash log (with an edit history, Q-70) | 2, 7 | P1 | CR-01 | deploy | 🟡 |
-| [CR-03](#cr-03--employee-advance-for-reception-req-3) | Employee advance for reception | 3 | P1 | CR-01, CR-02 | deploy | 🟡 |
-| [CR-04](#cr-04--reception-doctor-visit-pricing-referral-commission--payouts-req-4) | Reception: doctor pricing, referral commission & payouts | 4 | P2 | CR-01, CR-13 | deploy | 🟡 |
-| [CR-05](#cr-05--ledger-log-all-entries-simple-fetching--ux-req-5) | Ledger log: all entries, simpler fetching & UX | 5 | P0 | CR-01 | — | 🔲 |
-| [CR-06](#cr-06--closing-entries-req-6) | Closing: bulk close + "Not closed" tab | 6 | P1 | CR-05 | — | 🔲 |
-| [CR-07](#cr-07--admin-expenses-are-general-expenses-req-7) | Admin expenses = general expenses | 7 | P2 | — | — | 🔲 |
-| [CR-08](#cr-08--retire-the-day-based-daily-ledger-req-8) | Retire the day-based ledger (day close, shift settlement) | 8 | P1 | CR-05, CR-06 | — | 🔲 |
+| [CR-01](#cr-01--own-row-rule-view-all-closed-lock-req-1) | Own-row rule, view-all, closed lock, enforced on the server | 1 | P0 | — | — | ✅ |
+| [CR-02](#cr-02--petty-cash-log-req-2-7) | Petty cash log (with an edit history, Q-70) | 2, 7 | P1 | CR-01 | — | ✅ |
+| [CR-03](#cr-03--employee-advance-for-reception-req-3) | Employee advance for reception | 3 | P1 | CR-01, CR-02 | — | ✅ |
+| [CR-04](#cr-04--reception-doctor-visit-pricing-referral-commission--payouts-req-4) | Reception: doctor pricing, referral commission & payouts | 4 | P2 | CR-01, CR-13 | — | ✅ |
+| [CR-05](#cr-05--ledger-log-all-entries-simple-fetching--ux-req-5) | Ledger log: all entries, simpler fetching & UX | 5 | P0 | CR-01 | — | ✅ |
+| [CR-06](#cr-06--closing-entries-req-6) | Closing: bulk close + "Not closed" tab | 6 | P1 | CR-05 | — | ✅ |
+| [CR-07](#cr-07--admin-expenses-are-general-expenses-req-7) | Admin expenses = general expenses | 7 | P2 | — | deploy | 🟡 |
+| [CR-08](#cr-08--retire-the-day-based-daily-ledger-req-8) | Retire the day-based ledger (day close, shift settlement) | 8 | P1 | CR-05, CR-06 | — | ✅ |
 | [CR-09](#cr-09--remove-the-base-package-req-9--merged-into-cr-15) | Remove the base package | 9 | — | — | — | → CR-15 |
-| [CR-10](#cr-10--admin-finance-restructure-req-10) | Admin finance restructure (log views) | 10 | P2 | CR-02, CR-05 – CR-07 | — | 🔲 |
+| [CR-10](#cr-10--admin-finance-restructure-req-10) | Admin finance restructure (log views) | 10 | P2 | CR-02, CR-05 – CR-07 | deploy | 🟡 |
 | [CR-11](#cr-11--registration-fee-at-registration-req-11) | Registration fee at registration | 11 | **P0** | — | — | ✅ |
 | [CR-12](#cr-12--a-payment-and-its-ledger-entry-stay-one-record) | A payment and its ledger entry stay one record | gap | P0 | — | — | ✅ |
-| [CR-13](#cr-13--one-payout-path) | One payout path for doctor fees & referral commission | gap | P2 | CR-05 | deploy | 🟡 |
+| [CR-13](#cr-13--one-payout-path) | One payout path for doctor fees & referral commission | gap | P2 | CR-05 | — | ✅ |
 | [CR-14](#cr-14--india-ist-dates-everywhere) | India (IST) dates everywhere | gap | P1 | — | — | ✅ |
 | [CR-15](#cr-15--patient-money-income-expenses-lab-and-medicine-included-or-not-req-12) | Patient money: charges internal; lab & medicine excluded/included; payment labels; package removed | 12, 9 | P1 | CR-12 | — | ✅ |
 | [CR-16](#cr-16--patient-overview-dashboard-req-12) | Patient Overview (dashboard) | 12 | P1 | CR-15 | — | ✅ |
@@ -114,23 +114,26 @@ Priorities are from Q-56 and Q-76 ("as proposed"), with CR-11 at P0 from the cli
 ```
  Phase 1 (P0)                        Phase 2 (P1)                     Phase 3 (P2)
  ────────────                        ────────────                     ────────────
- ✅ CR-11 Registration fee         🟡 CR-06 Closing                  🟡 CR-04 Pricing & payouts by reception
- ✅ CR-12 Payment ⇄ ledger         🟡 CR-08 Retire day close            CR-07 Admin expenses
- ✅ CR-14 IST dates                🟡 CR-02 Petty cash                  CR-10 Finance restructure
- 🟡 CR-01 Rules on the server      🟡 CR-03 Advances by reception     🟡 CR-13 One payout path
- 🟡 CR-05 Ledger log               ✅ CR-15 Patient money & labels
+ ✅ CR-11 Registration fee         ✅ CR-06 Closing                  ✅ CR-04 Pricing & payouts by reception
+ ✅ CR-12 Payment ⇄ ledger         ✅ CR-08 Retire day close         🟡 CR-07 Admin expenses
+ ✅ CR-14 IST dates                ✅ CR-02 Petty cash               🟡 CR-10 Finance restructure
+ ✅ CR-01 Rules on the server      ✅ CR-03 Advances by reception     ✅ CR-13 One payout path
+ ✅ CR-05 Ledger log               ✅ CR-15 Patient money & labels
                                    ✅ CR-16 Patient Overview
+
+ Every change request is built. CR-17 stays dropped (Q-74).
 ```
 
 **Built so far**
 
 | | On | What |
 |---|---|---|
-| ✅ **Live** | `main` | CR-11, CR-12, CR-14 (registration fee, payment ⇄ ledger, IST dates) · CR-15, CR-16 (patient money, Overview) · **phase 1**: CR-01, CR-05, CR-06, CR-08 |
-| 🟡 **Phase 2** | `feature/v2-ledger-desk-finance` | CR-02 petty cash · CR-03 advances paid by the desk · CR-04 reception pricing and payouts · CR-13 one payout path |
-| 🔲 **Phase 3** | — | CR-07 admin expenses · CR-10 finance restructure |
+| ✅ **Live** | `main` | CR-11, CR-12, CR-14 (registration fee, payment ⇄ ledger, IST dates) · CR-15, CR-16 (patient money, Overview) · **phase 1**: CR-01, CR-05, CR-06, CR-08 · **phase 2**: CR-02, CR-03, CR-04, CR-13 |
+| 🟡 **Phase 3** | `feature/v2-ledger-desk-finance` | CR-07 admin expenses are general expenses · CR-10 the Finances restructure, on a cash basis |
 
-- 57 test files pass: 1,689 tests, plus 25 that record still-open bugs
+**Every change request is built.** What is left is deploying and using it.
+
+- 58 test files pass: 1,695 tests, plus 24 that record still-open bugs
 - typecheck clean · `next build` passes
 - BUGS resolved along the way: #19 (half), #21, #33 (gone with Verify), #43, #49, #50, #55
 
@@ -432,7 +435,7 @@ Each CR follows the same shape: client text → today → target → code touche
 - [x] AC-06.6 The go-live migration marked rows as agreed in Q-29: on production, 15 closed (14 verified + the one closed day) and 17 open.
 
 ### CR-07 — Admin expenses are general expenses (Req 7)
-**Priority** P2 · **Status** 🔲 ready (Q-69 answered)
+**Priority** P2 · **Status** 🟡 built on `feature/v2-ledger-desk-finance` (phase 3), not deployed
 
 > *Admin expenses are general expenses and are NOT related to petty cash. Petty cash applies to receptionists only.*
 
@@ -445,9 +448,9 @@ Each CR follows the same shape: client text → today → target → code touche
 - [P] `expenses.created_by` / `updated_by` / `payment_mode`. The Expenses log shows "added by".
 
 **Acceptance criteria**
-- [ ] AC-07.1 Admin adds an expense, and it appears only in the Expenses log.
-- [ ] AC-07.2 The Expenses log shows date, type, amount, mode, remarks and added by.
-- [ ] AC-07.3 Q-69 = A: petty cash reaches the Expenses log as one automatic line per month, "Petty cash spent".
+- [x] AC-07.1 Admin adds an expense, and it appears only in the Expenses log — never the ledger, which no longer accepts an `expense` source at all.
+- [x] AC-07.2 The Expenses log shows date, type, amount, mode, remarks and added by. A reason is required (Q-39 = A).
+- [x] AC-07.3 Q-69 = A: petty cash reaches the Overview's expense breakdown as one line a month, "Petty cash spent", linking to the log.
 
 ### CR-08 — Retire the day-based daily ledger (Req 8)
 **Priority** P1 · **Status** 🟡 built on `feature/v2-ledger-desk-finance` (phase 1), not deployed
@@ -495,7 +498,7 @@ Decided for the removal (all in CR-15):
 - **Q-35:** the patient-facing PDF is revisited in Q-67, since charges are now internal.
 
 ### CR-10 — Admin finance restructure (Req 10)
-**Priority** P2 · **Status** 🔲 ready (Q-69, Q-81 answered)
+**Priority** P2 · **Status** 🟡 built on `feature/v2-ledger-desk-finance` (phase 3), not deployed
 
 > *Given the changes above, the admin finance section and its sub-sections will change significantly. Remove the daily ledger view. Instead, show log-style views for ledger, petty cash, and expenses.*
 
@@ -513,9 +516,19 @@ Decided for the removal (all in CR-15):
 - [D] Charges are internal (CR-15), so Finances drops "Charges incurred". Per-patient income, expenses and net come from CR-15.
 
 **Acceptance criteria**
-- [ ] AC-10.1 Each log is one click from the menu.
-- [ ] AC-10.2 The Day Close and Transactions tabs are gone.
-- [ ] AC-10.3 Every Overview figure matches the Q-36 definition, with one test per figure.
+- [x] AC-10.1 Ledger, Petty cash and Employee Advance are each one click from the menu; Finances keeps Overview · Expenses · Settlements.
+- [x] AC-10.2 The Day Close and Transactions tabs are gone (CR-08).
+- [x] AC-10.3 Every Overview figure matches the Q-36 definition, with one test per figure (`tests/api/finances/finances.test.ts`).
+
+**What phase 3 built** (CR-07, CR-10 — branch `feature/v2-ledger-desk-finance`)
+
+| Part | Where |
+|---|---|
+| Migration: `expenses.payment_mode` (checked, default cash), `created_by`, `updated_by`, `updated_at` | `supabase/migrations/20260924000003_general_expenses.sql` — **applied 2026-09-23** |
+| The Overview, on a cash basis: **money in** = patient payments (every label) + OPD receipts · **money out** = general expenses + petty cash spent + salary + doctor fees and commissions **actually paid** · profit = the difference. Charges, pending receivables and the transaction list are gone | `lib/finances/overview.ts`, `app/api/finances/summary/route.ts` |
+| Q-81 (b): what is priced but unpaid is listed per patient as **Still to pay**, and deliberately left out of money out | the same, plus the Expenses tab |
+| A general expense keeps its mode and its author, and needs a reason. `expense` is no longer a ledger source, so the desk's spending is petty cash and the admin's is a general expense — the two books stop overlapping | `app/api/finances/expenses/route.ts`, `components/finances/general-expense-modal.tsx`, `lib/ledger/transactions.ts` |
+| Tests | `tests/api/finances/general-expenses.test.ts` (15) and the Overview rewritten figure by figure |
 
 ### CR-11 — Registration fee at registration (Req 11)
 **Priority** **P0** · **Status** 🟡 built on the branch · deploy per §8.4
@@ -1003,7 +1016,7 @@ Everything not marked 🟡 is **[P]**.
 | `daily_ledger_transactions.status`: `pending/verified` → `open/closed`, plus `closed_at`, `closed_by`, `close_batch_id`, `reopened_*`; new `ledger_close_batches` (note, amount received) | CR-06 | ✅ |
 | New `petty_cash_entries`: date, direction, amount, mode, reason, given_to, kind (opening / topup / expense / advance), advance link, created_by, updated_by, **plus `petty_cash_entry_history`** (Q-70) | CR-02 | 🟡 |
 | `advances`: `petty_cash_entry_id`; "given by" = `created_by` user | CR-03 | 🟡 |
-| `expenses`: `created_by`, `updated_by`, `payment_mode` | CR-07 | |
+| `expenses`: `created_by`, `updated_by`, `updated_at`, `payment_mode` | CR-07 | 🟡 |
 | `doctor_visit_settlements.amount_set_by` + `ledger_transaction_id`, `patient_billing.referral_commission_set_by` + `referral_ledger_transaction_id` | CR-04, CR-13 | 🟡 |
 | 🟡 `patient_charges.lab_medicine_status` (included / to_collect / collected) + `collected_installment_id`; installment `kind` becomes the payment label (regular / advance / discharge / misc / lab / medicine / registration; old rows → regular); a **Lab** catalogue category; the base package turned into a charge line and its flags cleared; `total_charges` = charges only | CR-15 | 🟡 |
 | `daily_ledger_closures`, `daily_ledger_shift_settlements`: frozen, read-only | CR-08 | ✅ |
@@ -1215,4 +1228,5 @@ The baseline `PRD.md` §10 questions were carried into round 1: Q1 → Q-37 · Q
 | 2026-09-23 | **The three migrations applied to production** (`20260922000001`, `20260922000002`, `20260923000001`), with the client's go-ahead, and verified row by row (§8.4). The app code is still on the two feature branches, not deployed | Claude |
 | 2026-09-23 | `feature/v2-patient-money` **merged to `main`** (auto-deploy), so CR-11, CR-12, CR-14, CR-15 and CR-16 are ✅ live. **Phase 1 built** on `feature/v2-ledger-desk-finance`: CR-01 (the own-row rule, the closed lock and the missing guards, on the server), CR-05 (one ledger log — everyone's entries, filters, paging, totals), CR-06 (closing per row, in bulk, with a note and the amount counted; reopen with a reason) and CR-08 (the day-based ledger, shift settlements and the Finances Transactions/Day Close tabs retired). Migration `20260924000001` applied: 15 rows closed, 17 open | Claude |
 | 2026-09-23 | **Phase 2 built** on `feature/v2-ledger-desk-finance`: CR-02 (the petty cash log — one shared float, a statement with a running balance, no status, an edit history), CR-03 (reception pays advances, out of petty cash, with every payroll figure stripped from the responses and the cap finally applied on both routes — BUGS #55), CR-04 (reception prices doctor fees, sets the referral commission, manages visit purposes and pays both out; whoever last set an amount owns it) and CR-13 (one payout path: every payout writes exactly one ledger OUT and keeps its id, so un-paying reverses it — the patient tab wrote none at all before). Migration `20260924000002` applied. Also fixed: BUGS #43 (a payout no longer divides by zero visits) | Claude |
+| 2026-09-23 | **Phase 3 built** on `feature/v2-ledger-desk-finance`, which finishes every change request: CR-07 (an admin's expense is a general expense, with its payment mode, its author and a required reason; `expense` is no longer a ledger source, so the desk's float and the admin's log stop overlapping) and CR-10 (the Overview on a cash basis — money in = patient payments + OPD receipts, money out = general expenses + petty cash spent + salary + the payouts **actually made**; charges, pending receivables and the transaction list are gone, and what is priced but unpaid is listed as "Still to pay"). Migration `20260924000003` applied. Phase 2 merged to `main` earlier the same day | Claude |
 

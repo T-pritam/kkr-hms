@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireBilling } from '@/lib/billing/authz'
+import { PAYMENT_MODES } from '@/lib/ledger/transactions'
 import { createClient } from '@/lib/supabase/server'
 import {
   verifyToken,
@@ -55,18 +57,8 @@ async function refreshTokenIfNeeded() {
  */
 export async function GET(request: NextRequest) {
   try {
-    const payload = await refreshTokenIfNeeded()
-    if (!payload) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // Admin and Doctor only
-    if (payload.role !== 'ADMIN' && payload.role !== 'DOCTOR') {
-      return NextResponse.json(
-        { error: 'Forbidden. Admin or Doctor access required.' },
-        { status: 403 }
-      )
-    }
+    const auth = await requireBilling(request, 'finance:read')
+    if (auth.response) return auth.response
 
     const searchParams = request.nextUrl.searchParams
     const monthYear = searchParams.get('month_year') || istMonth()
@@ -75,7 +67,7 @@ export async function GET(request: NextRequest) {
 
     const { data, error } = await supabase
       .from('expenses')
-      .select('*')
+      .select('*, created_by_user:users!created_by(id, username)')
       .eq('month_year', monthYear)
       .order('expense_date', { ascending: false })
 
@@ -102,18 +94,9 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const payload = await refreshTokenIfNeeded()
-    if (!payload) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // Admin only
-    if (payload.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Forbidden. Admin access required.' },
-        { status: 403 }
-      )
-    }
+    const auth = await requireBilling(request, 'expense:write')
+    if (auth.response) return auth.response
+    const { user } = auth
 
     const body = await request.json()
     const { expense_type, amount, expense_date, remarks, expense_type_detail } = body
@@ -128,6 +111,23 @@ export async function POST(request: NextRequest) {
     if (amount <= 0) {
       return NextResponse.json(
         { error: 'Amount must be greater than 0' },
+        { status: 400 }
+      )
+    }
+
+    // Q-39 = A: an expense without a word about what it was for tells nobody
+    // anything a month later — the same rule petty cash has.
+    if (!String(remarks ?? '').trim()) {
+      return NextResponse.json(
+        { error: 'Say what this expense was for', fieldErrors: { remarks: 'Required' } },
+        { status: 400 }
+      )
+    }
+
+    const paymentMode = String(body.payment_mode ?? 'cash')
+    if (!PAYMENT_MODES.includes(paymentMode as any)) {
+      return NextResponse.json(
+        { error: 'Choose how this was paid', fieldErrors: { payment_mode: 'Choose a payment mode' } },
         { status: 400 }
       )
     }
@@ -157,8 +157,13 @@ export async function POST(request: NextRequest) {
           amount: parseFloat(amount),
           expense_date,
           month_year,
-          remarks: remarks || null,
+          remarks: remarks.trim(),
           expense_type_detail: detail.value,
+          // How the money left, and who recorded it — neither was ever kept
+          // on a general expense, though the ledger kept both (CR-07).
+          payment_mode: paymentMode,
+          created_by: user.id,
+          updated_by: user.id,
         },
       ])
       .select()
@@ -186,18 +191,9 @@ export async function POST(request: NextRequest) {
  */
 export async function PUT(request: NextRequest) {
   try {
-    const payload = await refreshTokenIfNeeded()
-    if (!payload) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // Admin only
-    if (payload.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Forbidden. Admin access required.' },
-        { status: 403 }
-      )
-    }
+    const auth = await requireBilling(request, 'expense:write')
+    if (auth.response) return auth.response
+    const { user } = auth
 
     const body = await request.json()
     const { id, expense_type, amount, expense_date, remarks, expense_type_detail } = body
@@ -259,6 +255,9 @@ export async function PUT(request: NextRequest) {
         month_year,
         remarks: remarks || null,
         expense_type_detail: detail.value,
+        ...(body.payment_mode ? { payment_mode: String(body.payment_mode) } : {}),
+        updated_by: user.id,
+        updated_at: new Date().toISOString(),
       })
       .eq('id', id)
       .select()
@@ -286,18 +285,9 @@ export async function PUT(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
-    const payload = await refreshTokenIfNeeded()
-    if (!payload) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // Admin only
-    if (payload.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Forbidden. Admin access required.' },
-        { status: 403 }
-      )
-    }
+    const auth = await requireBilling(request, 'expense:write')
+    if (auth.response) return auth.response
+    const { user } = auth
 
     const searchParams = request.nextUrl.searchParams
     const id = searchParams.get('id')

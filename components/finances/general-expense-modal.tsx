@@ -44,6 +44,7 @@ export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense
     expense_date: istToday(),
     month_year: monthYear,
     remarks: '',
+    payment_mode: 'cash',
     expense_type_detail: '',
   })
 
@@ -57,6 +58,7 @@ export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense
           expense_date: initialExpense.expense_date,
           month_year: initialExpense.month_year,
           remarks: initialExpense.remarks || '',
+          payment_mode: (initialExpense as any).payment_mode || 'cash',
           expense_type_detail: initialExpense.expense_type_detail || '',
         })
         setEditingId(initialExpense.id)
@@ -119,7 +121,8 @@ export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense
         expense_type: formData.expense_type,
         amount: formData.amount,
         expense_date: formData.expense_date,
-        remarks: formData.remarks || null,
+        remarks: formData.remarks,
+        payment_mode: formData.payment_mode,
         expense_type_detail: formData.expense_type_detail.trim() || null,
       }
 
@@ -154,6 +157,7 @@ export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense
       expense_date: expense.expense_date,
       month_year: expense.month_year,
       remarks: expense.remarks || '',
+      payment_mode: (expense as any).payment_mode || 'cash',
       expense_type_detail: expense.expense_type_detail || '',
     })
     setEditingId(expense.id)
@@ -192,6 +196,7 @@ export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense
       expense_date: istToday(),
       month_year: monthYear,
       remarks: '',
+      payment_mode: 'cash',
       expense_type_detail: '',
     })
     setEditingId(null)
@@ -349,16 +354,35 @@ export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense
               />
             </div>
 
-            {/* Remarks */}
+            {/* How it was paid — the ledger always kept this; expenses never did. */}
+            <div>
+              <label className="text-sm font-medium text-muted mb-2 block">Paid by</label>
+              <select
+                value={formData.payment_mode}
+                onChange={(e) => setFormData({ ...formData, payment_mode: e.target.value })}
+                disabled={loading}
+                className="w-full px-4 py-2.5 bg-input border border-input-border rounded-lg text-foreground focus:outline-none focus:border-ring disabled:opacity-50"
+              >
+                {['cash', 'upi', 'card', 'bank_transfer', 'cheque'].map(mode => (
+                  <option key={mode} value={mode}>
+                    {mode.replace('_', ' ')}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Remarks — required now (Q-39 = A): an expense with no reason
+                tells nobody anything a month later. */}
             <div>
               <label className="text-sm font-medium text-muted mb-2 block">
-                Remarks (Optional)
+                What was this for?
               </label>
               <textarea
                 value={formData.remarks}
                 onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
                 placeholder="Invoice number, vendor details, etc."
                 disabled={loading}
+                required
                 rows={3}
                 className="w-full px-4 py-2.5 bg-input border border-input-border rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:border-ring disabled:opacity-50 resize-none"
               />
