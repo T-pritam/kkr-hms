@@ -65,7 +65,18 @@ export function validateDoctor(
     errors.name = `${FIELD_LABELS.name} is required`
   }
 
-  if (!blank(values.department) && !(DEPARTMENTS as readonly string[]).includes(values.department)) {
+  /**
+   * Department is required now. It is the only one of the three labels the app
+   * actually groups and filters by — designation and specialist were free text
+   * nobody kept consistent, and both have left the form.
+   *
+   * Required on a create, and on any edit that mentions it — which the form
+   * always does. An edit that touches only a phone number is left alone rather
+   * than refused for a field it never sent.
+   */
+  if ((mode === 'create' || 'department' in values) && blank(values.department)) {
+    errors.department = `${FIELD_LABELS.department} is required`
+  } else if (!blank(values.department) && !(DEPARTMENTS as readonly string[]).includes(values.department)) {
     errors.department = 'Choose one of the listed departments'
   }
 

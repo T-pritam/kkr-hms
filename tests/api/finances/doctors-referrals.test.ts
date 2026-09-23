@@ -63,11 +63,26 @@ describe('/api/doctors — authorisation', () => {
       await signInAs(role)
       aDoctor({ id: 'd1' })
 
-      expect((await create({ name: 'Dr. New' })).status).toBe(201)
+      expect((await create({ name: 'Dr. New', department: 'Cardiology' })).status).toBe(201)
       expect((await update('d1', { name: 'Dr. Edited' })).status).toBe(200)
       expect((await deactivate('d1')).status).toBe(200)
     },
   )
+
+  /**
+   * Department is the one label the app groups and filters by — the visit
+   * report, the registry filter and the fee schedule all lean on it — so it is
+   * required now. Designation and specialist left the form entirely.
+   */
+  it('will not add a doctor with no department', async () => {
+    await signInAs('ADMIN')
+
+    const { status, body } = await create({ name: 'Dr. Nameless' })
+
+    expect(status).toBe(400)
+    expect(body.fieldErrors ?? body.errors ?? {}).toHaveProperty('department')
+    expect(db.count('doctors')).toBe(0)
+  })
 
   /** Running the lab does not include rewriting the consultant list. */
   it('forbids LAB_TECHNICIAN from writing', async () => {

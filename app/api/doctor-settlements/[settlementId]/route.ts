@@ -4,7 +4,9 @@ import { requireBilling } from '@/lib/billing/authz';
 import {
   adjustPayoutLedgerAmount,
   canAmendPayout,
+  payDoctorFee,
   unpayDoctorFee,
+  validatePayout,
 } from '@/lib/billing/payouts';
 import { recalculatePatientBilling } from '@/lib/recalculate-billing';
 
@@ -182,17 +184,23 @@ export async function PUT(
       }
     }
 
-    if (body.settled !== undefined) {
+    /**
+     * Paying is not a flag.
+     *
+     * This branch used to set `settled`, `settlement_date` and `settled_by`
+     * straight onto the row — and write **nothing** to the ledger. So a doctor
+     * fee settled from the patient's Billing tab was money the hospital had
+     * handed over with no debit to show for it, while the same payout made from
+     * the Finances screen booked one. A doctor's fee is deducted directly in
+     * the finances (it is not petty cash), so it goes through the one payout
+     * path below, exactly like every other way of paying it (CR-13).
+     */
+    const wantsToSettle = body.settled === true && currentSettlement.settled !== true;
+
+    if (body.settled !== undefined && !wantsToSettle) {
       updateData.settled = body.settled;
 
-      if (body.settled === true) {
-        updateData.settlement_date = body.settlement_date || new Date().toISOString();
-        updateData.settled_by = authResult.user.id;
-
-        if (body.settlement_amount === undefined && updateData.amount_per_visit !== undefined) {
-          updateData.settlement_amount = Math.floor(updateData.amount_per_visit * effectiveVisitCount);
-        }
-      } else if (body.settled === false) {
+      if (body.settled === false) {
         updateData.settlement_date = null;
         updateData.settlement_amount = null;
         updateData.payment_method = null;
@@ -279,11 +287,52 @@ export async function PUT(
       return NextResponse.json({ error: 'Settlement not found after update' }, { status: 404 });
     }
 
-    if (data.patient_billing_id) {
-      await recalculatePatientBilling(supabase, data.patient_billing_id);
+    /**
+     * Now pay it, if that is what was asked. The pricing above has landed, so
+     * `data` carries the amount to hand over unless the caller named one.
+     * `payDoctorFee` writes the ledger OUT, links it to the row and marks it
+     * settled — the same path the Finances screen and the Settle button use.
+     */
+    let settledRow = data;
+
+    if (wantsToSettle) {
+      const details = validatePayout({
+        payment_method: body.payment_method,
+        transaction_reference: body.transaction_reference,
+        notes: body.settlement_notes,
+      });
+
+      if (!details.ok) {
+        return NextResponse.json(
+          { error: details.error, fieldErrors: details.fieldErrors },
+          { status: details.status }
+        );
+      }
+
+      const amount = body.settlement_amount !== undefined
+        ? Number(body.settlement_amount)
+        : Number(data.total_amount) || 0;
+
+      const paid = await payDoctorFee(supabase, authResult.user, data, {
+        amount,
+        details: details.value,
+        settlementType: body.settlement_type,
+      });
+
+      if (!paid.ok) {
+        return NextResponse.json({ error: paid.error, code: paid.code }, { status: paid.status });
+      }
+
+      settledRow = paid.settlement;
     }
 
-    const message = amendingSettled
+    if (settledRow.patient_billing_id) {
+      await recalculatePatientBilling(supabase, settledRow.patient_billing_id);
+    }
+
+    const message = wantsToSettle
+      ? 'Fee paid, and booked to the ledger.'
+      : amendingSettled
       ? 'Settled fee updated, and its ledger entry adjusted to match.'
       : wasSettled
         ? 'Payout reversed and the settlement reopened.'
@@ -292,7 +341,7 @@ export async function PUT(
     return NextResponse.json(
       {
         success: true,
-        data,
+        data: settledRow,
         message,
         metadata: {
           wasSettled,

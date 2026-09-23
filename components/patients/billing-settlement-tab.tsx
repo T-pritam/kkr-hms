@@ -672,7 +672,7 @@ export default function BillingSettlementTab({
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
           <h3 className="text-lg sm:text-xl font-semibold text-foreground">Doctor Visit Settlements</h3>
           <div className="flex gap-2">
-            {isAdmin && (
+            {canPrice && (
               <button
                 onClick={handleSyncDoctorVisits}
                 disabled={syncing}

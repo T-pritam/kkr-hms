@@ -184,14 +184,48 @@ describe('PUT /api/doctor-settlements/[settlementId] — pricing', () => {
     expect(Number(db.find('daily_ledger_transactions', (r) => r.id === debit.id)!.amount)).toBe(6000)
   })
 
-  it('marks a settlement settled, computing the amount from the rate', async () => {
-    await signInAs('ADMIN')
-    aSettlement({ id: 's1', visit_count: 3, amount_per_visit: 0, settled: false })
+  /**
+   * Settling from the patient's Billing tab used to set the flags and write
+   * **nothing** to the ledger, while the same payout from Finances booked a
+   * debit — so a fee paid here was money gone with nothing to show for it. A
+   * doctor's fee is deducted directly in the finances (it is not petty cash),
+   * so this goes through the one payout path now, like every other route to it.
+   */
+  it('marks a settlement settled, computing the amount from the rate, and books the debit', async () => {
+    await signInAs('ADMIN', { userId: 'u-admin' })
+    aDoctor({ id: 'd1', name: 'Dr Rao' })
+    aSettlement({ id: 's1', doctor_id: 'd1', visit_count: 3, amount_per_visit: 0, settled: false })
 
-    await price('s1', { pricing_mode: 'per_visit', amount_per_visit: 1500, settled: true })
+    const { status } = await price('s1', {
+      pricing_mode: 'per_visit',
+      amount_per_visit: 1500,
+      settled: true,
+      payment_method: 'cash',
+    })
 
+    expect(status).toBe(200)
     expect(row('s1')).toMatchObject({ settled: true, settlement_amount: 4500 })
     expect(row('s1').settlement_date).toBe(NOW.toISOString())
+
+    const debits = db.rows('daily_ledger_transactions')
+    expect(debits).toHaveLength(1)
+    expect(debits[0]).toMatchObject({
+      transaction_type: 'debit',
+      source: 'doctor_settlement',
+      amount: 4500,
+    })
+    expect(row('s1').ledger_transaction_id).toBe(debits[0].id)
+  })
+
+  it('will not settle a fee without saying how the money left', async () => {
+    await signInAs('ADMIN')
+    aSettlement({ id: 's1', visit_count: 1, amount_per_visit: 500, settled: false })
+
+    const { status } = await price('s1', { settled: true })
+
+    expect(status).toBe(400)
+    expect(row('s1').settled).toBe(false)
+    expect(db.count('daily_ledger_transactions')).toBe(0)
   })
 
   it('clears the payment details when unsettled', async () => {

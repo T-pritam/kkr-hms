@@ -49,7 +49,7 @@ describe('patient settlements — authentication and roles', () => {
     expect((await sync('p1', { billing_id: 'b1' })).status).toBe(401)
   })
 
-  it.each(['DOCTOR', 'NURSE', 'RECEPTIONIST'] as const)('refuses %s on settle and sync', async (role) => {
+  it.each(['DOCTOR', 'NURSE', 'RECEPTIONIST'] as const)('refuses %s on settle', async (role) => {
     await signInAs(role)
     aSettlement({ id: 's1', settled: false })
 
@@ -57,11 +57,22 @@ describe('patient settlements — authentication and roles', () => {
     expect(settled.status).toBe(403)
     expect(settled.body.error).toBe('Only admins can settle payments')
 
-    const synced = await sync('p1', { billing_id: 'b1' })
-    expect(synced.status).toBe(403)
-    expect(synced.body.error).toBe('Only admins can sync doctor visits')
-
     expect(settlementRow('s1').settled).toBe(false)
+  })
+
+  /**
+   * Sync is what raises the fee row in the first place, so without it the desk
+   * could edit a fee but never create one — half a feature. Reception prices
+   * and pays these (CR-04), so it syncs them too.
+   */
+  it('lets reception sync doctor visits', async () => {
+    await signInAs('RECEPTIONIST')
+    expect((await sync('p1', { billing_id: 'b1' })).status).toBe(200)
+  })
+
+  it.each(['NURSE', 'LAB_TECHNICIAN'] as const)('refuses %s on sync', async (role) => {
+    await signInAs(role)
+    expect((await sync('p1', { billing_id: 'b1' })).status).toBe(403)
   })
 
   /**

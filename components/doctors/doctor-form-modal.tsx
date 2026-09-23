@@ -131,19 +131,10 @@ export function DoctorFields({
           />
         </Field>
 
-        <Field id={id('designation')} label="Designation" error={err('designation')}>
-          <Input
-            id={id('designation')}
-            value={form.designation}
-            onChange={e => onChange({ designation: e.target.value })}
-            disabled={disabled}
-            placeholder="Senior Consultant"
-          />
-        </Field>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Field id={id('department')} label="Department" error={err('department')}>
+        {/* Department is the one label the app groups and filters by, so it is
+            the one it asks for. Designation and specialist were free text that
+            nobody kept consistent; existing values stay on the record. */}
+        <Field id={id('department')} label="Department *" error={err('department')}>
           <Select
             id={id('department')}
             value={form.department}
@@ -157,21 +148,6 @@ export function DoctorFields({
               </option>
             ))}
           </Select>
-        </Field>
-
-        <Field
-          id={id('specialist')}
-          label="Specialist"
-          error={err('specialist')}
-          hint="The finer-grained label, if there is one"
-        >
-          <Input
-            id={id('specialist')}
-            value={form.specialist}
-            onChange={e => onChange({ specialist: e.target.value })}
-            disabled={disabled}
-            placeholder="Interventional Cardiology"
-          />
         </Field>
       </div>
 
