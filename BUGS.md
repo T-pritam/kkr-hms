@@ -13,11 +13,11 @@ Status legend: 🔴 security · 🟠 correctness · 🟡 consistency
 
 ## Start here
 
-31 failing-by-design tests cover the defects below. If you fix nothing else, fix this one:
+19 failing-by-design tests cover the defects below. If you fix nothing else, fix this one:
 
 | # | What breaks | Where |
 |---|---|---|
-| **#49** | `/api/referrals` has **no authentication** on either verb. | `app/api/referrals/route.ts` |
+| **#1** | `verifyAuth` accepts a refresh token as an access token. | `lib/auth/verify.ts` |
 
 **#16 and #23 were already stale and have been corrected below** — both
 `*_included_in_package` columns exist (added by
@@ -47,18 +47,6 @@ therefore accepts a 7-day refresh token wherever a 10-minute access token is exp
 disagree about what a valid token is.
 
 **Fix:** add `if (payload.type !== 'access') return { isValid: false, ... }`.
-
----
-
-### 🟡 #2 — `GET /api/auth/me` returns fewer fields than the client expects
-**Where:** `app/api/auth/me/route.ts:18`
-**Test:** `tests/api/auth/me-logout.test.ts` → "should return the username the client context expects"
-
-The route echoes three JWT claims (`id`, `email`, `role`). `contexts/user-context.tsx`
-types the response as the full `User`, so `username`, `status` and `needsPasswordChange`
-are silently `undefined` everywhere the context is consumed.
-
-**Fix:** either load the user row and return those fields, or narrow the context type.
 
 ---
 
@@ -121,35 +109,6 @@ so the two verbs enforce different rules.
 **Fix:** destructure the four fields `PUT` allows and apply the same role guard.
 
 ---
-
-### 🔴 #7 — The token-refresh branch skips every check below it
-**Where:** `middleware.ts:46-58`
-**Tests:** `tests/api/auth/middleware.test.ts` → "should still enforce admin-only paths while refreshing the access token", "should still bounce a refreshing user off the login page"
-
-When the access token has expired and a valid refresh token is present, the middleware
-mints a new access token and `return`s immediately — before the signed-in redirect and
-before the admin-only path check. A non-admin whose access token has just expired gets
-one unguarded request into `/finances`, `/employees` or `/admin`. It recurs every 10
-minutes, for as long as the refresh token lives.
-
-**Fix:** set the cookie on the response and fall through to the checks instead of
-returning early.
-
----
-
-### 🟠 #8 — The refreshed cookie outlives the token inside it
-**Where:** `middleware.ts:51`
-**Test:** `tests/api/auth/middleware.test.ts` → "should give the refreshed cookie the same lifetime as the token it carries"
-
-The refreshed cookie is set with `maxAge: 20 * 60` while `generateAccessToken` mints a
-10-minute JWT. For the last 10 minutes the browser holds a cookie that every endpoint
-rejects, and `middleware.ts` only re-refreshes on a request that carries a *valid*
-refresh token — so the user sees spurious redirects to `/login`.
-
-**Fix:** use `maxAge: 10 * 60`, matching `ACCESS_TOKEN_EXPIRY`.
-
----
-## Section 2 — Patients & Consultations
 
 ### 🔴 #9 — Any signed-in user can hard-delete a patient
 **Where:** `app/api/patients/[id]/route.ts:194` — and no role check anywhere in the file
@@ -327,7 +286,6 @@ refused waits on the balance rules in PRD v2 (the "what the payments cover" ques
 
 ---
 
-
 ### ✅ #21 — RESOLVED — editing or deleting a payment moves its ledger entry too
 **Where:** `app/api/patients/[id]/installments/[installmentId]/route.ts`, `lib/billing/payments.ts`
 **Tests:** `tests/api/billing/installments.test.ts` (now ordinary passing tests)
@@ -428,14 +386,6 @@ consultation and their settlement keeps its old visit count and fee forever.
 
 ## Section 4 — Ledger
 
-### 🟡 #33 — A user can verify their own entry
-**Where:** `app/api/ledger/transactions/[id]/status/route.ts`
-
-No separation of duties: whoever recorded the transaction can also mark it verified.
-
----
-
-
 ### ⚪ #36 — A day can be closed with unverified entries — *decided against, not a defect*
 
 **Resolution (2026-08-04): closing warns about unverified entries; it does not block.**
@@ -454,24 +404,16 @@ than blocking the close"). **Do not reopen this without changing that decision f
 
 ## Section 5 — Doctors, Settlements, Referrals, Finances
 
-### 🔴 #49 — `/api/referrals` has no authentication whatsoever
-**Where:** `app/api/referrals/route.ts` — both GET and POST
-**Tests:** `tests/api/finances/doctors-referrals.test.ts` (3 cases)
+### 🟠 #44 — Division by zero in the merge maths
+**Where:** `app/api/doctor-settlements/merge/route.ts:71`
+**Test:** `tests/api/finances/doctor-settlements.test.ts` — "should not produce a NaN rate
+when every merged settlement has zero visits"
 
-Neither verb checks a token. Every other route in the application does. The referral list
-can be read and written by anyone who can reach the endpoint.
+`totalAmount / totalVisits` divides by a count that sync can legitimately leave at zero,
+writing `NaN` into `amount_per_visit`.
 
----
-
-### 🟠 #43 / #44 — Division by zero in the settlement maths
-**Where:** `app/api/doctor-settlements/settle/route.ts:82` and `:164`; `app/api/doctor-settlements/merge/route.ts:71`
-**Tests:** `tests/api/finances/doctor-settlements.test.ts` (2 cases)
-
-`settlement_amount / visit_count` and `totalAmount / totalVisits` both divide by a count
-that is **zero for every settlement sync has just created**, writing `Infinity` or `NaN`
-into `amount_per_visit`.
-
----
+**Fix:** treat a zero count as one, the way `payDoctorFee` in `lib/billing/payouts.ts`
+already does — that is what closed the same defect (#43) on the settle path.
 
 ### 🟠 #45 — Merge does not check the doctor
 **Where:** `app/api/doctor-settlements/merge/route.ts:52-60`
@@ -482,28 +424,12 @@ and the second doctor's fee disappears.
 
 ---
 
-### 🟡 #46 — DELETE requires a request body
-**Where:** `app/api/doctor-settlements/[settlementId]/route.ts`
-
-`await request.json()` is called unconditionally, so a DELETE sent without a body — the
-ordinary way to send one — throws and returns 500.
-
----
-
 ### 🟠 #47 / #48 — The doctor registry has no role checks and hard-deletes
 **Where:** `app/api/doctors/route.ts`, `app/api/doctors/[id]/route.ts`
 
 Any signed-in user, including a receptionist, can create, edit and delete doctors. Delete
 is a hard delete with no soft-delete flag and no dependency check, even when
 consultations and settlements still reference the doctor.
-
----
-
-### 🟡 #50 — Referral authorship is never recorded
-**Where:** `app/api/referrals/route.ts:29`
-
-`created_by` comes from `supabase.auth.getUser()`, but the app authenticates with its own
-JWT cookies and never signs in to Supabase Auth, so this is always null.
 
 ---
 
@@ -538,17 +464,6 @@ entry uses `total_amount`. This route also skips `recalculatePatientBilling` ent
 The gate is `role !== 'ADMIN' && role !== 'DOCTOR'` while the error text says "Admin
 access required". Only the page middleware keeps non-admins out of `/employees`, so a
 direct API call from a doctor's session succeeds — including salary edits and settlement.
-
----
-
-### 🔴 #55 — One of the two advance endpoints ignores the cap
-**Where:** `app/api/employees/advances/route.ts` (POST)
-**Test:** `tests/api/employees/employees.test.ts`
-
-`POST /api/employees/[id]/salary/advances` enforces the advance limit through
-`validateSalaryAdvance`. `POST /api/employees/advances` — same table, same effect —
-enforces nothing, so an advance far beyond the salary is accepted and leaves a negative
-final salary.
 
 ---
 

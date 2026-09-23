@@ -4,8 +4,17 @@ const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || 'your-secret-key-at-least-32-characters-long'
 )
 
-const ACCESS_TOKEN_EXPIRY = '10m' // 10 minutes
-const REFRESH_TOKEN_EXPIRY = '7d' // 7 days
+/**
+ * One number each, in seconds, used for both the JWT's own expiry and the
+ * cookie that carries it. They were written out separately before, and drifted:
+ * middleware refreshed a 10-minute token into a 20-minute cookie, so for ten
+ * minutes the browser held something every endpoint rejected (BUGS.md #8).
+ */
+export const ACCESS_TOKEN_TTL_SECONDS = 10 * 60
+export const REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60
+
+const ACCESS_TOKEN_EXPIRY = `${ACCESS_TOKEN_TTL_SECONDS}s`
+const REFRESH_TOKEN_EXPIRY = `${REFRESH_TOKEN_TTL_SECONDS}s`
 
 export interface TokenPayload {
   userId: string
@@ -48,7 +57,7 @@ export async function setAuthCookies(accessToken: string, refreshToken: string) 
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
-    maxAge: 10 * 60, // 10 minutes
+    maxAge: ACCESS_TOKEN_TTL_SECONDS,
     path: '/',
   })
 
@@ -57,7 +66,7 @@ export async function setAuthCookies(accessToken: string, refreshToken: string) 
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
-    maxAge: 7 * 24 * 60 * 60, // 7 days
+    maxAge: REFRESH_TOKEN_TTL_SECONDS,
     path: '/',
   })
 }

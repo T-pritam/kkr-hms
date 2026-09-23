@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { canModify } from '@/lib/authz/ownership';
 import { requireBilling } from '@/lib/billing/authz';
-import { unpayDoctorFee } from '@/lib/billing/payouts';
+import {
+  adjustPayoutLedgerAmount,
+  canAmendPayout,
+  unpayDoctorFee,
+} from '@/lib/billing/payouts';
 import { recalculatePatientBilling } from '@/lib/recalculate-billing';
 
 /**
@@ -63,32 +66,32 @@ export async function PUT(
     const wantsVisitCountChange = !isAutoTracked && body.visit_count !== undefined;
     const isPricingUpdate = wantsAmountChange || wantsVisitCountChange;
 
-    // Whoever last set the amount owns it (Q-20 = A): reception may price an
-    // unpriced row and re-price its own, but not one an admin has set. An
-    // unset row belongs to nobody yet, so anyone at the desk may price it.
-    if (wantsAmountChange && currentSettlement.amount_set_by) {
-      const allowed = canModify(authResult.user, { created_by: currentSettlement.amount_set_by });
+    /**
+     * While it is unsettled the fee is the desk's: any receptionist or the
+     * admin may price it, whoever entered it (client revision, 2026-09-24 —
+     * this replaces Q-20's own-row rule). Once it is settled it is the admin's
+     * alone. `amount_set_by` is still written on every change; it is the record
+     * now, not the lock.
+     */
+    if (currentSettlement.settled === true && (isPricingUpdate || body.settled !== undefined)) {
+      const allowed = canAmendPayout(authResult.user, { settled: true, noun: 'doctor fee' });
       if (!allowed.ok) {
-        return NextResponse.json(
-          {
-            error:
-              allowed.code === 'NOT_YOUR_ENTRY'
-                ? 'An admin set this fee, so only an admin can change it'
-                : allowed.error,
-            code: allowed.code,
-          },
-          { status: allowed.status }
-        );
+        return NextResponse.json({ error: allowed.error, code: allowed.code }, { status: allowed.status });
       }
     }
 
-    // A settled row's pricing is locked. Changing it — or plainly unsettling it —
-    // both flip `settled` back to false, which conflicts with a newer pending row
-    // for the same (cycle, doctor, purpose) if one has since been created by sync.
-    // The partial unique index is what actually enforces "at most one live
-    // unsettled row per key"; catch the 23505 it raises and explain rather than
-    // 500.
-    const wantsToUnsettle = body.settled === false || (currentSettlement.settled === true && isPricingUpdate);
+    /**
+     * Re-pricing a settled fee no longer un-pays it behind the caller's back.
+     * It did: any pricing edit flipped `settled` to false, deleted the ledger
+     * debit and asked you to settle again — three steps and a hole in the books
+     * for whoever forgot the third. An admin now amends it in place (below),
+     * and only an explicit `settled: false` is a real reversal.
+     *
+     * A reversal can still be refused: sync may have created a newer pending
+     * row for the same doctor and purpose, and the partial unique index allows
+     * only one live unsettled row per key.
+     */
+    const wantsToUnsettle = body.settled === false;
     let wasSettled = false;
 
     if (currentSettlement.settled === true && wantsToUnsettle) {
@@ -100,19 +103,12 @@ export async function PUT(
       if (!reversed.ok) {
         return NextResponse.json({ error: reversed.error, code: reversed.code }, { status: reversed.status });
       }
-
-      const unsetError: any = null;
-      if (unsetError?.code === '23505') {
-        return NextResponse.json(
-          {
-            error:
-              'There is already a newer pending settlement for this doctor and purpose. Settle or merge that one first before reopening this one.',
-          },
-          { status: 409 }
-        );
-      }
-      if (unsetError) throw unsetError;
     }
+
+    // An admin correcting what a settled fee cost: the row stays settled and
+    // its debit is restated to match.
+    const amendingSettled =
+      currentSettlement.settled === true && !wantsToUnsettle && isPricingUpdate;
 
     const updateData: any = {
       updated_by: authResult.user.id,
@@ -165,6 +161,25 @@ export async function PUT(
     if (wantsAmountChange || wantsVisitCountChange) {
       const amt = updateData.amount_per_visit ?? currentSettlement.amount_per_visit ?? 0;
       updateData.total_amount = Math.floor(amt * effectiveVisitCount);
+    }
+
+    /**
+     * The amendment itself: what was paid becomes the new total, and the ledger
+     * OUT this payout wrote is restated to match. The ledger goes first, as it
+     * does when paying — if the money cannot be restated, nothing else moves.
+     */
+    if (amendingSettled) {
+      updateData.settlement_amount = updateData.total_amount;
+
+      const adjusted = await adjustPayoutLedgerAmount(
+        supabase,
+        currentSettlement.ledger_transaction_id,
+        updateData.total_amount,
+      );
+
+      if (!adjusted.ok) {
+        return NextResponse.json({ error: adjusted.error, code: adjusted.code }, { status: adjusted.status });
+      }
     }
 
     if (body.settled !== undefined) {
@@ -247,7 +262,18 @@ export async function PUT(
         { status: 409 }
       );
     }
-    if (error) throw error;
+    if (error) {
+      // The debit was restated before the row; put it back so the ledger never
+      // claims an amount the settlement does not.
+      if (amendingSettled) {
+        await adjustPayoutLedgerAmount(
+          supabase,
+          currentSettlement.ledger_transaction_id,
+          Number(currentSettlement.settlement_amount) || Number(currentSettlement.total_amount) || 0,
+        );
+      }
+      throw error;
+    }
 
     if (!data) {
       return NextResponse.json({ error: 'Settlement not found after update' }, { status: 404 });
@@ -257,9 +283,11 @@ export async function PUT(
       await recalculatePatientBilling(supabase, data.patient_billing_id);
     }
 
-    const message = wasSettled && isPricingUpdate
-      ? 'Settled settlement was unsettled and pricing updated. Call with settled: true to resettle.'
-      : 'Settlement updated successfully';
+    const message = amendingSettled
+      ? 'Settled fee updated, and its ledger entry adjusted to match.'
+      : wasSettled
+        ? 'Payout reversed and the settlement reopened.'
+        : 'Settlement updated successfully';
 
     return NextResponse.json(
       {
@@ -270,7 +298,7 @@ export async function PUT(
           wasSettled,
           pricingUpdated: isPricingUpdate,
           updatedFields: meaningfulFields,
-          needsResettle: wasSettled && isPricingUpdate,
+          amendedInPlace: amendingSettled,
         },
       },
       { status: 200 }
@@ -299,15 +327,32 @@ export async function DELETE(
 
     const supabase = await createClient();
     const { settlementId } = await params;
-    const body = await request.json();
+    // A DELETE carries no body from most callers; demanding one 500'd the
+    // request (BUGS.md #46).
+    const body = await request.json().catch(() => ({}));
 
     const { data: settlement } = await supabase
       .from('doctor_visit_settlements')
-      .select('patient_billing_id')
+      .select('patient_billing_id, settled, ledger_transaction_id')
       .eq('id', settlementId)
-      .single();
+      .maybeSingle();
 
-    const billingId = settlement?.patient_billing_id;
+    if (!settlement) {
+      return NextResponse.json({ error: 'Settlement not found' }, { status: 404 });
+    }
+
+    // Same rule as editing: a settled fee is the admin's. Deleting one used to
+    // be open to anyone with the capability, which let the desk remove a fee
+    // that had already been paid and leave its debit behind in the ledger.
+    const allowed = canAmendPayout(authResult.user, {
+      settled: settlement.settled === true,
+      noun: 'doctor fee',
+    });
+    if (!allowed.ok) {
+      return NextResponse.json({ error: allowed.error, code: allowed.code }, { status: allowed.status });
+    }
+
+    const billingId = settlement.patient_billing_id;
 
     // Release the visits this settlement billed back into the unbilled pool —
     // otherwise they'd be permanently stuck pointing at a row that no longer
@@ -335,6 +380,15 @@ export async function DELETE(
         .eq('id', settlementId);
 
       if (error) throw error;
+    }
+
+    // The payout goes with the fee. Money that was never really paid must not
+    // stay in the books as money that left (CR-13).
+    if (settlement.ledger_transaction_id) {
+      await supabase
+        .from('daily_ledger_transactions')
+        .delete()
+        .eq('id', settlement.ledger_transaction_id);
     }
 
     if (billingId) {

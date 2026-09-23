@@ -22,12 +22,25 @@ import {
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
+import { useUser } from '@/hooks/use-user'
 
 interface SidebarProps {
   userRole?: string
 }
 
+/** "RECEPTIONIST" is not a thing to show a person. */
+const ROLE_LABELS: Record<string, string> = {
+  ADMIN: 'Admin',
+  DOCTOR: 'Doctor',
+  NURSE: 'Nurse',
+  RECEPTIONIST: 'Reception',
+  LAB_TECHNICIAN: 'Lab',
+}
+
 export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
+  // Who is signed in. Nothing on screen said so before, which made it hard to
+  // tell — on a shared desk machine especially — whose session you were in.
+  const { user } = useUser()
   const pathname = usePathname()
   const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -243,8 +256,22 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
             </ul>
           </nav>
 
-          {/* Theme Toggle + Logout */}
+          {/* Who is signed in, then Theme Toggle + Logout */}
           <div className="border-t border-sidebar-border p-2 sm:p-3 space-y-1 sm:space-y-2 pb-safe">
+            <div className="flex items-center gap-3 px-3 sm:px-4 py-2">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-subtle text-primary font-semibold uppercase">
+                {(user?.username || user?.email || '?').charAt(0)}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate font-medium text-foreground" title={user?.email}>
+                  {user?.username || user?.email || '—'}
+                </p>
+                <p className="text-xs text-muted">
+                  {ROLE_LABELS[user?.role ?? userRole] ?? user?.role ?? userRole}
+                </p>
+              </div>
+            </div>
+
             <div className="flex items-center justify-center px-2">
               <ThemeToggle className="w-full justify-center" />
             </div>

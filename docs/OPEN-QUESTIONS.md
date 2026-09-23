@@ -4,7 +4,7 @@ Everything still waiting on an answer, in one place. The PRD is [`PRD-v2.md`](PR
 
 **How to answer:** reply by ID, e.g. `Q-90: A`, `Q-91: as proposed`, or free text. After your answers, the PRD is updated and the questions move to its answer log.
 
-_Last updated 2026-09-23 · **0 open** · every CR built_
+_Last updated 2026-09-24 · **0 open** · every CR built_
 
 ---
 
@@ -47,8 +47,13 @@ All twelve requirements are done, in three phases on 2026-09-23:
 
 Only **CR-17** is still parked, by your own answer to Q-74: a returning patient is registered again for now.
 
+**Round 4 (2026-09-24)** answered six more, from using the app: Q-88 (who may change a fee or
+commission — replaces Q-20), Q-89 (an admin's correction amends the ledger in place), Q-90 (the
+doctor visit report lives on each doctor's record), Q-91 (a dead session goes to the login page),
+Q-92 (the petty cash top-up form) and Q-93 (show who is signed in).
+
 **Worth a look when you next use it**, since these change what the screens say:
 
 - The Finances **Overview is cash-basis now**. A doctor fee or commission counts as money out when it is *paid*, not when it is priced — so profit compares like with like for the first time. What is priced and unpaid is listed under **Still to pay** on the Expenses tab.
 - The **ledger no longer takes expenses**. The desk spends from **Petty cash**; the admin records a **general expense**, which now needs a reason and keeps its payment mode and author.
-- An **admin's payout is born Closed**, and a closed ledger entry must be reopened before anything touches it — including un-paying that payout. Say the word if you would rather admins could reverse their own payout directly.
+- An **admin's payout is born Closed**. Correcting a settled amount no longer needs a reopen — the admin edits it and the ledger row follows (Q-89) — but *reversing* one still does, because deleting a debit is a different act from restating it.

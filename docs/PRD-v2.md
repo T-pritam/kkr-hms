@@ -6,7 +6,7 @@
 | **Doc type** | Change-set PRD: target behaviour + build tracker. The as-built description of today's app stays in [`PRD.md`](PRD.md) (the baseline). |
 | **Baseline code** | `main` @ `5f07acf` (2026-09-17) |
 | **Requirements source** | Client requirements 1–11 (2026-09-21) and requirement 12, patient money + patient dashboard (2026-09-22, clarified the same day). Each is quoted at the top of its CR. |
-| **Status** | Rounds 1, 2 and 3 answered (2026-09-22 / 23). **Nothing is open** ([`OPEN-QUESTIONS.md`](OPEN-QUESTIONS.md)), and **every CR is built** — CR-01 … CR-16, less CR-17 (dropped, Q-74). |
+| **Status** | Rounds 1 – 4 answered (2026-09-22 / 24). **Nothing is open** ([`OPEN-QUESTIONS.md`](OPEN-QUESTIONS.md)), and **every CR is built** — CR-01 … CR-19, less CR-17 (dropped, Q-74). |
 | **Built** | Phases 1 and 2 are live on `main`, with their migrations applied. Phase 3 (CR-07, CR-10) is on `feature/v2-ledger-desk-finance`; its migration is applied (§8.4). |
 | **Last updated** | 2026-09-23 |
 
@@ -104,6 +104,8 @@
 | [CR-15](#cr-15--patient-money-income-expenses-lab-and-medicine-included-or-not-req-12) | Patient money: charges internal; lab & medicine excluded/included; payment labels; package removed | 12, 9 | P1 | CR-12 | — | ✅ |
 | [CR-16](#cr-16--patient-overview-dashboard-req-12) | Patient Overview (dashboard) | 12 | P1 | CR-15 | — | ✅ |
 | [CR-17](#cr-17--a-new-bill-for-each-stay-q-54) | A new bill for each stay | Q-54 | — | — | dropped for now (Q-74) | ❌ |
+| [CR-18](#cr-18--a-doctors-visits-and-what-was-paid-for-them-q-90) | A doctor's visits and what was paid for them | Q-90 | P2 | CR-13 | deploy | 🟡 |
+| [CR-19](#cr-19--staying-signed-in-and-knowing-who-you-are-q-91-q-93) | Staying signed in, and knowing who you are | Q-91, Q-93 | **P0** | — | deploy | 🟡 |
 
 Priorities are from Q-56 and Q-76 ("as proposed"), with CR-11 at P0 from the client. **No CR is waiting on a question**: rounds 1–3 are all answered (§9).
 
@@ -129,7 +131,8 @@ Priorities are from Q-56 and Q-76 ("as proposed"), with CR-11 at P0 from the cli
 | | On | What |
 |---|---|---|
 | ✅ **Live** | `main` | CR-11, CR-12, CR-14 (registration fee, payment ⇄ ledger, IST dates) · CR-15, CR-16 (patient money, Overview) · **phase 1**: CR-01, CR-05, CR-06, CR-08 · **phase 2**: CR-02, CR-03, CR-04, CR-13 |
-| 🟡 **Phase 3** | `feature/v2-ledger-desk-finance` | CR-07 admin expenses are general expenses · CR-10 the Finances restructure, on a cash basis |
+| ✅ **Live** | `main` | …and phase 3: CR-07 admin expenses are general expenses · CR-10 the Finances restructure, on a cash basis |
+| 🟡 **Round 4** | `feature/v2-fixes-round-4` | CR-18 the doctor visit report · CR-19 staying signed in and who is signed in · the Q-88/Q-89 rule change in CR-04 and CR-13 · reception reaching the advance log · the petty cash top-up form |
 
 **Every change request is built.** What is left is deploying and using it.
 
@@ -146,7 +149,7 @@ Priorities are from Q-56 and Q-76 ("as proposed"), with CR-11 at P0 from the cli
 | Term | Meaning after v2 |
 |---|---|
 | **Entry** | Any row a person creates: a payment, charge, OPD receipt, expense, advance, price, top-up… |
-| **Owner** | The user who created the entry. For a price, it's the user who last set it (Q-20 = A). |
+| **Owner** | The user who created the entry. A **price** has no owner: see rows 15 and 16 (Q-88 replaced Q-20). |
 | **Open / Closed** | Status of a closable ledger entry. Admin moves entries from Open to Closed in bulk (CR-06). |
 | **Ledger** | The log of money received and paid out: patient payments, registration fees, OPD receipts, doctor and referral payouts. Not day-based. Desk spending isn't in it (Q-07 = A). |
 | **Petty cash** | One shared pool of cash the admin gives the desk. Desk expenses and advances come out of it. A log only, with no status. |
@@ -193,8 +196,8 @@ canModify(user, entry):
 | 12 | Employee advance | own | its salary month is settled (Q-17) |
 | 13 | Petty cash top-up | never (admin's) | — |
 | 14 | Doctor fee schedule rate | own | — |
-| 15 | Doctor fee price on a patient | own (the last one to set it, Q-20) | the fee is paid |
-| 16 | Referral commission | own (the last one to set it, Q-20) | the commission is paid |
+| 15 | Doctor fee price on a patient | **any** unsettled fee, whoever entered it (Q-88) | it is **settled** — then admin only, and reception can do nothing at all |
+| 16 | Referral commission, and the referral person | **any** unsettled one, whoever entered it (Q-88) | it is **settled** — then admin only |
 | 17 | Doctor fee / referral payout made by reception | own | Closed (Q-71) |
 | 18 | Lab / medicine included-or-excluded (CR-15) | admin or any receptionist, when saving or later (Q-65) | once **Collected**: its amount and status are fixed until its payment is deleted (Q-79) |
 | 18a | Lab/Medicine payment (a collected charge) | own, but the amount comes from the charge | Closed |
@@ -359,7 +362,7 @@ Each CR follows the same shape: client text → today → target → code touche
 
 **Target**
 - [D] Reception can do everything in Q-19 a–h: the doctor fee schedule · Sync visits · price fee rows · manual rows, merge and delete · set the referral person and commission · **pay out doctor fees and referral commissions** · manage visit purposes.
-- [D] The owner of a price is whoever last set it. Once admin sets a value, reception can't change it, and a paid fee or commission is locked (Q-20 = A, §3.2).
+- [D] ~~The owner of a price is whoever last set it~~ — **replaced by Q-88 (2026-09-24):** while a fee or commission is unsettled anyone at the desk may change it, whoever entered it; once settled only an admin may, and an admin's change amends it in place rather than reopening it. `amount_set_by` / `referral_commission_set_by` are still written, as the record of who changed what.
 - [D] Keep Sync + pricing. The fee isn't captured at visit time (Q-21 = B).
 - [Q-71] What money reception pays doctors and referrers from. [Q-72] Whether to build the missing screens for manual rows, merge and visit purposes now.
 - [P] Store `amount_set_by` on fee rows and `referral_commission_set_by` on the bill. Save the fee schedule one rate at a time, so each rate keeps its owner. Payouts go through the single payout path (CR-13).
@@ -753,6 +756,56 @@ Total bill       39,100
 - [ ] AC-16.4 Switching stays (CR-17) switches every figure — CR-17 is dropped for now, and `?billing_id=` is already accepted.
 - [ ] AC-16.5 Checked on production after deploy (§8.4).
 
+### CR-18 — A doctor's visits and what was paid for them (Q-90)
+**Priority** P2 · **Status** 🟡 built on `feature/v2-fixes-round-4`, not deployed
+
+> *"Doctor wise visit with detail like patientId/name, date and payment related data like date, provided by and all. Able to see and download if needed."*
+
+**Today:** every consultation read is scoped to one patient, so answering "what has this doctor done, and what have we paid him" meant opening patients one at a time. Nothing groups visits by doctor, filters by date, or puts the payment beside the visit.
+
+**The shape of the answer.** Payment is **per settlement, not per visit**: one `doctor_visit_settlements` row covers every visit of one doctor, for one purpose, in one billing cycle, and a visit points at it through `patient_consultations.settlement_id`. So a visit's own fee is the settlement's `amount_per_visit`, an unbilled visit has no fee at all, and "paid on / by / how" is read off the settlement. `price_per_visit` on the consultation is **not** used — visit entry stopped collecting it, so it is 0 almost everywhere.
+
+**What was built**
+
+| Part | Where |
+|---|---|
+| `GET /api/doctors/[id]/visits?from&to&purpose_id&settled` — each visit with its patient, purpose, fee and payment; subtotals by visit type and a summary computed server-side, so the screen, the CSV and the PDF cannot disagree | `app/api/doctors/[id]/visits/route.ts` |
+| The page, reached from a button on the Doctors list: four cards (visits · fees paid · still to pay · not billed), a by-type panel, the detail table, and Excel + PDF | `app/doctors/[id]/visits/page.tsx`, `app/doctors/page.tsx` |
+| The PDF, in the house style (`lib/pdf/base.ts`), landscape, `Rs.` not `₹` | `lib/pdf/doctor-visits-pdf.ts` |
+| Dates: `consultation_date` is an instant shown as IST, so a day range is converted with `toISTInstant` — otherwise a 00:30 visit files under the previous day | same |
+| Tests | `tests/api/doctors/doctor-visits.test.ts` (18) |
+
+- [x] AC-18.1 Each visit shows the patient ID and name, the date, the purpose and the fee.
+- [x] AC-18.2 A paid visit shows when it was paid, by whom, how, and the reference.
+- [x] AC-18.3 An unbilled visit says so rather than showing ₹0.
+- [x] AC-18.4 Excel and PDF carry the same figures as the screen.
+- [x] AC-18.5 A late-evening visit lands on the right IST day.
+- [ ] AC-18.6 Checked on production after deploy.
+
+### CR-19 — Staying signed in, and knowing who you are (Q-91, Q-93)
+**Priority** P0 · **Status** 🟡 built on `feature/v2-fixes-round-4`, not deployed
+
+> *"If we leave the website idle for sometime then all the api and buttons on click not getting data... we need to do a refresh to bring back the app normal condition."* and *"Get the logged in user name and role — it is hard to tell now who is logged in and where."*
+
+**Three faults compounded** to break an idle session, and the fix for each is in the file that caused it:
+
+1. `middleware.ts` renewed the access token onto the **response** only, so the request carried on to the handler with the old cookie and 401'd anyway. The next request worked — which is why a manual reload appeared to fix it. It now rewrites the **request** cookie and forwards it.
+2. The renewed cookie was given a 20-minute life around a 10-minute token (BUGS #8). Both now come from one constant.
+3. `verifyAuth` renewed only when the cookie was **missing**, never when it was present and expired — so a valid seven-day refresh token sat unused beside a 401.
+
+Two more, once it did fail: an expired XHR was 307'd to the login **page**, so `res.json()` threw and every screen said "Failed to load…"; and no client code handled a 401 at all. `/api/*` now answers `401 { code: 'SESSION_EXPIRED' }`, and a genuinely dead session sends the browser to `/login?from=…` (Q-91).
+
+The refresh branch also used to `return` early, skipping the role gate — one free request into `/admin` or `/finances` every ten minutes (BUGS #7). It now falls through, and a `finalize()` helper keeps the renewed cookie on whatever response leaves.
+
+**And who is signed in:** `/api/auth/me` returned three JWT claims and no name (BUGS #2), so nothing on screen could say. It now reads `username` from the row, and the sidebar shows it with the role above the theme toggle.
+
+- [x] AC-19.1 A session idle past ten minutes renews on the next click, with no reload.
+- [x] AC-19.2 A renewed token is honoured by the handler in the same request.
+- [x] AC-19.3 An expired API call answers 401 JSON; a page still redirects.
+- [x] AC-19.4 A dead session lands on the login page, and returns to where it was.
+- [x] AC-19.5 The sidebar names the signed-in user and their role.
+- [ ] AC-19.6 Checked on production after deploy.
+
 ### CR-17 — A new bill for each stay (Q-54)
 **Status** ❌ dropped for now. Q-74: *"Consider it as new patient admission for now"*: a returning patient is registered again, and the registration fee is offered as for anyone new.
 
@@ -1083,9 +1136,22 @@ Order matters: the new code writes columns that exist only after the migrations.
 ---
 ## 9. Open questions
 
-**Nothing is open** as of 2026-09-23: rounds 1, 2 and 3 are all answered. New questions go in [`docs/OPEN-QUESTIONS.md`](OPEN-QUESTIONS.md).
+**Nothing is open** as of 2026-09-24: rounds 1 – 4 are all answered. New questions go in [`docs/OPEN-QUESTIONS.md`](OPEN-QUESTIONS.md).
 
-This section keeps the **answer log**: round 3 (§9.1), round 2 (§9.2), the questions closed by your clarification (§9.3), and round 1 (§9.4).
+This section keeps the **answer log**: round 4 (§9.0), round 3 (§9.1), round 2 (§9.2), the questions closed by your clarification (§9.3), and round 1 (§9.4).
+
+### 9.0 Round 4 — from using the app, 2026-09-24
+
+Six things found in use rather than in the spec. Two were outright bugs.
+
+| Q | Asked | Answer | Recorded in |
+|---|---|---|---|
+| Q-88 | Who may change a doctor fee or a referral commission? | **Replaces Q-20.** Unsettled: any receptionist or admin, whoever entered it — *"we collect the data related to person edited/entered and person marking it done"*, so the audit trail replaces the ownership lock. Settled: admin only; reception can do nothing, not even un-settle | §3.2 rows 15-16, CR-04, CR-13 |
+| Q-89 | When an admin changes a **settled** amount, what happens to the ledger OUT? | Adjust the existing row in place — one action, nothing to reopen | CR-13 |
+| Q-90 | Where does the doctor-wise visit report live, and who sees it? | On each doctor's own record, from the Doctors list. Admin, doctor and reception — the same people who price and pay the fees | CR-18 |
+| Q-91 | When the session has really ended (7 days), what happens? | Send them to the login page, remembering where they were | CR-19 |
+| Q-92 | The petty cash top-up form | Default the reason to "Weekly float"; "Given to" lists **only** active receptionists | CR-02 |
+| Q-93 | Who is signed in? | Show the name and role in the sidebar — *"it is hard to tell now who is logged in and where"* | CR-19 |
 
 ### 9.1 Round 3 — answers received 2026-09-23
 
@@ -1229,4 +1295,5 @@ The baseline `PRD.md` §10 questions were carried into round 1: Q1 → Q-37 · Q
 | 2026-09-23 | `feature/v2-patient-money` **merged to `main`** (auto-deploy), so CR-11, CR-12, CR-14, CR-15 and CR-16 are ✅ live. **Phase 1 built** on `feature/v2-ledger-desk-finance`: CR-01 (the own-row rule, the closed lock and the missing guards, on the server), CR-05 (one ledger log — everyone's entries, filters, paging, totals), CR-06 (closing per row, in bulk, with a note and the amount counted; reopen with a reason) and CR-08 (the day-based ledger, shift settlements and the Finances Transactions/Day Close tabs retired). Migration `20260924000001` applied: 15 rows closed, 17 open | Claude |
 | 2026-09-23 | **Phase 2 built** on `feature/v2-ledger-desk-finance`: CR-02 (the petty cash log — one shared float, a statement with a running balance, no status, an edit history), CR-03 (reception pays advances, out of petty cash, with every payroll figure stripped from the responses and the cap finally applied on both routes — BUGS #55), CR-04 (reception prices doctor fees, sets the referral commission, manages visit purposes and pays both out; whoever last set an amount owns it) and CR-13 (one payout path: every payout writes exactly one ledger OUT and keeps its id, so un-paying reverses it — the patient tab wrote none at all before). Migration `20260924000002` applied. Also fixed: BUGS #43 (a payout no longer divides by zero visits) | Claude |
 | 2026-09-23 | **Phase 3 built** on `feature/v2-ledger-desk-finance`, which finishes every change request: CR-07 (an admin's expense is a general expense, with its payment mode, its author and a required reason; `expense` is no longer a ledger source, so the desk's float and the admin's log stop overlapping) and CR-10 (the Overview on a cash basis — money in = patient payments + OPD receipts, money out = general expenses + petty cash spent + salary + the payouts **actually made**; charges, pending receivables and the transaction list are gone, and what is priced but unpaid is listed as "Still to pay"). Migration `20260924000003` applied. Phase 2 merged to `main` earlier the same day | Claude |
+| 2026-09-24 | **Round 4**, from using the app rather than reading the spec. Two bugs: an idle session broke every button until a manual reload (three compounding faults — the renewed token never reached the handler, a 20-minute cookie around a 10-minute token, and `verifyAuth` renewing only when the cookie was absent), and reception was redirected away from the advance log CR-03 had built for them, because `middleware.ts` was never updated. Plus: the sidebar now names who is signed in (BUGS #2), the petty cash top-up defaults its reason and lists only receptionists, a doctor's visits and payments are a report you can download (CR-18), and **Q-88 replaces Q-20** — an unsettled fee or commission is the desk's, a settled one is the admin's, and an admin's correction amends the ledger in place instead of reopening it. BUGS #2, #7, #8, #33, #43, #46, #49, #50 and #55 cleared | Claude |
 

@@ -7,6 +7,7 @@ import { describe, it, expect } from 'vitest'
 import { verifyAuth, sendUnauthorized, sendForbidden } from '@/lib/auth/verify'
 import { makeRequest } from '../helpers/request'
 import { signInAs, tokenFor, expiredToken, tamperedToken, signOut } from '../helpers/auth'
+import { cookieJar } from '../helpers/cookie-jar'
 
 describe('verifyAuth', () => {
   it('accepts a token from the accessToken cookie', async () => {
@@ -46,11 +47,44 @@ describe('verifyAuth', () => {
     expect(result).toMatchObject({ isValid: false, user: null, error: 'No token provided' })
   })
 
-  it('rejects an expired token', async () => {
+  it('rejects an expired token when there is nothing to renew it from', async () => {
     const result = await verifyAuth(
       makeRequest('GET', '/api/patients', { anonymous: true, cookies: { accessToken: await expiredToken() } })
     )
     expect(result).toMatchObject({ isValid: false, user: null, error: 'Invalid token' })
+  })
+
+  /**
+   * The other half of why the app died when left idle. This read
+   * `token ? verify(token) : renew()`, so a cookie that was present but past
+   * its ten minutes never reached the refresh branch — and 401'd with a
+   * perfectly good seven-day refresh token sitting right beside it.
+   */
+  it('renews an expired token from the refresh token instead of refusing', async () => {
+    const { refreshToken } = await signInAs('RECEPTIONIST', { userId: 'u-recep' })
+    cookieJar.set('refreshToken', refreshToken)
+
+    const result = await verifyAuth(
+      makeRequest('GET', '/api/patients', { cookies: { accessToken: await expiredToken('RECEPTIONIST') } })
+    )
+
+    expect(result).toMatchObject({ isValid: true })
+    expect(result.user).toMatchObject({ id: 'u-recep', role: 'RECEPTIONIST' })
+  })
+
+  /** An API client sending a stale header is told so, not handed a session. */
+  it('does not renew a bearer token', async () => {
+    const { refreshToken } = await signInAs('ADMIN')
+    cookieJar.set('refreshToken', refreshToken)
+
+    const result = await verifyAuth(
+      makeRequest('GET', '/api/patients', {
+        anonymous: true,
+        headers: { Authorization: `Bearer ${await expiredToken()}` },
+      })
+    )
+
+    expect(result.isValid).toBe(false)
   })
 
   it('rejects a token signed with the wrong secret', async () => {

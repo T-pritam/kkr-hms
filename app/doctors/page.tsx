@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,7 +15,7 @@ import { DEPARTMENTS } from '@/lib/doctors/constants'
 import { hasDoctorCapability } from '@/lib/doctors/authz'
 import { useUser } from '@/hooks/use-user'
 import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch'
-import { AlertTriangle, Edit, IndianRupee, Plus, Power, Search, Trash2 } from 'lucide-react'
+import { AlertTriangle, Edit, FileText, IndianRupee, Plus, Power, Search, Trash2 } from 'lucide-react'
 import { FeeScheduleModal } from '@/components/doctors/fee-schedule-modal'
 
 /**
@@ -51,6 +52,8 @@ interface DeleteTarget {
 export default function DoctorsPage() {
   const { user } = useUser()
   const canWrite = hasDoctorCapability(user?.role, 'doctor:write')
+  // Whoever may price and pay a doctor's fee may read what he was paid.
+  const canSeeVisits = ['ADMIN', 'DOCTOR', 'RECEPTIONIST'].includes(user?.role ?? '')
   const canDelete = hasDoctorCapability(user?.role, 'doctor:delete')
   // Reception may add and edit a doctor, but only an admin sets what one is paid.
   const isAdmin = user?.role === 'ADMIN'
@@ -185,6 +188,17 @@ export default function DoctorsPage() {
             <Power size={16} />
           </Button>
         </>
+      )}
+      {/* This doctor's visits, and what has been paid for them. Open to the
+          same people who price and pay those fees. */}
+      {canSeeVisits && (
+        <Link
+          href={`/doctors/${doctor.id}/visits`}
+          className="inline-flex h-9 items-center rounded-md border border-border px-3 text-sm hover:bg-surface-hover transition-colors"
+          title="Visits & payments"
+        >
+          <FileText size={16} />
+        </Link>
       )}
       {/* Admin only — a doctor must not be able to set their own rate. */}
       {isAdmin && (

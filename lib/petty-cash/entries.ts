@@ -222,11 +222,44 @@ async function recordHistory(
   if (error) console.error('Petty cash history could not be written:', error)
 }
 
+/**
+ * "Given to" names a receptionist, and only a receptionist (Q-11). The column is
+ * a plain FK to `users`, so without this an id typed by hand — or an older
+ * client — could record the float as handed to an admin or a lab technician,
+ * which is not a thing that happens.
+ */
+export async function assertRecipient(
+  db: Db,
+  givenTo: string | null,
+): Promise<{ ok: true } | Refusal> {
+  if (!givenTo) return { ok: true }
+
+  const { data } = await db
+    .from('users')
+    .select('role, status')
+    .eq('id', givenTo)
+    .maybeSingle()
+
+  if (data?.role !== 'RECEPTIONIST' || data?.status !== 'ACTIVE') {
+    return {
+      ok: false,
+      status: 400,
+      error: 'Petty cash is handed to a receptionist',
+      fieldErrors: { given_to: 'Choose an active receptionist' },
+    }
+  }
+
+  return { ok: true }
+}
+
 export async function createEntry(
   db: Db,
   actor: Actor,
   values: PettyCashValues,
 ): Promise<{ ok: true; entry: any } | Refusal> {
+  const recipient = await assertRecipient(db, values.given_to)
+  if (!recipient.ok) return recipient
+
   if (values.kind === 'opening') {
     const { data: existing } = await db.from('petty_cash_entries').select('id').eq('kind', 'opening')
     if ((existing ?? []).length > 0) {
@@ -303,6 +336,9 @@ export async function updateEntry(
 
   const allowed = canModify(actor, { created_by: entry.created_by })
   if (!allowed.ok) return allowed
+
+  const recipient = await assertRecipient(db, values.given_to)
+  if (!recipient.ok) return recipient
 
   // The kind never changes: a top-up cannot become an expense, or the balance
   // would move by twice the amount with nothing to show for it.

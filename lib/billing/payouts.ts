@@ -22,7 +22,7 @@
  *     paid from the patient's money (requirement 12, point 2).
  */
 
-import type { Actor } from '@/lib/authz/ownership'
+import { isAdmin, type Actor } from '@/lib/authz/ownership'
 import { istToday } from '@/lib/dates/ist'
 import { createLedgerTransaction, PAYMENT_MODES, type PaymentMode } from '@/lib/ledger/transactions'
 import { recalculatePatientBilling } from '@/lib/recalculate-billing'
@@ -79,6 +79,75 @@ export function validatePayout(details: PayoutDetails): { ok: true; value: Payou
       notes: String(details.notes ?? '').trim() || null,
     },
   }
+}
+
+/**
+ * Who may still change a fee or a commission (client revision, 2026-09-24).
+ *
+ * This replaces the old own-row rule (PRD Q-20), under which whoever last set
+ * an amount owned it and an admin-set price was read-only to the desk. The
+ * client's reasoning for dropping it: every row already records who entered it,
+ * who last set the amount and who marked it paid, so the audit trail answers
+ * "who did this?" without the desk having to fetch an admin to fix a typo.
+ *
+ *   not settled  the desk shares it — any receptionist, or the admin
+ *   settled      the admin's alone; reception can neither edit, un-settle
+ *                nor delete it
+ *
+ * The refusal is a 403, not the 409 `ENTRY_LOCKED` a closed ledger row gives:
+ * there is nothing reception can reopen to proceed, so this is a *who* answer.
+ */
+export function canAmendPayout(
+  actor: Actor,
+  row: { settled: boolean; noun?: string },
+): { ok: true } | Refusal {
+  if (!row.settled || isAdmin(actor)) return { ok: true }
+
+  return {
+    ok: false,
+    status: 403,
+    error: `This ${row.noun ?? 'entry'} has been settled. Only an admin can change it now.`,
+    code: 'ADMIN_ONLY',
+  }
+}
+
+/**
+ * Restate what a payout cost, on the ledger row it already wrote.
+ *
+ * An admin correcting a settled fee from ₹3,000 to ₹2,500 is amending one fact,
+ * not reversing a payment and making a new one — so the debit is updated in
+ * place and the row stays settled. Three things this deliberately does not do:
+ *
+ *   * It does not refuse a **closed** ledger row. An admin's payout is born
+ *     Closed, so refusing one would mean an admin could never correct their own
+ *     payout — the exact thing this exists for. Removing a debit is a different
+ *     act from restating one, so `unpayDoctorFee` keeps its closed-row refusal.
+ *   * It writes only `amount`: `daily_ledger_transactions` has no `updated_by`,
+ *     and touching `status`/`closed_at` would fall foul of the CHECK that says a
+ *     closed row carries its closing time.
+ *   * It tolerates a missing ledger id. Fees settled through the patient's
+ *     Billing tab never wrote one (see the note on that route), and an
+ *     amendment must not fail because of that older gap.
+ */
+export async function adjustPayoutLedgerAmount(
+  db: Db,
+  ledgerTransactionId: string | null | undefined,
+  amount: number,
+): Promise<{ ok: true; adjusted: boolean } | Refusal> {
+  if (!ledgerTransactionId) return { ok: true, adjusted: false }
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { ok: false, status: 400, error: 'The amount paid must be more than 0' }
+  }
+
+  const { error } = await db
+    .from('daily_ledger_transactions')
+    .update({ amount })
+    .eq('id', ledgerTransactionId)
+
+  if (error) throw error
+
+  return { ok: true, adjusted: true }
 }
 
 /**

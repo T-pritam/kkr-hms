@@ -292,7 +292,11 @@ function EntryDialog({
   const existing = entryId ? entries.find(e => e.id === entryId) : undefined
 
   const [amount, setAmount] = useState(existing ? String(existing.amount) : '')
-  const [reason, setReason] = useState(existing?.reason ?? '')
+  // The usual reason, pre-filled and editable — a top-up is nearly always the
+  // week's float, and an empty box just makes everyone type the same words.
+  const [reason, setReason] = useState(
+    existing?.reason ?? (kind === 'topup' ? 'Weekly float' : kind === 'opening' ? 'Opening balance' : ''),
+  )
   const [entryDate, setEntryDate] = useState(existing?.entry_date ?? istToday())
   const [mode, setMode] = useState(existing?.payment_mode ?? 'cash')
   const [givenTo, setGivenTo] = useState(existing?.given_to_user?.id ?? '')
@@ -302,7 +306,8 @@ function EntryDialog({
 
   useEffect(() => {
     if (kind !== 'topup' && kind !== 'opening') return
-    fetch('/api/ledger/users')
+    // Active receptionists only — they are the ones who hold the float.
+    fetch('/api/petty-cash/recipients')
       .then(r => (r.ok ? r.json() : null))
       .then(body => setPeople(body?.data || []))
       .catch(() => {})
@@ -391,7 +396,7 @@ function EntryDialog({
                 value={givenTo}
                 onChange={e => setGivenTo(e.target.value)}
               >
-                <option value="">—</option>
+                <option value="">Choose a receptionist…</option>
                 {people.map(person => (
                   <option key={person.id} value={person.id}>
                     {person.username}

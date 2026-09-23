@@ -68,17 +68,38 @@ describe('doctor settlements — access control', () => {
     expect(row('s1').settled).toBe(true)
   })
 
-  it('will not let reception re-price a fee an admin set', async () => {
+  /**
+   * The client replaced the own-row rule on 2026-09-24: while a fee is
+   * unsettled the desk shares it, whoever typed the first figure. Who changed
+   * it is still recorded — that is what `amount_set_by` is for now.
+   */
+  it('lets reception re-price an unsettled fee an admin set', async () => {
     await signInAs('ADMIN', { userId: 'u-admin' })
     aSettlement({ id: 's1', visit_count: 1 })
     await price('s1', { amount_per_visit: 900 })
 
     await signInAs('RECEPTIONIST', { userId: 'u-recep' })
-    const { status, body } = await price('s1', { amount_per_visit: 100 })
+    const { status } = await price('s1', { amount_per_visit: 100 })
 
-    expect(status).toBe(403)
-    expect(body.code).toBe('NOT_YOUR_ENTRY')
-    expect(row('s1').amount_per_visit).toBe(900)
+    expect(status).toBe(200)
+    expect(Number(row('s1').amount_per_visit)).toBe(100)
+    expect(row('s1').amount_set_by).toBe('u-recep')
+  })
+
+  it('stops reception touching a fee once it is settled', async () => {
+    await signInAs('RECEPTIONIST', { userId: 'u-recep' })
+    aSettlement({ id: 's1', visit_count: 1, amount_per_visit: 500, settled: true })
+
+    const repriced = await price('s1', { amount_per_visit: 100 })
+    const unsettled = await price('s1', { settled: false })
+    const deleted = await remove('s1')
+
+    for (const attempt of [repriced, unsettled, deleted]) {
+      expect(attempt.status).toBe(403)
+      expect(attempt.body.code).toBe('ADMIN_ONLY')
+    }
+    expect(row('s1')).toMatchObject({ settled: true })
+    expect(Number(row('s1').amount_per_visit)).toBe(500)
   })
 })
 
@@ -137,25 +158,30 @@ describe('PUT /api/doctor-settlements/[settlementId] — pricing', () => {
     expect(body.error).toBe('No data provided to update')
   })
 
-  it('unsettles a paid settlement when its pricing is edited', async () => {
-    await signInAs('ADMIN')
-    aSettlement({
-      id: 's1',
-      visit_count: 3,
-      amount_per_visit: 1500,
-      settled: true,
-      settlement_date: '2026-03-01T00:00:00.000Z',
-      settlement_amount: 4500,
-    })
+  /**
+   * Re-pricing a settled fee used to un-pay it behind the caller's back: the
+   * row flipped to unsettled, the ledger debit was deleted, and you were told
+   * to settle again — three steps, and a hole in the books for anyone who
+   * forgot the third. An admin now amends it in one action.
+   */
+  it('lets an admin correct a settled fee in place, and restates its ledger entry', async () => {
+    await signInAs('ADMIN', { userId: 'u-admin' })
+    aSettlement({ id: 's1', visit_count: 3, amount_per_visit: 0, settled: false })
+
+    await settle({ settlement_id: 's1', settlement_amount: 4500, payment_method: 'cash' })
+    const debit = db.rows('daily_ledger_transactions')[0]
+    expect(Number(debit.amount)).toBe(4500)
 
     const { status, body } = await price('s1', { pricing_mode: 'per_visit', amount_per_visit: 2000 })
 
     expect(status).toBe(200)
-    expect(body.message).toBe(
-      'Settled settlement was unsettled and pricing updated. Call with settled: true to resettle.'
-    )
-    expect(row('s1')).toMatchObject({ settled: false, settlement_date: null, settlement_amount: null })
-    expect(Number(row('s1').amount_per_visit)).toBe(2000)
+    expect(body.message).toBe('Settled fee updated, and its ledger entry adjusted to match.')
+    // Still settled — no reopen, nothing to resettle.
+    expect(row('s1')).toMatchObject({ settled: true })
+    expect(Number(row('s1').total_amount)).toBe(6000)
+    expect(Number(row('s1').settlement_amount)).toBe(6000)
+    // And the money that left says the same thing.
+    expect(Number(db.find('daily_ledger_transactions', (r) => r.id === debit.id)!.amount)).toBe(6000)
   })
 
   it('marks a settlement settled, computing the amount from the rate', async () => {
@@ -292,22 +318,33 @@ describe('PUT /api/doctor-settlements/[settlementId] — reopening a settled row
       visit_count: 2,
     })
 
-    const { status, body } = await price('s-old', { amount_per_visit: 999 })
+    const { status, body } = await price('s-old', { settled: false })
 
     expect(status).toBe(409)
     expect(body.error).toMatch(/newer pending settlement/)
-    // The attempt must not have left the old row half-unsettled or repriced.
-    expect(row('s-old')).toMatchObject({ settled: true, amount_per_visit: 0 })
+    // The attempt must not have left the old row half-unsettled.
+    expect(row('s-old')).toMatchObject({ settled: true })
   })
 
   it('unsettles cleanly when nothing conflicts', async () => {
     await signInAs('ADMIN')
     aSettlement({ id: 's1', settled: true, amount_per_visit: 500, visit_count: 2 })
 
-    const { status } = await price('s1', { amount_per_visit: 700 })
+    const { status } = await price('s1', { settled: false })
 
     expect(status).toBe(200)
-    expect(row('s1')).toMatchObject({ settled: false, amount_per_visit: 700 })
+    expect(row('s1')).toMatchObject({ settled: false })
+  })
+
+  /** Re-pricing is an amendment; only an explicit `settled: false` reverses. */
+  it('does not reopen a settled row just because its price changed', async () => {
+    await signInAs('ADMIN')
+    aSettlement({ id: 's1', settled: true, amount_per_visit: 500, visit_count: 2 })
+
+    await price('s1', { amount_per_visit: 700 })
+
+    expect(row('s1')).toMatchObject({ settled: true })
+    expect(Number(row('s1').amount_per_visit)).toBe(700)
   })
 })
 
@@ -412,6 +449,8 @@ describe('POST /api/doctor-settlements/settle — single', () => {
     await settle({ settlement_id: 's1', settlement_amount: 800, payment_method: 'cash' })
     expect(db.count('daily_ledger_transactions')).toBe(1)
 
+    // Reversing a settled fee is the admin's, even one reception paid.
+    await signInAs('ADMIN')
     const { status } = await price('s1', { settled: false })
 
     expect(status).toBe(200)
@@ -682,10 +721,10 @@ describe('DELETE /api/doctor-settlements/[settlementId]', () => {
   })
 
   /**
-   * Known defect — see BUGS.md #46. The handler parses a JSON body unconditionally, so a
-   * DELETE sent without one — the ordinary way to send a DELETE — throws and returns 500.
+   * Was BUGS.md #46: the handler parsed a JSON body unconditionally, so a DELETE
+   * sent without one — the ordinary way to send a DELETE — threw a 500.
    */
-  it.fails('should accept a DELETE with no request body', async () => {
+  it('accepts a DELETE with no request body', async () => {
     await signInAs('ADMIN')
     aSettlement({ id: 's1' })
 

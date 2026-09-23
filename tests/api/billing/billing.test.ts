@@ -323,3 +323,94 @@ describe('PATCH /api/patients/[id]/billing — no package', () => {
     expect(Number(billing.total_charges)).toBe(12000)
   })
 })
+
+/**
+ * Who may still change a referral commission (client revision, 2026-09-24).
+ *
+ * This replaces the own-row rule: while the commission is unsettled the desk
+ * shares it — the amount and the referral person both — and once it is settled
+ * it is the admin's alone. None of this was covered before.
+ */
+describe('PATCH /api/patients/[id]/billing — changing a commission', () => {
+  it('lets reception set and re-set an unsettled commission and its referral person', async () => {
+    await signInAs('ADMIN', { userId: 'u-admin' })
+    aPatient({ id: 'p1' })
+    aBilling({ id: 'b1', patient_id: 'p1' })
+    aReferral({ id: 'r1', name: 'Suresh' })
+    aReferral({ id: 'r2', name: 'Meena' })
+
+    await update('p1', { billing_id: 'b1', referral_id: 'r1', referral_commission_amount: 2000 })
+
+    await signInAs('RECEPTIONIST', { userId: 'u-recep' })
+    const { status } = await update('p1', {
+      billing_id: 'b1',
+      referral_id: 'r2',
+      referral_commission_amount: 2500,
+    })
+
+    expect(status).toBe(200)
+    expect(db.find('patient_billing', (r) => r.id === 'b1')).toMatchObject({
+      referral_commission_amount: 2500,
+      // Recorded, not enforced — the audit trail replaces the ownership lock.
+      referral_commission_set_by: 'u-recep',
+    })
+    expect(db.find('patients', (r) => r.id === 'p1')!.referred_by).toBe('r2')
+  })
+
+  it('stops reception touching a settled commission', async () => {
+    await signInAs('RECEPTIONIST', { userId: 'u-recep' })
+    aPatient({ id: 'p1', referred_by: 'r1' })
+    aBilling({
+      id: 'b1',
+      patient_id: 'p1',
+      referral_commission_amount: 2000,
+      referral_settled: true,
+    })
+    aReferral({ id: 'r1', name: 'Suresh' })
+    aReferral({ id: 'r2', name: 'Meena' })
+
+    const amount = await update('p1', { billing_id: 'b1', referral_commission_amount: 3000 })
+    const person = await update('p1', { billing_id: 'b1', referral_id: 'r2' })
+    const reopen = await update('p1', { billing_id: 'b1', referral_settled: false })
+
+    for (const attempt of [amount, person, reopen]) {
+      expect(attempt.status).toBe(403)
+      expect(attempt.body.code).toBe('ADMIN_ONLY')
+    }
+    expect(db.find('patient_billing', (r) => r.id === 'b1')).toMatchObject({
+      referral_commission_amount: 2000,
+      referral_settled: true,
+    })
+    expect(db.find('patients', (r) => r.id === 'p1')!.referred_by).toBe('r1')
+  })
+
+  /**
+   * The case that used to be refused for everyone: `canModify` treated a
+   * settled row as locked, and its admin branch refuses a locked row too. An
+   * admin now corrects it in one action and the debit follows.
+   */
+  it('lets an admin correct a settled commission, and restates its ledger entry', async () => {
+    await signInAs('ADMIN', { userId: 'u-admin' })
+    aPatient({ id: 'p1', patient_id: '12/26', name: 'Ramesh' })
+    aBilling({ id: 'b1', patient_id: 'p1', referral_commission_amount: 2000 })
+
+    await update('p1', {
+      billing_id: 'b1',
+      referral_settled: true,
+      referral_settlement_payment_method: 'cash',
+    })
+
+    const debit = db.rows('daily_ledger_transactions')[0]
+    expect(Number(debit.amount)).toBe(2000)
+
+    const { status } = await update('p1', { billing_id: 'b1', referral_commission_amount: 1500 })
+
+    expect(status).toBe(200)
+    expect(db.find('patient_billing', (r) => r.id === 'b1')).toMatchObject({
+      referral_commission_amount: 1500,
+      // Still settled: an amendment, not a reopen.
+      referral_settled: true,
+    })
+    expect(Number(db.find('daily_ledger_transactions', (r) => r.id === debit.id)!.amount)).toBe(1500)
+  })
+})

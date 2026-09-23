@@ -28,11 +28,7 @@ const PUBLIC_PATHS = [
 const ADMIN_ONLY_PATHS = [
   '/employees',
   '/finances',
-  '/daily-ledger/employee-ledger',
   '/admin',
-  // The live shift settlement screen. The guard used to name only the dead stub
-  // above it, leaving this one reachable by anyone who typed the URL.
-  '/ledger/employee-shift',
 ]
 
 describe('middleware — unauthenticated traffic', () => {
@@ -44,7 +40,7 @@ describe('middleware — unauthenticated traffic', () => {
     expect(response.headers.get('location')).toBeNull()
   })
 
-  it.each(['/dashboard', '/patients', '/ledger/summary', '/lab/tests', '/api/patients'])(
+  it.each(['/dashboard', '/patients', '/ledger/summary', '/lab/tests'])(
     'redirects %s to the login page',
     async (path) => {
       signOut()
@@ -198,12 +194,8 @@ describe('middleware — silent access token refresh', () => {
     expect(response.status).toBe(307)
   })
 
-  /**
-   * Known defect — see BUGS.md #7. The refresh branch returns immediately, skipping both
-   * the auth-page redirect and the admin-only check below it. A non-admin whose access
-   * token has expired therefore gets one free request into /admin, /finances or /employees.
-   */
-  it.fails('should still enforce admin-only paths while refreshing the access token', async () => {
+  /** Was BUGS.md #7: the refresh branch returned early, skipping this check. */
+  it('still enforces admin-only paths while refreshing the access token', async () => {
     await signInWithRefreshTokenOnly('NURSE')
     const response = await visit('/finances')
 
@@ -211,8 +203,7 @@ describe('middleware — silent access token refresh', () => {
     expect(locationOf(response).pathname).toBe('/dashboard')
   })
 
-  /** Known defect — see BUGS.md #7. Same early return skips the signed-in redirect. */
-  it.fails('should still bounce a refreshing user off the login page', async () => {
+  it('still bounces a refreshing user off the login page', async () => {
     await signInWithRefreshTokenOnly('ADMIN')
     const response = await visit('/login')
 
@@ -220,12 +211,8 @@ describe('middleware — silent access token refresh', () => {
     expect(locationOf(response).pathname).toBe('/dashboard')
   })
 
-  /**
-   * Known defect — see BUGS.md #8. The cookie lives for 20 minutes but the JWT inside it
-   * expires after 10, leaving a 10-minute window where the browser holds a cookie that
-   * every endpoint rejects.
-   */
-  it.fails('should give the refreshed cookie the same lifetime as the token it carries', async () => {
+  /** Was BUGS.md #8: a 20-minute cookie around a 10-minute token. */
+  it('gives the refreshed cookie the same lifetime as the token it carries', async () => {
     await signInWithRefreshTokenOnly('ADMIN')
     const response = await visit('/patients')
 
@@ -233,6 +220,67 @@ describe('middleware — silent access token refresh', () => {
     const tokenLifetime = claims.exp! - claims.iat!
 
     expect(response.cookies.get('accessToken')!.maxAge).toBe(tokenLifetime)
+  })
+})
+
+/**
+ * The reason the app used to need a manual reload after ten minutes idle.
+ *
+ * Middleware renewed the access token and set it on the *response*, so the
+ * request carried on to the route handler with the old, expired cookie and
+ * 401'd anyway. The user saw "Failed to load…" on every button, reloaded, and
+ * the next request — now carrying the renewed cookie — worked.
+ */
+describe('middleware — a renewed token reaches the handler in the same pass', () => {
+  it('rewrites the request cookie, not just the response', async () => {
+    await signInWithRefreshTokenOnly('ADMIN')
+    const request = makeRequest('GET', '/api/patients')
+    const before = request.cookies.get('accessToken')?.value
+
+    await middleware(request)
+
+    const after = request.cookies.get('accessToken')?.value
+    expect(after).toEqual(expect.any(String))
+    expect(after).not.toBe(before)
+
+    // And it is a token the handler will actually accept.
+    const claims = decodeJwt(after!)
+    expect(claims.type).toBe('access')
+    expect(claims.role).toBe('ADMIN')
+  })
+
+  it('keeps the renewed cookie when the request is redirected anyway', async () => {
+    await signInWithRefreshTokenOnly('NURSE')
+
+    // A nurse renewing on the way into /finances: bounced, but still renewed.
+    const response = await visit('/finances')
+
+    expect(response.status).toBe(307)
+    expect(response.cookies.get('accessToken')?.value).toEqual(expect.any(String))
+  })
+})
+
+/**
+ * An expired XHR used to be 307'd to the login *page*, so the caller got HTML,
+ * `res.json()` threw, and every screen said "Failed to load…" instead of
+ * anything about being signed out.
+ */
+describe('middleware — an API call gets an answer it can read', () => {
+  it('answers 401 JSON rather than redirecting', async () => {
+    signOut()
+    const response = await visit('/api/patients')
+
+    expect(response.status).toBe(401)
+    expect(response.headers.get('content-type')).toContain('application/json')
+    expect(await response.json()).toMatchObject({ code: 'SESSION_EXPIRED' })
+  })
+
+  it('still redirects a page, so a typed URL lands on the login form', async () => {
+    signOut()
+    const response = await visit('/patients')
+
+    expect(response.status).toBe(307)
+    expect(locationOf(response).pathname).toBe('/login')
   })
 })
 

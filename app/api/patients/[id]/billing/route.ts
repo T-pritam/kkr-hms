@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { verifyAuth } from '@/lib/auth/verify';
-import { canModify } from '@/lib/authz/ownership';
 import { requireBilling } from '@/lib/billing/authz';
 import {
+  adjustPayoutLedgerAmount,
+  canAmendPayout,
   payReferralCommission,
   unpayReferralCommission,
   validatePayout,
@@ -197,29 +198,38 @@ export async function PATCH(
       );
     }
 
-    // Whoever last set the commission owns it (Q-20 = A), and a paid one is
-    // locked until it is un-paid — the amount and the debit must agree.
+    const settled = Boolean(target.referral_settled);
+
     const changingAmount =
       body.referral_commission_amount !== undefined &&
       Number(body.referral_commission_amount) !== Number(target.referral_commission_amount ?? 0);
 
-    if (changingAmount) {
-      const allowed = canModify(authResult.user, {
-        created_by: target.referral_commission_set_by ?? authResult.user.id,
-        locked: Boolean(target.referral_settled),
-        lockReason: 'This commission has been paid. Un-pay it before changing the amount.',
-      });
+    // The dialog always sends `referral_id`, so compare it against what the
+    // patient actually has rather than treating every save as a change.
+    const { data: patientRow } = await supabase
+      .from('patients')
+      .select('referred_by')
+      .eq('id', patientId)
+      .maybeSingle();
+
+    const changingReferralPerson =
+      body.referral_id !== undefined &&
+      (body.referral_id || null) !== (patientRow?.referred_by || null);
+
+    const changingSettledFlag =
+      body.referral_settled !== undefined && body.referral_settled !== target.referral_settled;
+
+    /**
+     * While it is unsettled the commission is the desk's — the amount and the
+     * referral person both (client revision, 2026-09-24, replacing Q-20). Once
+     * it is settled it is the admin's alone, and the referral person is covered
+     * too: it was writable by anyone, at any time, even after the commission had
+     * been paid to them.
+     */
+    if (settled && (changingAmount || changingReferralPerson || changingSettledFlag)) {
+      const allowed = canAmendPayout(authResult.user, { settled: true, noun: 'commission' });
       if (!allowed.ok) {
-        return NextResponse.json(
-          {
-            error:
-              allowed.code === 'NOT_YOUR_ENTRY'
-                ? 'An admin set this commission, so only an admin can change it'
-                : allowed.error,
-            code: allowed.code,
-          },
-          { status: allowed.status }
-        );
+        return NextResponse.json({ error: allowed.error, code: allowed.code }, { status: allowed.status });
       }
     }
 
@@ -237,7 +247,21 @@ export async function PATCH(
 
     if (body.referral_commission_amount !== undefined) {
       updateData.referral_commission_amount = body.referral_commission_amount;
+      // Still recorded on every change — it is the audit trail now, not a lock.
       if (changingAmount) updateData.referral_commission_set_by = authResult.user.id;
+    }
+
+    // An admin correcting a settled commission: the debit already written for it
+    // is restated to match, and the commission stays settled.
+    if (settled && changingAmount) {
+      const adjusted = await adjustPayoutLedgerAmount(
+        supabase,
+        target.referral_ledger_transaction_id,
+        Number(body.referral_commission_amount),
+      );
+      if (!adjusted.ok) {
+        return NextResponse.json({ error: adjusted.error, code: adjusted.code }, { status: adjusted.status });
+      }
     }
     if (body.referral_settlement_notes !== undefined) {
       updateData.referral_settlement_notes = body.referral_settlement_notes;

@@ -1,5 +1,40 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAccessToken, getRefreshToken, verifyToken, generateAccessToken } from '@/lib/auth/jwt'
+import {
+  getAccessToken,
+  getRefreshToken,
+  verifyToken,
+  generateAccessToken,
+  ACCESS_TOKEN_TTL_SECONDS,
+} from '@/lib/auth/jwt'
+import { createClient } from '@/lib/supabase/server'
+
+/**
+ * The token carries an id, an e-mail and a role — no name. The sidebar needs a
+ * name to say who is signed in, so it is read from the row here rather than
+ * baked into the token: a rename then shows up on the next page load instead of
+ * waiting out the session.
+ */
+async function identity(userId: string, email: string, role: string) {
+  try {
+    const supabase = await createClient()
+    const { data } = await supabase
+      .from('users')
+      .select('username, status')
+      .eq('id', userId)
+      .maybeSingle()
+
+    return {
+      id: userId,
+      email,
+      role,
+      username: data?.username ?? email.split('@')[0],
+      status: data?.status ?? 'ACTIVE',
+    }
+  } catch {
+    // Never fail the session check over a display name.
+    return { id: userId, email, role, username: email.split('@')[0], status: 'ACTIVE' }
+  }
+}
 
 /**
  * Who the app thinks is signed in — the one call every role-gated button
@@ -24,11 +59,7 @@ export async function GET(request: NextRequest) {
 
     if (payload) {
       return NextResponse.json({
-        user: {
-          id: payload.userId,
-          email: payload.email,
-          role: payload.role,
-        },
+        user: await identity(payload.userId, payload.email, payload.role),
       })
     }
 
@@ -53,18 +84,14 @@ export async function GET(request: NextRequest) {
     })
 
     const response = NextResponse.json({
-      user: {
-        id: refreshPayload.userId,
-        email: refreshPayload.email,
-        role: refreshPayload.role,
-      },
+      user: await identity(refreshPayload.userId, refreshPayload.email, refreshPayload.role),
     })
 
     response.cookies.set('accessToken', newAccessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 10 * 60,
+      maxAge: ACCESS_TOKEN_TTL_SECONDS,
       path: '/',
     })
 

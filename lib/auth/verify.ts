@@ -22,7 +22,8 @@ async function renewFromRefreshToken(): Promise<TokenPayload | null> {
   if (!refreshToken) return null;
 
   const payload = await verifyToken(refreshToken);
-  if (!payload) return null;
+  // An access token pasted into the refresh cookie must not mint a session.
+  if (!payload || payload.type !== 'refresh') return null;
 
   const claims = { userId: payload.userId, email: payload.email, role: payload.role };
   await setAuthCookies(await generateAccessToken(claims), await generateRefreshToken(claims));
@@ -37,7 +38,21 @@ export async function verifyAuth(request: NextRequest) {
       ? authHeader.substring(7)
       : request.cookies.get('accessToken')?.value;
 
-    const payload = token ? await verifyToken(token) : await renewFromRefreshToken();
+    /**
+     * Renew whenever there is no *valid* access token — missing **or expired**.
+     *
+     * This read `token ? verify(token) : renew()`, so a cookie that was present
+     * but past its ten minutes never reached the refresh branch and the request
+     * 401'd with a good seven-day refresh token sitting right beside it. That
+     * is the other half of why the app died when left idle.
+     *
+     * A bearer token is not renewed: an API client sending an expired header
+     * should be told so, not quietly handed a cookie session.
+     */
+    let payload = token ? await verifyToken(token) : null;
+    if (!payload && !authHeader) {
+      payload = await renewFromRefreshToken();
+    }
 
     if (!payload) {
       return {

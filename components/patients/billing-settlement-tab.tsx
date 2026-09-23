@@ -520,6 +520,14 @@ export default function BillingSettlementTab({
 
   const isAdmin = user?.role === 'ADMIN';
 
+  /**
+   * The desk prices and pays what is not settled yet; a settled row is the
+   * admin's alone (client revision, 2026-09-24). The API enforces this — these
+   * flags only stop us offering a button that would be refused.
+   */
+  const canPrice = isAdmin || user?.role === 'RECEPTIONIST';
+  const commissionSettled = Boolean(billing?.referral_settled);
+
   // Shared input class for the inline number inputs in modals
   const numInputClass = "w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none";
 
@@ -543,7 +551,7 @@ export default function BillingSettlementTab({
               <Download className="h-4 w-4" />
               <span className="hidden sm:inline">Download PDF</span>
             </button>
-            {isAdmin && (
+            {(isAdmin || (canPrice && !commissionSettled)) && (
               <button
                 onClick={() => setShowSetCharges(true)}
                 className="flex items-center gap-2 bg-info hover:bg-info-hover text-foreground px-4 py-2 rounded-lg transition-colors"
@@ -551,6 +559,11 @@ export default function BillingSettlementTab({
                 <Plus className="h-4 w-4" />
                 Referral & Commission
               </button>
+            )}
+            {!isAdmin && canPrice && commissionSettled && (
+              <span className="self-center text-xs text-muted">
+                Commission paid — only an admin can change it now
+              </span>
             )}
           </div>
         </div>
@@ -778,7 +791,7 @@ export default function BillingSettlementTab({
                           <span className="font-semibold text-foreground">
                             ₹{parseInt(group.pendingRow.total_amount || 0)}
                           </span>
-                          {isAdmin && (
+                          {canPrice && (
                             <div className="flex items-center gap-2">
                               <button
                                 onClick={() => handleEditSettlement(group.pendingRow)}

@@ -16,7 +16,7 @@ describe('GET /api/auth/me', () => {
     const { status, body } = await call(me, 'GET', '/api/auth/me')
 
     expect(status).toBe(200)
-    expect(body.user).toEqual({ id: 'u-doc', email: 'doc@hms.test', role: 'DOCTOR' })
+    expect(body.user).toMatchObject({ id: 'u-doc', email: 'doc@hms.test', role: 'DOCTOR' })
   })
 
   it('rejects a request with no session', async () => {
@@ -52,11 +52,16 @@ describe('GET /api/auth/me', () => {
     expect(status).toBe(401)
   })
 
+  /**
+   * The sidebar needs a name to say who is signed in, so the row is read for
+   * `username` and `status` — and nothing else. The password hash, the reset
+   * token and the rest of the row stay on the server.
+   */
   it('does not leak the password hash or other user columns', async () => {
     await signInAs('ADMIN', { seedUser: true })
     const { body } = await call(me, 'GET', '/api/auth/me')
 
-    expect(Object.keys(body.user)).toEqual(['id', 'email', 'role'])
+    expect(Object.keys(body.user).sort()).toEqual(['email', 'id', 'role', 'status', 'username'])
   })
 
   /**
@@ -74,7 +79,7 @@ describe('GET /api/auth/me', () => {
     const { status, body, response } = await call(me, 'GET', '/api/auth/me')
 
     expect(status).toBe(200)
-    expect(body.user).toEqual({ id: 'u-recep', email: 'r@hms.test', role: 'RECEPTIONIST' })
+    expect(body.user).toMatchObject({ id: 'u-recep', email: 'r@hms.test', role: 'RECEPTIONIST' })
 
     const refreshed = (response as NextResponse).cookies.get('accessToken')
     expect(refreshed?.value).toEqual(expect.any(String))
@@ -100,15 +105,24 @@ describe('GET /api/auth/me', () => {
   })
 
   /**
-   * Known defect — see BUGS.md #2. contexts/user-context.tsx types this response as the
-   * full User (username, status, needsPasswordChange), but the route only echoes three
-   * JWT claims, so those fields are silently undefined everywhere in the UI.
+   * Was BUGS.md #2: the route echoed three JWT claims while
+   * contexts/user-context.tsx typed the response as the full User, so
+   * `user.username` was undefined everywhere — which is why nothing on screen
+   * could say who was signed in.
    */
-  it.fails('should return the username the client context expects', async () => {
+  it('returns the username the sidebar shows', async () => {
     await signInAs('ADMIN', { seedUser: true, username: 'admin' })
     const { body } = await call(me, 'GET', '/api/auth/me')
 
     expect(body.user.username).toBe('admin')
+  })
+
+  it('falls back to the e-mail handle when there is no user row', async () => {
+    await signInAs('ADMIN', { userId: 'u-ghost', email: 'ghost@hms.test' })
+    const { status, body } = await call(me, 'GET', '/api/auth/me')
+
+    expect(status).toBe(200)
+    expect(body.user.username).toBe('ghost')
   })
 })
 
