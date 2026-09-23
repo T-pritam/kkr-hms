@@ -1008,8 +1008,12 @@ Two branches, the second stacked on the first:
 
 Order matters: the new code writes columns that exist only after the migrations.
 
+> **✅ Step 2 is done. The three migrations were applied to production `bmbbifxkjqmdqriootdw` on 2026-09-23**, with the client's go-ahead ("the app is still in development phase"). Verified straight after: 11 bills all have a month and a join date (8 had neither) · the 14 existing payments are labelled Regular, ₹1,36,000 unchanged · no `base_charge` or package flag is left, and the ₹20,000 became a "Package (legacy)" charge line · every bill's `patient_charges_total` and `total_charges` equal its charges exactly (20 lines, ₹55,913) · REG is flagged as the registration fee, LAB moved to the Lab category · no charge carries a lab/medicine status yet, which is what Q-87 asks for. No new database advisory.
+>
+> **The app code is not deployed yet** — both branches are local. Until it is, production runs the old code on the new schema (safe: every new column is nullable or defaulted), but the old screens will show the ₹20,000 package as a charge line rather than a base charge, and Finances will start counting the 8 back-filled bills.
+
 1. Review and merge `feature/v2-registration-fee-payments`, then `feature/v2-patient-money`, or merge only the second, which contains both.
-2. Apply, in order, to production:
+2. ~~Apply, in order, to production~~ **(done 2026-09-23)**:
    1. `20260922000001_registration_fee.sql`: 3 columns, 2 partial unique indexes, 2 CHECK constraints, and the ledger source list.
    2. `20260922000002_billing_month_backfill.sql`: fills the month on 8 bills. **Expect the Finances Overview for those months to change.**
    3. `20260923000001_patient_money.sql`: the payment labels (existing payments become Regular), the Lab category ("Lab Test" moves there), the lab/medicine status on charges, the ₹20,000 base package turned into a charge line, and bill totals recomputed as charges only.
@@ -1178,3 +1182,4 @@ The baseline `PRD.md` §10 questions were carried into round 1: Q1 → Q-37 · Q
 | 2026-09-22 | Requirement 12 **clarified** by the client. CR-15 rewritten: charges are internal; total bill = payments; expenses = doctor fees + referral + included lab/medicine; lab and medicine get an Included tick that adds a payment automatically; payments get labels. CR-16, §3, §6 and §8 updated to match. 7 round-2 questions closed (§9.2), 5 new ones (Q-77 – Q-81); 18 open | Claude |
 | 2026-09-22 | Round 2 answered (§9.1). **Include/exclude corrected** to your meaning: Excluded (the default, asked when saving) = collect now as a separate tagged payment; Included = covered by the regular payments. CR-15's core built on `feature/v2-patient-money`: payment labels, lab/medicine collection, charges internal, package removed. CR-17 dropped for now (readmission = new registration). Open questions moved to `docs/OPEN-QUESTIONS.md` (11) | Claude |
 | 2026-09-23 | Round 3 answered (§9.1): nothing is open. Separately collected lab/medicine money is **passed on** (Q-82); an **Included** amount is **income, not an expense** (Q-83), so the worked example's Net is ₹22,100; a third answer **Excluded — collect later** added at save (Q-87); the pharmacy bill attach stays as a record only (Q-84). **CR-16 built** on `feature/v2-patient-money`: `GET /api/patients/[id]/overview` and the Overview tab, now the first tab. 59 test files, 1,762 tests pass; typecheck and `next build` clean | Claude |
+| 2026-09-23 | **The three migrations applied to production** (`20260922000001`, `20260922000002`, `20260923000001`), with the client's go-ahead, and verified row by row (§8.4). The app code is still on the two feature branches, not deployed | Claude |
