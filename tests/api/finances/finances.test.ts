@@ -558,7 +558,7 @@ describe('POST /api/finances/doctor-settlements — pay out', () => {
       source: 'doctor_settlement',
       amount: 4500,
       payment_mode: 'bank_transfer',
-      status: 'verified',
+      status: 'closed',
     })
   })
 
@@ -638,17 +638,19 @@ describe('POST /api/finances/doctor-settlements — pay out', () => {
    * must leave nothing behind, or doctors end up flagged as settled with no debit against
    * them.
    */
-  it('refuses the whole payout when today is closed, leaving the fees unsettled', async () => {
-    await signInAs('ADMIN')
+  // Closing is per row now (CR-06), so a payout is never blocked by a date. An
+  // admin's debit is born Closed, because they are the one who would close it.
+  it('books the payout debit as closed, credited to the admin', async () => {
+    await signInAs('ADMIN', { userId: 'u-admin' })
     aSettlement({ id: 's1', settled: false, total_amount: 4500 })
-    aClosure({ closure_date: TODAY })
 
-    const { status, body } = await paySettlements({ settlement_ids: ['s1'], payment_method: 'cash' })
+    const { status } = await paySettlements({ settlement_ids: ['s1'], payment_method: 'cash' })
 
-    expect(status).toBe(409)
-    expect(body.code).toBe('LEDGER_DAY_CLOSED')
-    expect(db.find('doctor_visit_settlements', (r) => r.id === 's1')!.settled).toBe(false)
-    expect(db.count('daily_ledger_transactions')).toBe(0)
+    expect(status).toBe(200)
+    expect(db.rows('daily_ledger_transactions')[0]).toMatchObject({
+      status: 'closed',
+      closed_by: 'u-admin',
+    })
   })
 
   /**
@@ -722,22 +724,19 @@ describe('/api/finances/referral-commissions', () => {
       amount: 3000,
       payment_mode: 'cash',
       patient_id: 'p1',
-      status: 'verified',
+      status: 'closed',
     })
   })
 
   /** Same guard-ordering concern as the doctor payout: a refusal must leave nothing behind. */
-  it('refuses the whole payout when today is closed, leaving the commissions unsettled', async () => {
-    await signInAs('ADMIN')
+  it('books the commission debit as closed for an admin', async () => {
+    await signInAs('ADMIN', { userId: 'u-admin' })
     aBilling({ id: 'b1', referral_commission_amount: 3000, referral_settled: false })
-    aClosure({ closure_date: TODAY })
 
-    const { status, body } = await payCommission({ billing_ids: ['b1'], payment_method: 'cash' })
+    const { status } = await payCommission({ billing_ids: ['b1'], payment_method: 'cash' })
 
-    expect(status).toBe(409)
-    expect(body.code).toBe('LEDGER_DAY_CLOSED')
-    expect(db.find('patient_billing', (r) => r.id === 'b1')!.referral_settled).toBe(false)
-    expect(db.count('daily_ledger_transactions')).toBe(0)
+    expect(status).toBe(200)
+    expect(db.rows('daily_ledger_transactions')[0]).toMatchObject({ status: 'closed', closed_by: 'u-admin' })
   })
 
   it('skips commissions that were already settled', async () => {

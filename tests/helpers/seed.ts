@@ -380,10 +380,17 @@ export function aTransaction(overrides: Row = {}): Row {
     description: 'OPD collection',
     reference_number: null,
     patient_id: null,
-    status: 'pending',
+    // Rows are born Open and wait for the admin's "Mark closed" (CR-06).
+    status: 'open',
     created_by: null,
     verified_by: null,
     verified_at: null,
+    closed_at: null,
+    closed_by: null,
+    close_batch_id: null,
+    reopened_at: null,
+    reopened_by: null,
+    reopen_reason: null,
     notes: null,
     // Only source: 'expense' rows carry these; the API nulls them on everything else.
     expense_category: null,

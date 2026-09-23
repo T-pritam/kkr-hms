@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -29,7 +30,6 @@ import {
 import { SettleDoctorFeesModal } from '@/components/finances/settle-doctor-fees-modal'
 import { SettleReferralCommissionModal } from '@/components/finances/settle-referral-commission-modal'
 import { GeneralExpenseModal } from '@/components/finances/general-expense-modal'
-import { DayCloseWorklist } from '@/components/finances/day-close-worklist'
 import {
   generateSalaryPDF,
   generateExpensesPDF,
@@ -82,7 +82,7 @@ export default function FinancesPage() {
   const [selectedMonth, setSelectedMonth] = useState<string>(
     istMonth()
   )
-  const [activeTab, setActiveTab] = useState<'overview' | 'settlements' | 'transactions' | 'expenses' | 'dayclose'>(
+  const [activeTab, setActiveTab] = useState<'overview' | 'settlements' | 'expenses'>(
     'overview'
   )
   // Surfaced on the tab label so the backlog is visible without opening the panel.
@@ -106,45 +106,18 @@ export default function FinancesPage() {
   const [users, setUsers] = useState<{ id: string; username: string }[]>([])
   const usersFetchedRef = useRef(false)
 
-  // Deep link from the unclosed-day banner on the Daily Ledger screen. Read from
-  // location rather than useSearchParams so the page needs no Suspense boundary.
-  useEffect(() => {
-    const tab = new URLSearchParams(window.location.search).get('tab')
-    if (tab === 'dayclose') setActiveTab('dayclose')
-  }, [])
-
   useEffect(() => {
     fetchSummary()
     if (activeTab === 'expenses') {
       fetchExpenses()
     }
-    if (activeTab === 'transactions') {
-      fetchTransactions()
-      if (!usersFetchedRef.current) {
-        fetchUsers()
-        usersFetchedRef.current = true
-      }
-    }
-    // Every transaction filter is listed here. A second effect used to watch three
-    // of them separately, so a filter change fetched twice; the new status and date
-    // filters would have needed a third. One list, one fetch.
-  }, [
-    selectedMonth,
-    activeTab,
-    transactionsSubTab,
-    transactionUserFilter,
-    transactionSourceFilter,
-    transactionStatusFilter,
-    transactionStartDate,
-    transactionEndDate,
-  ])
+  }, [selectedMonth, activeTab])
 
   useRealtimeRefetch(
     ['expenses', 'doctor_visit_settlements', 'referrals', 'salary_payments', 'patient_billing', 'patient_charges'],
     () => {
       fetchSummary()
       if (activeTab === 'expenses') fetchExpenses()
-      if (activeTab === 'transactions') fetchTransactions()
     }
   )
 
@@ -359,15 +332,6 @@ export default function FinancesPage() {
             Settlements
           </button>
           <button
-            onClick={() => setActiveTab('transactions')}
-            className={`px-4 py-3 min-h-[44px] font-medium whitespace-nowrap transition-colors ${activeTab === 'transactions'
-                ? 'text-primary border-b-2 border-primary'
-                : 'text-muted hover:text-foreground'
-              }`}
-          >
-            Transactions
-          </button>
-          <button
             onClick={() => setActiveTab('expenses')}
             className={`px-4 py-3 min-h-[44px] font-medium whitespace-nowrap transition-colors ${activeTab === 'expenses'
                 ? 'text-primary border-b-2 border-primary'
@@ -375,20 +339,6 @@ export default function FinancesPage() {
               }`}
           >
             Expenses
-          </button>
-          <button
-            onClick={() => setActiveTab('dayclose')}
-            className={`px-4 py-3 min-h-[44px] font-medium whitespace-nowrap transition-colors flex items-center gap-2 ${activeTab === 'dayclose'
-                ? 'text-primary border-b-2 border-primary'
-                : 'text-muted hover:text-foreground'
-              }`}
-          >
-            Day Close
-            {openDayCount > 0 && (
-              <span className="px-1.5 py-0.5 text-xs rounded-full bg-warning-subtle text-warning-text border border-warning/30">
-                {openDayCount}
-              </span>
-            )}
           </button>
         </div>
 
@@ -585,14 +535,10 @@ export default function FinancesPage() {
                     </button>
                   </div>
 
-                  {/* Ledger Expenses — switch to Transactions tab filtered to expense debits */}
+                  {/* Ledger Expenses — the log itself, filtered to expense debits (CR-08) */}
                   <div className="flex items-center py-2 px-2 border-b border-border hover:bg-surface-hover rounded-lg transition-colors group">
-                    <button
-                      onClick={() => {
-                        setActiveTab('transactions')
-                        setTransactionsSubTab('debit')
-                        setTransactionSourceFilter('expense')
-                      }}
+                    <Link
+                      href="/ledger/summary?direction=debit&source=expense"
                       className="flex-1 flex justify-between items-center cursor-pointer"
                     >
                       <span className="text-muted group-hover:text-foreground flex items-center gap-1 transition-colors">
@@ -602,7 +548,7 @@ export default function FinancesPage() {
                       <span className="font-semibold text-foreground">
                         {formatCurrency(summary.expenses.ledger_expenses)}
                       </span>
-                    </button>
+                    </Link>
                     <button
                       onClick={async (e) => {
                         e.stopPropagation()
@@ -739,226 +685,10 @@ export default function FinancesPage() {
           </div>
         )}
 
-        {/* Transactions Tab */}
-        {activeTab === 'transactions' && (
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <CardTitle className="flex items-center gap-2">
-                  <Calendar className="h-5 w-5 text-primary" />
-                  Transactions
-                </CardTitle>
-
-                {/* User filter — only shown when users list available (ADMIN) */}
-                {users.length > 0 && (
-                  <div className="flex items-center gap-2">
-                    <Filter className="h-4 w-4 text-muted flex-shrink-0" />
-                    <select
-                      value={transactionUserFilter}
-                      onChange={(e) => setTransactionUserFilter(e.target.value)}
-                      className="px-3 py-1.5 text-sm bg-input border border-input-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                    >
-                      <option value="">All Users</option>
-                      {users.map((u) => (
-                        <option key={u.id} value={u.id}>{u.username}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-
-              {/* Sub-tabs + source chip */}
-              <div className="flex items-center gap-3 mt-3 flex-wrap">
-                <div className="flex rounded-lg overflow-hidden border border-border">
-                  {(['all', 'credit', 'debit'] as const).map((tab) => (
-                    <button
-                      key={tab}
-                      onClick={() => {
-                        setTransactionsSubTab(tab)
-                        setTransactionSourceFilter('')
-                      }}
-                      className={`px-4 py-1.5 text-sm font-medium capitalize transition-colors ${
-                        transactionsSubTab === tab
-                          ? tab === 'credit'
-                            ? 'bg-success-subtle text-success-text'
-                            : tab === 'debit'
-                              ? 'bg-destructive-subtle text-destructive'
-                              : 'bg-primary text-foreground'
-                          : 'bg-surface text-muted hover:text-foreground'
-                      }`}
-                    >
-                      {tab}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Status filter — the fast way to find entries still awaiting review */}
-                <select
-                  value={transactionStatusFilter}
-                  onChange={(e) => setTransactionStatusFilter(e.target.value)}
-                  className="px-3 py-1.5 text-sm bg-input border border-input-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                >
-                  <option value="">All Statuses</option>
-                  <option value="pending">Pending</option>
-                  <option value="verified">Verified</option>
-                </select>
-
-                {/* Explicit date range — overrides the month picker when set */}
-                <div className="flex items-center gap-1">
-                  <input
-                    type="date"
-                    value={transactionStartDate}
-                    onChange={(e) => setTransactionStartDate(e.target.value)}
-                    className="px-2 py-1.5 text-sm bg-input border border-input-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                  />
-                  <span className="text-muted text-sm">→</span>
-                  <input
-                    type="date"
-                    value={transactionEndDate}
-                    onChange={(e) => setTransactionEndDate(e.target.value)}
-                    className="px-2 py-1.5 text-sm bg-input border border-input-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                  />
-                </div>
-
-                {/* Dismissible source filter chip */}
-                {transactionSourceFilter && (
-                  <span className="flex items-center gap-1 px-3 py-1 text-xs rounded-full bg-warning-subtle text-warning-text border border-warning/30">
-                    Source: {transactionSourceFilter}
-                    <button
-                      onClick={() => setTransactionSourceFilter('')}
-                      className="ml-1 hover:opacity-70"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </span>
-                )}
-
-                {(transactionStartDate || transactionEndDate) && (
-                  <span className="flex items-center gap-1 px-3 py-1 text-xs rounded-full bg-info-subtle text-info border border-info/30">
-                    Custom range
-                    <button
-                      onClick={() => {
-                        setTransactionStartDate('')
-                        setTransactionEndDate('')
-                      }}
-                      className="ml-1 hover:opacity-70"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </span>
-                )}
-              </div>
-            </CardHeader>
-
-            <CardContent>
-              {transactionsLoading ? (
-                <div className="flex items-center justify-center h-40">
-                  <RefreshCw className="animate-spin h-6 w-6 text-primary" />
-                </div>
-              ) : transactions.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-border">
-                        <th className="text-left py-3 px-2 text-muted font-medium">Date</th>
-                        <th className="text-left py-3 px-2 text-muted font-medium hidden sm:table-cell">Patient</th>
-                        <th className="text-left py-3 px-2 text-muted font-medium hidden md:table-cell">Type</th>
-                        <th className="text-left py-3 px-2 text-muted font-medium hidden md:table-cell">User</th>
-                        <th className="text-left py-3 px-2 text-muted font-medium">Description</th>
-                        <th className="text-left py-3 px-2 text-muted font-medium hidden lg:table-cell">Mode</th>
-                        <th className="text-right py-3 px-2 text-muted font-medium">Amount</th>
-                        <th className="text-center py-3 px-2 text-muted font-medium hidden md:table-cell">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {transactions.map((txn: any) => (
-                        <tr key={txn.id} className="border-b border-border hover:bg-surface-hover transition-colors">
-                          <td className="py-3 px-2 text-sm text-foreground whitespace-nowrap">
-                            {new Date(txn.transaction_date).toLocaleDateString('en-IN', {
-                              month: 'short',
-                              day: 'numeric',
-                            })}
-                          </td>
-                          <td className="py-3 px-2 text-sm hidden sm:table-cell">
-                            {txn.patient?.name ? (
-                              <span className="font-medium text-foreground">{txn.patient.name}</span>
-                            ) : (
-                              <span className="text-muted italic">—</span>
-                            )}
-                          </td>
-                          <td className="py-3 px-2 text-sm hidden md:table-cell">
-                            <span
-                              className={`px-2 py-1 rounded text-xs font-medium ${
-                                txn.transaction_type === 'credit'
-                                  ? 'bg-success-subtle text-success-text'
-                                  : 'bg-destructive-subtle text-destructive'
-                              }`}
-                            >
-                              {txn.transaction_type}
-                            </span>
-                          </td>
-                          <td className="py-3 px-2 text-sm hidden md:table-cell text-muted">
-                            {txn.created_by_user?.username || '—'}
-                          </td>
-                          <td className="py-3 px-2 text-sm text-foreground">
-                            <div>
-                              {txn.description}
-                              <span className="sm:hidden block text-xs text-muted mt-0.5">
-                                {txn.transaction_type} • {txn.payment_mode}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="py-3 px-2 text-sm hidden lg:table-cell text-muted capitalize">
-                            {txn.payment_mode?.replace('_', ' ')}
-                          </td>
-                          <td
-                            className={`py-3 px-2 text-sm text-right font-semibold ${
-                              txn.transaction_type === 'credit' ? 'text-success-text' : 'text-destructive'
-                            }`}
-                          >
-                            {txn.transaction_type === 'credit' ? '+' : '−'}
-                            {formatCurrency(txn.amount)}
-                          </td>
-                          <td className="py-3 px-2 text-center hidden md:table-cell">
-                            <div className="flex items-center justify-center gap-1">
-                              <span
-                                className={`px-2 py-1 rounded text-xs ${
-                                  txn.status === 'verified'
-                                    ? 'bg-info-subtle text-info'
-                                    : 'bg-warning-subtle text-warning-text'
-                                }`}
-                              >
-                                {txn.status}
-                              </span>
-                              {/* Separate chip, because the day being closed is a
-                                  fact about the date, not about this entry. */}
-                              {txn.day_closed && (
-                                <span
-                                  className="px-1.5 py-1 rounded text-xs bg-surface-inset text-muted"
-                                  title="This day has been closed"
-                                >
-                                  🔒
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="text-center py-12 text-muted">
-                  No transactions found for the selected filters
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
-
+        {/* The Transactions tab and the Day Close tab are gone (PRD v2 CR-08).
+            Every entry now lives in one log, the Ledger, where closing is per
+            row rather than per day. */}
         {/* Expenses Tab */}
-        {activeTab === 'dayclose' && <DayCloseWorklist onCountChange={setOpenDayCount} />}
-
         {activeTab === 'expenses' && summary && (
           <div className="space-y-6">
             {/* Summary Cards */}

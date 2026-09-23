@@ -47,6 +47,11 @@ export const SCHEMA: Record<string, string[]> = {
     'created_by', 'verified_at', 'verified_by',
     // 20260806000003 — the category the expense form always collected and never sent.
     'expense_category', 'expense_category_detail',
+    // 20260924000001 — closing is per row now, not per day (CR-06).
+    'closed_at', 'closed_by', 'close_batch_id', 'reopened_at', 'reopened_by', 'reopen_reason',
+  ],
+  ledger_close_batches: [
+    'id', 'note', 'amount_received', 'row_count', 'closed_at', 'closed_by',
   ],
 
   doctor_fee_schedule: [

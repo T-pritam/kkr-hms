@@ -26,8 +26,8 @@
  * unreachable.
  */
 
-import { getActiveClosure, LEDGER_DAY_CLOSED, ledgerDateClosedMessage } from '@/lib/ledger/closure'
 import { createLedgerTransaction, PAYMENT_MODES, type PaymentMode } from '@/lib/ledger/transactions'
+import { ENTRY_LOCKED } from '@/lib/authz/ownership'
 import { istToday } from '@/lib/dates/ist'
 
 type Db = { from: (table: string) => any }
@@ -141,21 +141,27 @@ export function validatePayment(
   }
 }
 
-/** The same 409 shape as assertLedgerDateOpen, for callers that are not routes. */
-async function closedDay(db: Db, date: string, action: 'create' | 'update'): Promise<Refusal | null> {
-  const closure = await getActiveClosure(db, date)
-  if (!closure) return null
+/**
+ * A payment locks when its own ledger entry is Closed (§3.2, row 9) — not when
+ * its date is, because dates no longer close (CR-06, CR-08). Editing or
+ * deleting it then needs an admin to reopen that entry first.
+ */
+export async function paymentLocked(db: Db, installment: any): Promise<Refusal | null> {
+  if (!installment?.ledger_transaction_id) return null
+
+  const { data } = await db
+    .from('daily_ledger_transactions')
+    .select('status')
+    .eq('id', installment.ledger_transaction_id)
+    .maybeSingle()
+
+  if (data?.status !== 'closed') return null
+
   return {
     ok: false,
     status: 409,
-    error: ledgerDateClosedMessage(date, action),
-    code: LEDGER_DAY_CLOSED,
-    closure: {
-      closure_date: closure.closure_date,
-      version: closure.version,
-      closed_at: closure.closed_at,
-      closed_by_name: closure.closed_by_user?.username ?? null,
-    },
+    error: 'This payment is closed in the ledger. An admin reopens it before it can be changed.',
+    code: ENTRY_LOCKED,
   }
 }
 
@@ -200,6 +206,8 @@ export interface RecordPaymentArgs {
   kind?: PaymentKind
   input: PaymentInput
   userId: string
+  /** Decides whether the ledger credit is born Open or Closed (Q-25 = A). */
+  userRole?: string | null
 }
 
 /**
@@ -207,7 +215,7 @@ export interface RecordPaymentArgs {
  */
 export async function recordPayment(
   db: Db,
-  { patientId, billingId, kind = 'regular', input, userId }: RecordPaymentArgs,
+  { patientId, billingId, kind = 'regular', input, userId, userRole }: RecordPaymentArgs,
 ): Promise<{ ok: true; installment: any; ledger: any } | Refusal> {
   if (!billingId) {
     return { ok: false, status: 400, error: 'patient_billing_id is required' }
@@ -240,9 +248,6 @@ export async function recordPayment(
       }
     }
   }
-
-  const closed = await closedDay(db, input.payment_date, 'create')
-  if (closed) return closed
 
   const { data: last } = await db
     .from('patient_billing_installments')
@@ -295,6 +300,7 @@ export async function recordPayment(
       description: await ledgerDescription(db, patientId, installmentNumber, kind),
       notes: input.remarks,
       created_by: userId,
+      created_by_role: userRole,
     },
     { allowedSources: [...PAYMENT_LEDGER_SOURCES] },
   )
@@ -329,8 +335,8 @@ export async function recordPayment(
 /**
  * Change a payment and its ledger entry together.
  *
- * The caller (the route) has already checked ownership, closed days and
- * verification, and validated `input` against the stored row.
+ * The caller (the route) has already checked ownership and the ledger lock, and
+ * validated `input` against the stored row.
  */
 export async function updatePayment(
   db: Db,

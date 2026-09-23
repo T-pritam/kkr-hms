@@ -346,7 +346,7 @@ describe('PATCH /api/patients/[id]/consultations/[consultationId]', () => {
     const { status, body } = await edit('p1', 'c1', { notes: 'hijack' })
 
     expect(status).toBe(403)
-    expect(body.error).toBe('You do not have permission to edit this consultation')
+    expect(body.code).toBe('NOT_YOUR_ENTRY')
     expect(db.find('patient_consultations', (r) => r.id === 'c1')!.notes).toBe('original')
   })
 
@@ -429,7 +429,7 @@ describe('DELETE /api/patients/[id]/consultations/[consultationId]', () => {
     const { status, body } = await remove('p1', 'c1')
 
     expect(status).toBe(403)
-    expect(body.error).toBe('You do not have permission to delete this consultation')
+    expect(body.code).toBe('NOT_YOUR_ENTRY')
     expect(db.find('patient_consultations', (r) => r.id === 'c1')!.deleted_at).toBeNull()
   })
 

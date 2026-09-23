@@ -196,6 +196,7 @@ export async function POST(request: NextRequest) {
             chargeDate: joinDate,
             fee: fee.value,
             userId: user.id,
+            userRole: user.role,
           })
         : { status: 'failed', amount: fee.value.amount, error: 'The bill could not be created' }
     }

@@ -159,12 +159,10 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
     setFormData({ ...EMPTY_FORM, payment_date: istToday() });
   };
 
-  // A payment is locked once either fact is true: its day has been closed, or
-  // an admin has already verified the ledger credit it created ("settled",
-  // the word staff actually use — usually well before the day itself closes).
-  // Editing or deleting it here would silently disagree with that, so the
-  // same two rules the server enforces gate the buttons too.
-  const isLocked = (installment: any) => installment.day_closed || installment.ledger_verified;
+  // A payment is locked once its own ledger entry is Closed (PRD v2 §3.2 row
+  // 9). Dates lock nothing now that day close is gone (CR-08), so this is the
+  // one rule — the same one the server enforces — and it gates the buttons.
+  const isLocked = (installment: any) => installment.entry_closed;
 
   const canEditOrDelete = (installment: any) => {
     if (isLocked(installment)) return false;
@@ -451,7 +449,7 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
                       ) : isLocked(installment) ? (
                         <span
                           className="px-1.5 py-1 rounded text-xs bg-surface-inset text-muted"
-                          title={installment.day_closed ? 'This day has been closed' : 'This payment has been verified'}
+                          title="Closed in the ledger — an admin reopens it before it can be changed"
                         >
                           🔒
                         </span>
@@ -536,9 +534,9 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
                   <div className="pt-2 border-t border-input-border">
                     <span
                       className="text-xs text-muted inline-flex items-center gap-1"
-                      title={installment.day_closed ? 'This day has been closed' : 'This payment has been verified'}
+                      title="Closed in the ledger — an admin reopens it before it can be changed"
                     >
-                      🔒 {installment.day_closed ? 'Day closed' : 'Verified'}
+                      🔒 Closed
                     </span>
                   </div>
                 ) : null}

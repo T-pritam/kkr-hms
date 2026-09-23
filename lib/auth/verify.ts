@@ -1,5 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyToken, TokenPayload } from './jwt';
+import {
+  generateAccessToken,
+  generateRefreshToken,
+  getRefreshToken,
+  setAuthCookies,
+  verifyToken,
+  TokenPayload,
+} from './jwt';
+
+/**
+ * An expired access token with a good refresh token beside it renews the
+ * session rather than signing the user out mid-shift.
+ *
+ * Every ledger route used to hand-roll these twenty lines, and every other
+ * route did without them — so the same expiry logged you out of Patients and
+ * not out of the ledger. It belongs in the one guard both go through
+ * (PRD v2 CR-05: "one shared auth guard").
+ */
+async function renewFromRefreshToken(): Promise<TokenPayload | null> {
+  const refreshToken = await getRefreshToken();
+  if (!refreshToken) return null;
+
+  const payload = await verifyToken(refreshToken);
+  if (!payload) return null;
+
+  const claims = { userId: payload.userId, email: payload.email, role: payload.role };
+  await setAuthCookies(await generateAccessToken(claims), await generateRefreshToken(claims));
+  return payload;
+}
 
 export async function verifyAuth(request: NextRequest) {
   try {
@@ -9,21 +37,13 @@ export async function verifyAuth(request: NextRequest) {
       ? authHeader.substring(7)
       : request.cookies.get('accessToken')?.value;
 
-    if (!token) {
-      return {
-        isValid: false,
-        user: null,
-        error: 'No token provided'
-      };
-    }
+    const payload = token ? await verifyToken(token) : await renewFromRefreshToken();
 
-    const payload = await verifyToken(token);
-    
     if (!payload) {
       return {
         isValid: false,
         user: null,
-        error: 'Invalid token'
+        error: token ? 'Invalid token' : 'No token provided'
       };
     }
 

@@ -97,12 +97,12 @@
 | [CR-08](#cr-08--retire-the-day-based-daily-ledger-req-8) | Retire the day-based ledger (day close, shift settlement) | 8 | P1 | CR-05, CR-06 | — | 🔲 |
 | [CR-09](#cr-09--remove-the-base-package-req-9--merged-into-cr-15) | Remove the base package | 9 | — | — | — | → CR-15 |
 | [CR-10](#cr-10--admin-finance-restructure-req-10) | Admin finance restructure (log views) | 10 | P2 | CR-02, CR-05 – CR-07 | — | 🔲 |
-| [CR-11](#cr-11--registration-fee-at-registration-req-11) | Registration fee at registration | 11 | **P0** | — | deploy (§8.4) | 🟡 |
-| [CR-12](#cr-12--a-payment-and-its-ledger-entry-stay-one-record) | A payment and its ledger entry stay one record | gap | P0 | — | deploy (§8.4) | 🟡 |
+| [CR-11](#cr-11--registration-fee-at-registration-req-11) | Registration fee at registration | 11 | **P0** | — | — | ✅ |
+| [CR-12](#cr-12--a-payment-and-its-ledger-entry-stay-one-record) | A payment and its ledger entry stay one record | gap | P0 | — | — | ✅ |
 | [CR-13](#cr-13--one-payout-path) | One payout path for doctor fees & referral commission | gap | P2 | CR-05 | — | 🔲 |
-| [CR-14](#cr-14--india-ist-dates-everywhere) | India (IST) dates everywhere | gap | P1 | — | deploy (§8.4) | 🟡 |
-| [CR-15](#cr-15--patient-money-income-expenses-lab-and-medicine-included-or-not-req-12) | Patient money: charges internal; lab & medicine excluded/included; payment labels; package removed | 12, 9 | P1 | CR-12 | deploy (§8.4) | 🟡 |
-| [CR-16](#cr-16--patient-overview-dashboard-req-12) | Patient Overview (dashboard) | 12 | P1 | CR-15 | deploy (§8.4) | 🟡 |
+| [CR-14](#cr-14--india-ist-dates-everywhere) | India (IST) dates everywhere | gap | P1 | — | — | ✅ |
+| [CR-15](#cr-15--patient-money-income-expenses-lab-and-medicine-included-or-not-req-12) | Patient money: charges internal; lab & medicine excluded/included; payment labels; package removed | 12, 9 | P1 | CR-12 | — | ✅ |
+| [CR-16](#cr-16--patient-overview-dashboard-req-12) | Patient Overview (dashboard) | 12 | P1 | CR-15 | — | ✅ |
 | [CR-17](#cr-17--a-new-bill-for-each-stay-q-54) | A new bill for each stay | Q-54 | — | — | dropped for now (Q-74) | ❌ |
 
 Priorities are from Q-56 and Q-76 ("as proposed"), with CR-11 at P0 from the client. **No CR is waiting on a question**: rounds 1–3 are all answered (§9).
@@ -114,12 +114,12 @@ Priorities are from Q-56 and Q-76 ("as proposed"), with CR-11 at P0 from the cli
 ```
  Phase 1 (P0)                        Phase 2 (P1)                     Phase 3 (P2)
  ────────────                        ────────────                     ────────────
- 🟡 CR-11 Registration fee            CR-06 Closing                    CR-04 Pricing & payouts by reception
- 🟡 CR-12 Payment ⇄ ledger            CR-08 Retire day close           CR-07 Admin expenses
- 🟡 CR-14 IST dates                   CR-02 Petty cash                 CR-10 Finance restructure
-    CR-01 Rules on the server         CR-03 Advances by reception      CR-13 One payout path
-    CR-05 Ledger log                  🟡 CR-15 Patient money & labels
-                                   🟡 CR-16 Patient Overview
+ ✅ CR-11 Registration fee         🟡 CR-06 Closing                     CR-04 Pricing & payouts by reception
+ ✅ CR-12 Payment ⇄ ledger         🟡 CR-08 Retire day close            CR-07 Admin expenses
+ ✅ CR-14 IST dates                   CR-02 Petty cash                  CR-10 Finance restructure
+ 🟡 CR-01 Rules on the server         CR-03 Advances by reception       CR-13 One payout path
+ 🟡 CR-05 Ledger log               ✅ CR-15 Patient money & labels
+                                   ✅ CR-16 Patient Overview
 ```
 
 **Built so far** (branches `feature/v2-registration-fee-payments` → `feature/v2-patient-money`):
@@ -259,7 +259,7 @@ Details, a worked example and the open points are in CR-15.
 Each CR follows the same shape: client text → today → target → code touched → acceptance criteria (tick as built). "Today" describes the code at `5f07acf`.
 
 ### CR-01 — Own-row rule, view-all, closed lock (Req 1)
-**Priority** P0 · **Status** 🔲 ready
+**Priority** P0 · **Status** 🟡 built on `feature/v2-ledger-desk-finance` (phase 1), not deployed
 
 > *Admin can do everything. Receptionists can view everything the admin adds, but cannot edit entries created by the admin or by other receptionists. Receptionists can edit their own entries, except entries that are status-based and have been marked closed. Closed entries are not editable by receptionists.*
 
@@ -277,13 +277,13 @@ Each CR follows the same shape: client text → today → target → code touche
 - [P] Role checks on the visit, referral and billing-create APIs. The payment API already has them (`payment:write`, on the branch).
 
 **Acceptance criteria**
-- [ ] AC-01.1 Reception A can't edit or delete a money entry created by Admin or by Reception B: 403, and no button.
-- [ ] AC-01.2 Reception A can edit/delete its own unlocked entry.
-- [ ] AC-01.3 Reception A can't edit/delete its own locked entry (§3.2 column B): 409 `ENTRY_LOCKED`, and no button.
-- [ ] AC-01.4 Any receptionist can edit any patient, doctor or catalogue item, except the registration fee item.
-- [ ] AC-01.5 Reception can't add, edit or delete a charge on a Discharged patient.
-- [ ] AC-01.6 Admin can't edit a Closed ledger entry without reopening it; reopening needs a reason and is logged.
-- [ ] AC-01.7 The areas hidden from reception (§3.2) return 403 for reception.
+- [x] AC-01.1 Reception A can't edit or delete a money entry created by Admin or by Reception B: 403 `NOT_YOUR_ENTRY`, and no button (`can_edit` is false).
+- [x] AC-01.2 Reception A can edit/delete its own unlocked entry.
+- [x] AC-01.3 Reception A can't edit/delete its own locked entry (§3.2 column B): 409 `ENTRY_LOCKED`, and no button.
+- [x] AC-01.4 Any receptionist can edit any patient, doctor or catalogue item, except the registration fee item (CR-11).
+- [x] AC-01.5 Reception can't add, edit or delete a charge on a Discharged patient.
+- [x] AC-01.6 Admin can't edit a Closed ledger entry without reopening it; reopening needs a reason, kept on the row.
+- [x] AC-01.7 A lab technician gets 403 from the ledger and from referrals; the referral routes checked nothing at all before (BUGS #49, #50).
 - [ ] AC-01.8 A Lab technician can't record a payment. ✅ *on the branch*
 
 ### CR-02 — Petty cash log (Req 2, 7)
@@ -363,7 +363,7 @@ Each CR follows the same shape: client text → today → target → code touche
 - [ ] AC-04.5 Q-72: visit purposes are managed now; manual ledger rows and merging the employee ledgers come later.
 
 ### CR-05 — Ledger log: all entries, simple fetching & UX (Req 5)
-**Priority** P0 · **Status** 🔲 ready
+**Priority** P0 · **Status** 🟡 built on `feature/v2-ledger-desk-finance` (phase 1), not deployed
 
 > *The ledger currently shows only the logged-in user's entries. It should show all entries, so others don't have to guess whether a payment was received. The current ledger data fetching and UX are too complex. Simplify them.*
 
@@ -389,15 +389,15 @@ Each CR follows the same shape: client text → today → target → code touche
 - [P] One page with two tabs, **All** and **Not closed**. One list endpoint, `GET /api/ledger/entries?from&to&direction&type&mode&added_by&status&patient&page`, returning rows with `can_edit`, the total row count, and totals. One realtime subscription. One shared auth guard.
 
 **Acceptance criteria**
-- [ ] AC-05.1 Reception sees entries created by admin and by other receptionists.
-- [ ] AC-05.2 Edit/Delete appear only where `can_edit` is true. Payment rows link to the patient instead. ✅ *(link on the branch)*
-- [ ] AC-05.3 A date-range filter replaces the single date; the default is the current month.
-- [ ] AC-05.4 The filters and totals match Q-22.
-- [ ] AC-05.5 50 rows per page, newest first, and one list request per page view.
-- [ ] AC-05.6 A payment added on a patient's Payments tab shows up for every user without a reload.
+- [x] AC-05.1 Reception sees entries created by admin and by other receptionists.
+- [x] AC-05.2 Edit/Delete appear only where `can_edit` is true. Payment rows link to the patient instead.
+- [x] AC-05.3 A date-range filter replaces the single date; the default is the current month.
+- [x] AC-05.4 The filters and totals match Q-22.
+- [x] AC-05.5 50 rows per page, newest first, and one list request per page view.
+- [x] AC-05.6 A payment added on a patient's Payments tab shows up for every user without a reload (one realtime subscription).
 
 ### CR-06 — Closing entries (Req 6)
-**Priority** P1 · **Status** 🔲 ready
+**Priority** P1 · **Status** 🟡 built on `feature/v2-ledger-desk-finance` (phase 1), not deployed
 
 > *Remove the per-user, per-day "day close" done by the admin. Instead, list all relevant rows with full details. The admin selects rows in bulk and marks them closed. No per-user or per-day grouping. Add a separate tab showing rows that are not yet marked closed. The current approach is too complex to manage.*
 
@@ -418,12 +418,12 @@ Each CR follows the same shape: client text → today → target → code touche
 - [P] Rows get `closed_at`, `closed_by` and `close_batch_id`, plus a table `ledger_close_batches` (note, amount received). `POST /api/ledger/close { ids[], note?, amount_received? }` closes only rows that are still Open. `POST /api/ledger/reopen { ids[], reason }`.
 
 **Acceptance criteria**
-- [ ] AC-06.1 The Not closed tab lists every Open row across all dates and users.
-- [ ] AC-06.2 Admin ticks 12 rows, sees the selection total, adds a note and clicks "Mark closed (12)". All 12 show Closed, by admin, with the time and the note.
-- [ ] AC-06.3 Nobody edits a Closed row, or the payment behind it; admin must reopen first.
-- [ ] AC-06.4 No screen groups rows by user or by day for closing.
-- [ ] AC-06.5 Reception can't close or reopen (403) but sees the tab.
-- [ ] AC-06.6 The go-live migration marks rows as agreed in Q-29.
+- [x] AC-06.1 The Not closed tab lists every Open row across all dates and users.
+- [x] AC-06.2 Admin ticks rows, sees the selection total by mode, adds a note and the amount counted, and closes them in one batch.
+- [x] AC-06.3 Nobody edits a Closed row, or the payment behind it; admin must reopen first.
+- [x] AC-06.4 No screen groups rows by user or by day for closing.
+- [x] AC-06.5 Reception can't close or reopen (403) but sees the tab.
+- [x] AC-06.6 The go-live migration marked rows as agreed in Q-29: on production, 15 closed (14 verified + the one closed day) and 17 open.
 
 ### CR-07 — Admin expenses are general expenses (Req 7)
 **Priority** P2 · **Status** 🔲 ready (Q-69 answered)
@@ -444,7 +444,7 @@ Each CR follows the same shape: client text → today → target → code touche
 - [ ] AC-07.3 Q-69 = A: petty cash reaches the Expenses log as one automatic line per month, "Petty cash spent".
 
 ### CR-08 — Retire the day-based daily ledger (Req 8)
-**Priority** P1 · **Status** 🔲 ready
+**Priority** P1 · **Status** 🟡 built on `feature/v2-ledger-desk-finance` (phase 1), not deployed
 
 > *Fix the daily ledger: it should no longer be day-based, per point 6.*
 
@@ -457,9 +457,22 @@ Each CR follows the same shape: client text → today → target → code touche
 **Keep [D]** (Q-29): `daily_ledger_closures` and `daily_ledger_shift_settlements` stay in the database as read-only history, with no screen.
 
 **Acceptance criteria**
-- [ ] AC-08.1 No ledger screen asks for a single date.
-- [ ] AC-08.2 No code writes to `daily_ledger_closures` or `daily_ledger_shift_settlements`.
-- [ ] AC-08.3 An entry's date no longer locks anything.
+- [x] AC-08.1 No ledger screen asks for a single date.
+- [x] AC-08.2 No code writes to `daily_ledger_closures` or `daily_ledger_shift_settlements`; both tables stay as history.
+- [x] AC-08.3 An entry's date no longer locks anything: backdating is accepted and lands Open.
+
+**What phase 1 built** (CR-01, CR-05, CR-06, CR-08 — branch `feature/v2-ledger-desk-finance`)
+
+| Part | Where |
+|---|---|
+| Migration: `ledger_close_batches`; `closed_at` / `closed_by` / `close_batch_id` / `reopened_at` / `reopened_by` / `reopen_reason` on each entry; status becomes **open / closed** with the Q-29 conversion (a closed day's rows and every Verified row become Closed, the rest Open) | `supabase/migrations/20260924000001_ledger_closing.sql` — **applied 2026-09-23** |
+| The one rule: `canModify(user, row)` — admin, else your own row, else 403; locked rows 409 `ENTRY_LOCKED`. Used by the ledger, charges and visits. `dischargeLock` is the charge lock (Q-03 = B) | `lib/authz/ownership.ts` |
+| Ledger access as a capability: `ledger:read` / `ledger:write` for the desk and clinicians, `ledger:close` for admin only. A lab technician gets 403 | `lib/ledger/authz.ts` |
+| The log: filters, paging, totals over the whole filter, `can_edit` per row, and closing/reopening | `lib/ledger/entries.ts`, `app/api/ledger/entries`, `…/close`, `…/reopen`, `…/users` |
+| One screen, two tabs (**All** / **Not closed**), a sticky selection bar reading "12 rows · cash ₹8,400 · UPI ₹3,900", and the close/reopen dialog | `app/ledger/summary/page.tsx`, `components/ledger/close-entries-dialog.tsx` |
+| Retired: the one-date summary, employee shift schedule, the dead `/daily-ledger/*` pages, Finances → Transactions and → Day Close, `close-day` / `reopen-day` / `open-days` / `daily-summary` / `employee-shift-summary` / `shift-settlements` / `transactions/[id]/status`, and `lib/ledger/closure.ts` | 21 files deleted |
+| Guards that were missing: referrals (no auth at all — BUGS #49, #50), visits, and creating a bill (G-08). Token renewal moved into `verifyAuth`, so every route keeps the session the ledger routes used to renew by hand (G-31) | `app/api/referrals`, `…/consultations`, `…/billing`, `lib/auth/verify.ts` |
+| Tests | `tests/api/ledger/entries.test.ts` (23, new) and a rewritten `transactions.test.ts`; installments, finances, charges, consultations and referral tests updated to the new rules |
 
 ### CR-09 — Remove the base package (Req 9) — merged into CR-15
 **Status** → CR-15 (Q-68 answered by the 2026-09-22 clarification: nothing is pre-decided, so the package goes)
@@ -1183,3 +1196,5 @@ The baseline `PRD.md` §10 questions were carried into round 1: Q1 → Q-37 · Q
 | 2026-09-22 | Round 2 answered (§9.1). **Include/exclude corrected** to your meaning: Excluded (the default, asked when saving) = collect now as a separate tagged payment; Included = covered by the regular payments. CR-15's core built on `feature/v2-patient-money`: payment labels, lab/medicine collection, charges internal, package removed. CR-17 dropped for now (readmission = new registration). Open questions moved to `docs/OPEN-QUESTIONS.md` (11) | Claude |
 | 2026-09-23 | Round 3 answered (§9.1): nothing is open. Separately collected lab/medicine money is **passed on** (Q-82); an **Included** amount is **income, not an expense** (Q-83), so the worked example's Net is ₹22,100; a third answer **Excluded — collect later** added at save (Q-87); the pharmacy bill attach stays as a record only (Q-84). **CR-16 built** on `feature/v2-patient-money`: `GET /api/patients/[id]/overview` and the Overview tab, now the first tab. 59 test files, 1,762 tests pass; typecheck and `next build` clean | Claude |
 | 2026-09-23 | **The three migrations applied to production** (`20260922000001`, `20260922000002`, `20260923000001`), with the client's go-ahead, and verified row by row (§8.4). The app code is still on the two feature branches, not deployed | Claude |
+| 2026-09-23 | `feature/v2-patient-money` **merged to `main`** (auto-deploy), so CR-11, CR-12, CR-14, CR-15 and CR-16 are ✅ live. **Phase 1 built** on `feature/v2-ledger-desk-finance`: CR-01 (the own-row rule, the closed lock and the missing guards, on the server), CR-05 (one ledger log — everyone's entries, filters, paging, totals), CR-06 (closing per row, in bulk, with a note and the amount counted; reopen with a reason) and CR-08 (the day-based ledger, shift settlements and the Finances Transactions/Day Close tabs retired). Migration `20260924000001` applied: 15 rows closed, 17 open | Claude |
+

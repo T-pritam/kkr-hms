@@ -225,7 +225,9 @@ describe('POST /api/patients — registration fee', () => {
   it('still registers the patient when the fee payment is refused, and says so', async () => {
     await signInAs('RECEPTIONIST')
     feeItem()
-    aClosure({ closure_date: TODAY })
+    // The ledger credit fails, so recordPayment undoes the installment it had
+    // just written — the patient is registered, the fee is simply not collected.
+    db.failNext('daily_ledger_transactions')
 
     const { status, body } = await register({
       ...VALID,
@@ -234,7 +236,6 @@ describe('POST /api/patients — registration fee', () => {
 
     expect(status).toBe(201)
     expect(body.registration_fee.status).toBe('failed')
-    expect(body.registration_fee.error).toMatch(/closed/)
     expect(db.count('patients')).toBe(1)
     expect(db.count('patient_charges')).toBe(1)
     expect(db.count('patient_billing_installments')).toBe(0)

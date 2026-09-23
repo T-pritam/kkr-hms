@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { verifyToken, getAccessToken, getRefreshToken, setAuthCookies, generateAccessToken, generateRefreshToken } from '@/lib/auth/jwt'
+import { canModify } from '@/lib/authz/ownership'
 import { normaliseLedgerCategoryDetail, validateLedgerExpenseCategory } from '@/lib/finances/validate'
-import { assertLedgerDateOpen } from '@/lib/ledger/closure'
+import { requireLedger } from '@/lib/ledger/authz'
 import { paymentLinks } from '@/lib/billing/payments'
 
 /**
@@ -37,38 +37,9 @@ export async function PUT(
 ) {
   try {
     const { id } = await params
-    // Token refresh logic
-    let accessToken = await getAccessToken()
-    if (!accessToken) {
-      const refreshToken = await getRefreshToken()
-      if (!refreshToken) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
-      const refreshPayload = await verifyToken(refreshToken)
-      if (!refreshPayload) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
-      accessToken = await generateAccessToken({
-        userId: refreshPayload.userId,
-        email: refreshPayload.email,
-        role: refreshPayload.role
-      })
-
-      const newRefreshToken = await generateRefreshToken({
-        userId: refreshPayload.userId,
-        email: refreshPayload.email,
-        role: refreshPayload.role
-      })
-
-      await setAuthCookies(accessToken, newRefreshToken)
-    }
-
-    const payload = await verifyToken(accessToken)
-    if (!payload) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const auth = await requireLedger(request, 'ledger:write')
+    if (auth.response) return auth.response
+    const { user } = auth
 
     const body = await request.json()
 
@@ -85,14 +56,16 @@ export async function PUT(
       return NextResponse.json({ error: 'Transaction not found' }, { status: 404 })
     }
 
-    // Whether the entry can be amended depends on its date, not on its own status.
-    const locked = await assertLedgerDateOpen(supabase, existing.transaction_date, 'update')
-    if (locked) return locked
-
-    // Check ownership (non-admin can only update their own). Roles are issued
-    // upper case by lib/auth/jwt.ts — comparing against 'admin' matched nobody.
-    if (payload.role !== 'ADMIN' && existing.created_by !== payload.userId) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    // One rule for every money entry (CR-01 §3.2): your own row, and only while
+    // it is still Open. A closed row is reopened by an admin first (Q-04 = B).
+    const allowed = canModify(user, {
+      created_by: existing.created_by,
+      locked: existing.status === 'closed',
+      lockReason:
+        'This entry is closed. An admin reopens it on the ledger before it can be changed.',
+    })
+    if (!allowed.ok) {
+      return NextResponse.json({ error: allowed.error, code: allowed.code }, { status: allowed.status })
     }
 
     const paymentEntry = await assertNotPaymentEntry(supabase, existing)
@@ -174,7 +147,7 @@ export async function PUT(
       .select(`
         *,
         created_by_user:users!created_by(id, username),
-        verified_by_user:users!verified_by(id, username),
+        closed_by_user:users!closed_by(id, username),
         patient:patients(id, name)
       `)
       .single()
@@ -205,38 +178,9 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params
-    // Token refresh logic
-    let accessToken = await getAccessToken()
-    if (!accessToken) {
-      const refreshToken = await getRefreshToken()
-      if (!refreshToken) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
-      const refreshPayload = await verifyToken(refreshToken)
-      if (!refreshPayload) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
-      accessToken = await generateAccessToken({
-        userId: refreshPayload.userId,
-        email: refreshPayload.email,
-        role: refreshPayload.role
-      })
-
-      const newRefreshToken = await generateRefreshToken({
-        userId: refreshPayload.userId,
-        email: refreshPayload.email,
-        role: refreshPayload.role
-      })
-
-      await setAuthCookies(accessToken, newRefreshToken)
-    }
-
-    const payload = await verifyToken(accessToken)
-    if (!payload) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const auth = await requireLedger(request, 'ledger:write')
+    if (auth.response) return auth.response
+    const { user } = auth
 
     const supabase = await createClient()
 
@@ -251,14 +195,16 @@ export async function DELETE(
       return NextResponse.json({ error: 'Transaction not found' }, { status: 404 })
     }
 
-    // Whether the entry can be removed depends on its date, not on its own status.
-    const locked = await assertLedgerDateOpen(supabase, existing.transaction_date, 'delete')
-    if (locked) return locked
-
-    // Check ownership (non-admin can only delete their own). Roles are issued
-    // upper case by lib/auth/jwt.ts — comparing against 'admin' matched nobody.
-    if (payload.role !== 'ADMIN' && existing.created_by !== payload.userId) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    // One rule for every money entry (CR-01 §3.2): your own row, and only while
+    // it is still Open. A closed row is reopened by an admin first (Q-04 = B).
+    const allowed = canModify(user, {
+      created_by: existing.created_by,
+      locked: existing.status === 'closed',
+      lockReason:
+        'This entry is closed. An admin reopens it on the ledger before it can be changed.',
+    })
+    if (!allowed.ok) {
+      return NextResponse.json({ error: allowed.error, code: allowed.code }, { status: allowed.status })
     }
 
     const paymentEntry = await assertNotPaymentEntry(supabase, existing)

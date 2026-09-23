@@ -452,7 +452,7 @@ describe('PATCH /api/patients/[id]/charges/[chargeId]', () => {
     const { status, body } = await edit('p1', 'c1', { amount: 999999 })
 
     expect(status).toBe(403)
-    expect(body.error).toBe('Forbidden')
+    expect(body.code).toBe('NOT_YOUR_ENTRY')
     expect(db.find('patient_charges', (r) => r.id === 'c1')!.amount).toBe(100)
   })
 

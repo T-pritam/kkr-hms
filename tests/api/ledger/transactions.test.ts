@@ -1,26 +1,26 @@
 /**
- * /api/ledger/transactions — the daily cash book.
+ * POST /api/ledger/transactions, and editing one entry.
+ *
+ * The listing moved to `/api/ledger/entries` (CR-05) and "verify" is gone
+ * (Q-24 = A), so what is left here is: can this entry be written, and may this
+ * caller change it? A date no longer locks anything — only the row's own
+ * Closed status does (CR-06, CR-08).
  */
 
 import { describe, it, expect } from 'vitest'
-import { GET as listTransactions, POST as createTransaction } from '@/app/api/ledger/transactions/route'
+import { POST as createTransaction } from '@/app/api/ledger/transactions/route'
 import { PUT as updateTransaction, DELETE as removeTransaction } from '@/app/api/ledger/transactions/[id]/route'
-import { PUT as setStatus } from '@/app/api/ledger/transactions/[id]/status/route'
 import { call } from '../../helpers/request'
 import { signInAs, signOut, signInWithRefreshTokenOnly } from '../../helpers/auth'
 import { db } from '../../helpers/fake-supabase'
-import { aTransaction, aClosure, aShiftSettlement, aPatient, aUser, anInstallment } from '../../helpers/seed'
+import { aTransaction, aPatient, aUser, anInstallment } from '../../helpers/seed'
 import { NOW, TODAY } from '../../setup'
 
-const list = (query = {}) => call(listTransactions, 'GET', '/api/ledger/transactions', { query })
 const create = (body: unknown) => call(createTransaction, 'POST', '/api/ledger/transactions', { body })
 const update = (id: string, body: unknown) =>
   call(updateTransaction, 'PUT', `/api/ledger/transactions/${id}`, { body, params: { id } })
 const remove = (id: string) =>
   call(removeTransaction, 'DELETE', `/api/ledger/transactions/${id}`, { params: { id } })
-const changeStatus = (id: string, body: unknown) =>
-  call(setStatus, 'PUT', `/api/ledger/transactions/${id}/status`, { body, params: { id } })
-
 const validTransaction = {
   transaction_date: TODAY,
   transaction_type: 'credit',
@@ -36,118 +36,16 @@ describe('ledger transactions — authentication', () => {
   it('rejects a caller with no session', async () => {
     signOut()
 
-    expect((await list()).status).toBe(401)
     expect((await create(validTransaction)).status).toBe(401)
     expect((await update('t1', {})).status).toBe(401)
     expect((await remove('t1')).status).toBe(401)
-    expect((await changeStatus('t1', { status: 'verified' })).status).toBe(401)
   })
 
   it('renews the session from a refresh token rather than rejecting', async () => {
     await signInWithRefreshTokenOnly('ADMIN')
 
-    const { status } = await list()
-    expect(status).toBe(200)
-  })
-})
-
-describe('GET /api/ledger/transactions', () => {
-  it('returns transactions newest first', async () => {
-    await signInAs('ADMIN')
-    aTransaction({ id: 't1', transaction_date: '2026-03-01' })
-    aTransaction({ id: 't2', transaction_date: '2026-03-10' })
-
-    const { status, body } = await list()
-
-    expect(status).toBe(200)
-    expect(body.success).toBe(true)
-    expect(body.data.map((t: any) => t.id)).toEqual(['t2', 't1'])
-  })
-
-  it('embeds the creator, verifier and patient', async () => {
-    await signInAs('ADMIN')
-    aUser({ id: 'u1', username: 'reception' })
-    aUser({ id: 'u2', username: 'admin' })
-    aPatient({ id: 'p1', name: 'Ramesh' })
-    aTransaction({ id: 't1', created_by: 'u1', verified_by: 'u2', patient_id: 'p1' })
-
-    const { body } = await list()
-
-    expect(body.data[0].created_by_user).toEqual({ id: 'u1', username: 'reception' })
-    expect(body.data[0].verified_by_user).toEqual({ id: 'u2', username: 'admin' })
-    expect(body.data[0].patient).toEqual({ id: 'p1', name: 'Ramesh' })
-  })
-
-  it.each([
-    ['transaction_type', 'debit'],
-    ['source', 'expense'],
-    ['payment_mode', 'upi'],
-    ['status', 'verified'],
-  ])('filters by %s', async (field, value) => {
-    await signInAs('ADMIN')
-    aTransaction({ id: 'match', [field]: value })
-    aTransaction({ id: 'other' })
-
-    const { body } = await list({ [field]: value })
-    expect(body.data.map((t: any) => t.id)).toEqual(['match'])
-  })
-
-  it('filters by date range inclusively', async () => {
-    await signInAs('ADMIN')
-    aTransaction({ id: 'before', transaction_date: '2026-02-28' })
-    aTransaction({ id: 'start', transaction_date: '2026-03-01' })
-    aTransaction({ id: 'end', transaction_date: '2026-03-31' })
-    aTransaction({ id: 'after', transaction_date: '2026-04-01' })
-
-    const { body } = await list({ start_date: '2026-03-01', end_date: '2026-03-31' })
-
-    expect(body.data.map((t: any) => t.id).sort()).toEqual(['end', 'start'])
-  })
-
-  it('filters by patient', async () => {
-    await signInAs('ADMIN')
-    aTransaction({ id: 't1', patient_id: 'p1' })
-    aTransaction({ id: 't2', patient_id: 'p2' })
-
-    expect((await list({ patient_id: 'p1' })).body.data.map((t: any) => t.id)).toEqual(['t1'])
-  })
-
-  it('lets an admin filter by the user who recorded the entry', async () => {
-    await signInAs('ADMIN')
-    aTransaction({ id: 't1', created_by: 'u1' })
-    aTransaction({ id: 't2', created_by: 'u2' })
-
-    expect((await list({ created_by: 'u1' })).body.data.map((t: any) => t.id)).toEqual(['t1'])
-  })
-
-  it.each(['NURSE', 'RECEPTIONIST'] as const)('shows %s only their own entries', async (role) => {
-    await signInAs(role, { userId: 'u-me' })
-    aTransaction({ id: 'mine', created_by: 'u-me' })
-    aTransaction({ id: 'theirs', created_by: 'u-other' })
-
-    expect((await list()).body.data.map((t: any) => t.id)).toEqual(['mine'])
-  })
-
-  it('ignores a created_by filter from a non-admin trying to see someone else’s entries', async () => {
-    await signInAs('NURSE', { userId: 'u-me' })
-    aTransaction({ id: 'mine', created_by: 'u-me' })
-    aTransaction({ id: 'theirs', created_by: 'u-other' })
-
-    expect((await list({ created_by: 'u-other' })).body.data.map((t: any) => t.id)).toEqual(['mine'])
-  })
-
-  it('lets a doctor see everyone’s entries', async () => {
-    await signInAs('DOCTOR', { userId: 'u-doc' })
-    aTransaction({ id: 't1', created_by: 'u-other' })
-
-    expect((await list()).body.data).toHaveLength(1)
-  })
-
-  it('returns 500 when the query fails', async () => {
-    await signInAs('ADMIN')
-    db.failNext('daily_ledger_transactions')
-
-    expect((await list()).status).toBe(500)
+    const { status } = await create(validTransaction)
+    expect(status).toBe(201)
   })
 })
 
@@ -237,7 +135,7 @@ describe('POST /api/ledger/transactions — validation', () => {
 })
 
 describe('POST /api/ledger/transactions — creation', () => {
-  it('stores the entry as pending, attributed to the caller', async () => {
+  it('stores a reception entry as Open, attributed to the caller', async () => {
     await signInAs('RECEPTIONIST', { userId: 'u-recep' })
 
     const { status, body } = await create({
@@ -258,9 +156,29 @@ describe('POST /api/ledger/transactions — creation', () => {
       payment_mode: 'cash',
       description: 'OPD collection',
       notes: 'Morning shift',
-      status: 'pending',
+      status: 'open',
       created_by: 'u-recep',
+      closed_at: null,
     })
+  })
+
+  // Q-25 = A: the admin is the one who would close it anyway.
+  it('stores an admin entry as Closed, credited to them', async () => {
+    await signInAs('ADMIN', { userId: 'u-admin' })
+
+    expect((await create(validTransaction)).status).toBe(201)
+
+    const row = db.rows('daily_ledger_transactions')[0]
+    expect(row.status).toBe('closed')
+    expect(row.closed_by).toBe('u-admin')
+    expect(row.closed_at).toBeTruthy()
+  })
+
+  it('refuses a lab technician, who has no business in the money log', async () => {
+    await signInAs('LAB_TECHNICIAN')
+
+    expect((await create(validTransaction)).status).toBe(403)
+    expect(db.count('daily_ledger_transactions')).toBe(0)
   })
 
   it('parses a string amount into a number', async () => {
@@ -270,47 +188,18 @@ describe('POST /api/ledger/transactions — creation', () => {
     expect(db.rows('daily_ledger_transactions')[0].amount).toBe(2500.5)
   })
 
-  it('refuses to book into a day that has been closed', async () => {
+  // Q-22: an entry may be dated any past day, and lands in Not closed. Dates
+  // stopped locking anything when day close went away (AC-08.3).
+  it('accepts a backdated entry, still Open', async () => {
     await signInAs('RECEPTIONIST')
-    aClosure({ closure_date: '2026-03-12' })
-
-    const { status, body } = await create({ ...validTransaction, transaction_date: '2026-03-12' })
-
-    expect(status).toBe(409)
-    expect(body.code).toBe('LEDGER_DAY_CLOSED')
-    expect(body.error).toContain('2026-03-12')
-    expect(db.count('daily_ledger_transactions')).toBe(0)
-  })
-
-  it('ignores a superseded closure — a reopened day is open', async () => {
-    await signInAs('RECEPTIONIST')
-    aClosure({
-      closure_date: '2026-03-12',
-      status: 'superseded',
-      reopened_at: NOW.toISOString(),
-      reopen_reason: 'missed a UPI receipt',
-    })
-
-    expect((await create({ ...validTransaction, transaction_date: '2026-03-12' })).status).toBe(201)
-  })
-
-  it('still allows other dates once one day is closed', async () => {
-    await signInAs('RECEPTIONIST')
-    aClosure({ closure_date: '2026-03-12' })
-
-    expect((await create({ ...validTransaction, transaction_date: '2026-03-13' })).status).toBe(201)
-  })
-
-  /**
-   * Was BUGS.md #31. Settling a shift writes to its own table and locks nothing, so a
-   * colleague can still record an entry on the same date.
-   */
-  it('should not let one employee’s shift settlement block another employee’s entries', async () => {
-    await signInAs('RECEPTIONIST', { userId: 'u-me' })
-    aShiftSettlement({ settlement_date: '2026-03-12', employee_id: 'u-someone-else' })
 
     const { status } = await create({ ...validTransaction, transaction_date: '2026-03-12' })
+
     expect(status).toBe(201)
+    expect(db.rows('daily_ledger_transactions')[0]).toMatchObject({
+      transaction_date: '2026-03-12',
+      status: 'open',
+    })
   })
 })
 
@@ -340,19 +229,20 @@ describe('PUT /api/ledger/transactions/[id]', () => {
     const { status, body } = await update('t1', { amount: 999 })
 
     expect(status).toBe(403)
-    expect(body.error).toBe('Forbidden')
+    expect(body.code).toBe('NOT_YOUR_ENTRY')
     expect(transactionRow('t1').amount).toBe(500)
   })
 
-  it('refuses to touch an entry inside a closed day', async () => {
+  // §3.2: a Closed row is nobody's to change, admin included, until it is
+  // reopened — that is what makes the reopen carry a reason (Q-04 = B).
+  it('refuses an entry that is already closed, even for an admin', async () => {
     await signInAs('ADMIN', { userId: 'u-me' })
-    aTransaction({ id: 't1', created_by: 'u-me', transaction_date: '2026-03-12', amount: 500 })
-    aClosure({ closure_date: '2026-03-12' })
+    aTransaction({ id: 't1', created_by: 'u-me', amount: 500, status: 'closed', closed_at: NOW.toISOString() })
 
     const { status, body } = await update('t1', { amount: 999 })
 
     expect(status).toBe(409)
-    expect(body.code).toBe('LEDGER_DAY_CLOSED')
+    expect(body.code).toBe('ENTRY_LOCKED')
     expect(transactionRow('t1').amount).toBe(500)
   })
 
@@ -419,15 +309,14 @@ describe('DELETE /api/ledger/transactions/[id]', () => {
     expect(db.count('daily_ledger_transactions')).toBe(0)
   })
 
-  it('refuses to delete an entry inside a closed day', async () => {
+  it('refuses to delete a closed entry', async () => {
     await signInAs('RECEPTIONIST', { userId: 'u-me' })
-    aTransaction({ id: 't1', created_by: 'u-me', transaction_date: '2026-03-12' })
-    aClosure({ closure_date: '2026-03-12' })
+    aTransaction({ id: 't1', created_by: 'u-me', status: 'closed', closed_at: NOW.toISOString() })
 
     const { status, body } = await remove('t1')
 
     expect(status).toBe(409)
-    expect(body.code).toBe('LEDGER_DAY_CLOSED')
+    expect(body.code).toBe('ENTRY_LOCKED')
     expect(db.count('daily_ledger_transactions')).toBe(1)
   })
 
@@ -445,85 +334,6 @@ describe('DELETE /api/ledger/transactions/[id]', () => {
     aTransaction({ id: 't1', created_by: 'u-other' })
 
     expect((await remove('t1')).status).toBe(200)
-  })
-})
-
-describe('PUT /api/ledger/transactions/[id]/status', () => {
-  it.each(['NURSE', 'RECEPTIONIST'] as const)('refuses %s', async (role) => {
-    await signInAs(role)
-    aTransaction({ id: 't1' })
-
-    const { status, body } = await changeStatus('t1', { status: 'verified' })
-
-    expect(status).toBe(403)
-    expect(body.error).toBe('Forbidden. Admin access required.')
-  })
-
-  it('lets an admin verify an entry', async () => {
-    await signInAs('ADMIN', { userId: 'u-admin' })
-    aTransaction({ id: 't1', status: 'pending' })
-
-    const { status } = await changeStatus('t1', { status: 'verified' })
-
-    expect(status).toBe(200)
-    expect(transactionRow('t1')).toMatchObject({
-      status: 'verified',
-      verified_by: 'u-admin',
-      verified_at: NOW.toISOString(),
-    })
-  })
-
-  it('lets a doctor verify an entry', async () => {
-    await signInAs('DOCTOR')
-    aTransaction({ id: 't1', status: 'pending' })
-
-    expect((await changeStatus('t1', { status: 'verified' })).status).toBe(200)
-  })
-
-  it('clears the verification when set back to pending', async () => {
-    await signInAs('ADMIN')
-    aTransaction({ id: 't1', status: 'verified', verified_by: 'u-someone', verified_at: '2026-03-01T00:00:00.000Z' })
-
-    await changeStatus('t1', { status: 'pending' })
-
-    expect(transactionRow('t1')).toMatchObject({ status: 'pending', verified_by: null, verified_at: null })
-  })
-
-  it.each(['day_closed', 'approved', '', undefined])('rejects the status %j', async (value) => {
-    await signInAs('ADMIN')
-    aTransaction({ id: 't1' })
-
-    const { status, body } = await changeStatus('t1', { status: value })
-    expect(status).toBe(400)
-    expect(body.error).toBe('Invalid status. Must be pending or verified.')
-  })
-
-  it('returns 404 for an unknown transaction', async () => {
-    await signInAs('ADMIN')
-    expect((await changeStatus('missing', { status: 'verified' })).status).toBe(404)
-  })
-
-  it('refuses to change the status of an entry inside a closed day', async () => {
-    await signInAs('ADMIN')
-    aTransaction({ id: 't1', transaction_date: '2026-03-12' })
-    aClosure({ closure_date: '2026-03-12' })
-
-    const { status, body } = await changeStatus('t1', { status: 'verified' })
-
-    expect(status).toBe(409)
-    expect(body.code).toBe('LEDGER_DAY_CLOSED')
-  })
-
-  /**
-   * Known defect — see BUGS.md #33. Nothing stops the person who recorded an entry from
-   * verifying it themselves, which defeats the point of a second-pair-of-eyes check.
-   */
-  it.fails('should not let a user verify their own entry', async () => {
-    await signInAs('ADMIN', { userId: 'u-me' })
-    aTransaction({ id: 't1', created_by: 'u-me', status: 'pending' })
-
-    const { status } = await changeStatus('t1', { status: 'verified' })
-    expect(status).toBe(403)
   })
 })
 
@@ -703,18 +513,6 @@ describe('ledger — entries that belong to a patient payment', () => {
     aTransaction({ id: 't1', source: 'patient', created_by: 'u-me' })
 
     expect((await remove('t1')).status).toBe(200)
-  })
-
-  it('marks which listed rows belong to a payment', async () => {
-    await signInAs('ADMIN')
-    aTransaction({ id: 't1', source: 'patient' })
-    aTransaction({ id: 't2', source: 'opd' })
-    anInstallment({ id: 'i1', ledger_transaction_id: 't1' })
-
-    const { body } = await list({ start_date: TODAY, end_date: TODAY })
-
-    expect(body.data.find((r: any) => r.id === 't1').payment_installment_id).toBe('i1')
-    expect(body.data.find((r: any) => r.id === 't2').payment_installment_id).toBeNull()
   })
 
   it('does not accept a bare patient or registration credit from the ledger form', async () => {

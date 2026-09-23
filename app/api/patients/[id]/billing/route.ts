@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { verifyAuth } from '@/lib/auth/verify';
+import { requireBilling } from '@/lib/billing/authz';
 import { recalculatePatientBilling } from '@/lib/recalculate-billing';
 import { validateBillingHeader } from '@/lib/billing/validate';
 import { firstError } from '@/lib/patients/validate';
@@ -98,10 +99,11 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const authResult = await verifyAuth(request);
-    if (!authResult.isValid || !authResult.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    // Creating the bill is what makes charges and payments possible, so it is
+    // held to the same capability (G-08: it used to accept any signed-in user).
+    const auth = await requireBilling(request, 'charge:write');
+    if (auth.response) return auth.response;
+    const authResult = { user: auth.user };
 
     const supabase = await createClient();
     const { id } = await params;

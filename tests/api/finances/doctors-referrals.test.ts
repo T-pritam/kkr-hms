@@ -395,30 +395,28 @@ describe('/api/doctors/[id]/deactivate', () => {
 })
 
 describe('/api/referrals', () => {
-  /**
-   * Known defect — see BUGS.md #49. Neither verb authenticates. Every other route in the
-   * app checks a token; these two do not, so the referral list can be read and written by
-   * anyone who can reach the endpoint.
-   */
-  it.fails('should reject an unauthenticated read', async () => {
+  /** Was BUGS.md #49: neither verb authenticated at all. Fixed by CR-01. */
+  it('rejects an unauthenticated read', async () => {
     signOut()
     expect((await call(listReferrals, 'GET', '/api/referrals')).status).toBe(401)
   })
 
-  it.fails('should reject an unauthenticated write', async () => {
+  it('rejects an unauthenticated write', async () => {
     signOut()
     const { status } = await call(createReferral, 'POST', '/api/referrals', { body: { name: 'Anyone' } })
     expect(status).toBe(401)
   })
 
-  it('serves the referral list without any session at all', async () => {
-    signOut()
+  it('keeps the list open to the desk, and closed to the lab', async () => {
+    await signInAs('RECEPTIONIST')
     aReferral({ id: 'r1', name: 'Ramesh' })
 
     const { status, body } = await call(listReferrals, 'GET', '/api/referrals')
-
     expect(status).toBe(200)
     expect(body.map((r: any) => r.id)).toEqual(['r1'])
+
+    await signInAs('LAB_TECHNICIAN')
+    expect((await call(createReferral, 'POST', '/api/referrals', { body: { name: 'X' } })).status).toBe(403)
   })
 
   it('orders referrals by name', async () => {
@@ -457,11 +455,10 @@ describe('/api/referrals', () => {
   })
 
   /**
-   * Known defect — see BUGS.md #50. created_by is taken from supabase.auth.getUser(),
-   * but the app authenticates with its own JWT cookies and never signs in to Supabase
-   * Auth, so this is always null and referrals have no recorded author.
+   * Was BUGS.md #50: created_by came from supabase.auth.getUser(), which is
+   * always null here — the app signs users in with its own JWT cookies.
    */
-  it.fails('should record who created the referral', async () => {
+  it('records who created the referral', async () => {
     await signInAs('ADMIN', { userId: 'u-admin' })
 
     await call(createReferral, 'POST', '/api/referrals', { body: { name: 'Dr. Referrer' } })

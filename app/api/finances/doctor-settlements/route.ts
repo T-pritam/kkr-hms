@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { assertLedgerDateOpen } from '@/lib/ledger/closure'
 import { createLedgerTransactions } from '@/lib/ledger/transactions'
 import {
   verifyToken,
@@ -199,12 +198,6 @@ export async function POST(request: NextRequest) {
 
     const ledgerDate = istToday()
 
-    // Guard before the settlements are marked paid. Refusing the ledger write
-    // afterwards would leave doctors flagged as settled with no matching debit —
-    // money moved in the records with nothing in the ledger to account for it.
-    const locked = await assertLedgerDateOpen(supabase, ledgerDate, 'settle')
-    if (locked) return locked
-
     // Read first, so each row's own total is known before it is overwritten, and
     // so already-settled ids are excluded exactly once.
     const { data: pending, error: readError } = await supabase
@@ -247,7 +240,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Create ledger entries for each settlement, through the shared write path so
-    // they are validated and closure-checked like every other ledger entry.
+    // they are validated like every other ledger entry. An admin's payout is
+    // born Closed; reception's waits for the admin's close (Q-25, Q-71).
     if (updated.length > 0) {
       const result = await createLedgerTransactions(
         supabase,
@@ -260,8 +254,8 @@ export async function POST(request: NextRequest) {
           reference_number: transaction_reference,
           description: `Doctor settlement - ${settlement.doctor?.name || 'Unknown Doctor'}`,
           notes: settlement_notes,
-          status: 'verified' as const,
           created_by: payload.userId,
+          created_by_role: payload.role,
         })),
         { allowedSources: ['doctor_settlement'] }
       )

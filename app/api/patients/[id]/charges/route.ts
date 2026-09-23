@@ -23,6 +23,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { ENTRY_LOCKED, dischargeLock } from '@/lib/authz/ownership'
 import { requireBilling } from '@/lib/billing/authz'
 import {
   expandDateRange,
@@ -123,6 +124,15 @@ export async function POST(
       return NextResponse.json(
         { error: 'That billing record does not belong to this patient' },
         { status: 404 }
+      )
+    }
+
+    // Reception cannot add to a discharged patient's bill either (AC-01.5).
+    const discharged = await dischargeLock(supabase, patientId)
+    if (discharged.locked && user.role !== 'ADMIN') {
+      return NextResponse.json(
+        { error: discharged.lockReason, code: ENTRY_LOCKED },
+        { status: 409 }
       )
     }
 

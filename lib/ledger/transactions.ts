@@ -1,19 +1,18 @@
 import { normaliseLedgerCategoryDetail, validateLedgerExpenseCategory } from '@/lib/finances/validate'
-import { LEDGER_DAY_CLOSED, getActiveClosure, ledgerDateClosedMessage } from './closure'
 
 /**
  * The single way a row gets into `daily_ledger_transactions`.
  *
  * Four routes used to insert into that table, and only one of them validated
- * anything or checked whether the day was closed. Recording a patient
- * installment, settling a doctor's fees and paying a referral commission all
- * wrote straight to the table — so money could be booked into a date that had
- * already been reconciled, after which the closure totals no longer described
- * the day they claimed to.
+ * anything. Recording a patient installment, settling a doctor's fees and
+ * paying a referral commission all wrote straight to the table.
  *
- * Validation, the closure guard and the insert therefore live here, in that
- * order, once. A caller that wants to write to the ledger goes through this or
- * it does not write to the ledger.
+ * Validation and the insert therefore live here, once. A caller that wants to
+ * write to the ledger goes through this or it does not write to the ledger.
+ *
+ * Closing is per row now, not per date (CR-06), so nothing here asks whether a
+ * day is closed: a new entry is simply born Open, or Closed when an admin made
+ * it.
  */
 
 type Db = {
@@ -59,8 +58,14 @@ export interface LedgerTransactionInput {
   notes?: string | null
   expense_category?: string | null
   expense_category_detail?: string | null
-  status?: 'pending' | 'verified'
+  status?: 'open' | 'closed'
   created_by: string
+  /**
+   * The creator's role. An entry an admin makes is born Closed — they are the
+   * one who would close it anyway (Q-25 = A). Reception's entries, payouts
+   * included, are born Open and wait for the admin's "Mark closed" (Q-71).
+   */
+  created_by_role?: string | null
 }
 
 export type LedgerWriteResult =
@@ -97,6 +102,7 @@ function validate(
     expense_category_detail,
     status,
     created_by,
+    created_by_role,
   } = input
 
   if (!transaction_date || !transaction_type || !source || !amount || !payment_mode || !description) {
@@ -142,6 +148,14 @@ function validate(
     categoryDetail = detail.value
   }
 
+  // Born Closed for an admin, Open for everyone else (Q-25 = A). A closed row
+  // always carries who closed it and when (the CHECK in 20260924000001).
+  const bornStatus = status ?? (created_by_role === 'ADMIN' ? 'closed' : 'open')
+  const closing =
+    bornStatus === 'closed'
+      ? { closed_at: new Date().toISOString(), closed_by: created_by }
+      : { closed_at: null, closed_by: null }
+
   return {
     row: {
       transaction_date,
@@ -156,26 +170,8 @@ function validate(
       expense_category: category,
       expense_category_detail: categoryDetail,
       created_by,
-      status: status ?? 'pending',
-    },
-  }
-}
-
-/** Shapes the 409 a locked date produces, identically to assertLedgerDateOpen. */
-async function closureRefusal(db: Db, date: string): Promise<LedgerWriteResult | null> {
-  const closure = await getActiveClosure(db, date)
-  if (!closure) return null
-
-  return {
-    ok: false,
-    status: 409,
-    error: ledgerDateClosedMessage(date, 'create'),
-    code: LEDGER_DAY_CLOSED,
-    closure: {
-      closure_date: closure.closure_date,
-      version: closure.version,
-      closed_at: closure.closed_at,
-      closed_by_name: closure.closed_by_user?.username ?? null,
+      status: bornStatus,
+      ...closing,
     },
   }
 }
@@ -192,9 +188,8 @@ export async function createLedgerTransaction(
 /**
  * The bulk form, for the settlement routes that post several rows at once.
  *
- * Each distinct date is guarded once, and a single closed date rejects the whole
- * batch. A half-posted settlement — some doctors paid into the ledger, others
- * silently dropped — is worse than one that was refused outright.
+ * A date no longer locks anything (CR-08, AC-08.3): an entry may be dated any
+ * past day and lands Open, waiting for the admin to close it with the rest.
  */
 export async function createLedgerTransactions(
   db: Db,
@@ -212,11 +207,6 @@ export async function createLedgerTransactions(
       return { ok: false, status: 400, error: validated.error }
     }
     rows.push(validated.row)
-  }
-
-  for (const date of new Set(rows.map((r) => r.transaction_date as string))) {
-    const refusal = await closureRefusal(db, date)
-    if (refusal) return refusal
   }
 
   const { data, error } = await db

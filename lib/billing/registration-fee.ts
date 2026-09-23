@@ -122,9 +122,10 @@ export async function applyRegistrationFee(
     chargeDate: string
     fee: RegistrationFeeInput
     userId: string
+    userRole?: string | null
   },
 ): Promise<RegistrationFeeOutcome> {
-  const { patientId, billingId, chargeDate, fee, userId } = args
+  const { patientId, billingId, chargeDate, fee, userId, userRole } = args
 
   const item = await getRegistrationFeeItem(db)
   if (!item) return { status: 'not_configured' }
@@ -173,6 +174,7 @@ export async function applyRegistrationFee(
       remarks: null,
     },
     userId,
+    userRole,
   })
 
   if (!payment.ok) {

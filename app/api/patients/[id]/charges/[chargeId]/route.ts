@@ -17,6 +17,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { canModify, dischargeLock } from '@/lib/authz/ownership'
 import { requireBilling } from '@/lib/billing/authz'
 import { isValidDate } from '@/lib/billing/validate'
 import { recalculatePatientBilling } from '@/lib/recalculate-billing'
@@ -31,7 +32,7 @@ export async function PATCH(
     const { user } = auth
 
     const supabase = await createClient()
-    const { chargeId } = await params
+    const { id: patientId, chargeId } = await params
     const body = await request.json().catch(() => ({}))
 
     const { data: charge } = await supabase
@@ -44,8 +45,12 @@ export async function PATCH(
       return NextResponse.json({ error: 'Charge not found' }, { status: 404 })
     }
 
-    if (user.role !== 'ADMIN' && charge.created_by !== user.id) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const allowed = canModify(user, {
+      created_by: charge.created_by,
+      ...(await dischargeLock(supabase, patientId)),
+    })
+    if (!allowed.ok) {
+      return NextResponse.json({ error: allowed.error, code: allowed.code }, { status: allowed.status })
     }
 
     // A collected lab/medicine charge was paid at its amount. Changing the amount
@@ -149,8 +154,12 @@ export async function DELETE(
       return NextResponse.json({ error: 'Charge not found' }, { status: 404 })
     }
 
-    if (user.role !== 'ADMIN' && charge.created_by !== user.id) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const allowed = canModify(user, {
+      created_by: charge.created_by,
+      ...(await dischargeLock(supabase, patientId)),
+    })
+    if (!allowed.ok) {
+      return NextResponse.json({ error: allowed.error, code: allowed.code }, { status: allowed.status })
     }
 
     // A collected lab/medicine charge goes only after its payment does, so money

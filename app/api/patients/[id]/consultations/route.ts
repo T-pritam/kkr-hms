@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { verifyAuth } from '@/lib/auth/verify';
+import { requireBilling } from '@/lib/billing/authz';
 import { istFields } from '@/lib/consultations/ist';
 
 export async function GET(
@@ -47,10 +48,11 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const authResult = await verifyAuth(request);
-    if (!authResult.isValid || !authResult.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    // Recording a visit is desk work, like placing a charge (§3.2 row 6). Any
+    // signed-in user could add one before, a lab technician included.
+    const auth = await requireBilling(request, 'charge:write');
+    if (auth.response) return auth.response;
+    const authResult = { user: auth.user };
 
     const supabase = await createClient();
     const { id } = await params;

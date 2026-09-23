@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { ENTRY_LOCKED } from '@/lib/authz/ownership';
 import { requireBilling } from '@/lib/billing/authz';
-import { assertLedgerDateOpen } from '@/lib/ledger/closure';
 import { deletePayment, isDeskPaymentKind, updatePayment, validatePayment } from '@/lib/billing/payments';
 
 /**
@@ -10,7 +10,7 @@ import { deletePayment, isDeskPaymentKind, updatePayment, validatePayment } from
  * gets closed, and it is the more common of the two guards in practice
  * because a day is usually only closed at the end of it.
  */
-async function assertNotVerified(
+async function assertEntryOpen(
   supabase: Awaited<ReturnType<typeof createClient>>,
   ledgerTransactionId: string | null,
 ): Promise<NextResponse | null> {
@@ -22,13 +22,13 @@ async function assertNotVerified(
     .eq('id', ledgerTransactionId)
     .maybeSingle();
 
-  if (transaction?.status !== 'verified') return null;
+  if (transaction?.status !== 'closed') return null;
 
   return NextResponse.json(
     {
       error:
-        'This payment has already been verified in the Daily Ledger and cannot be changed. Ask an admin to unverify it first.',
-      code: 'LEDGER_ENTRY_VERIFIED',
+        'This payment is closed in the Daily Ledger and cannot be changed. An admin reopens the entry first.',
+      code: ENTRY_LOCKED,
     },
     { status: 409 },
   );
@@ -67,14 +67,10 @@ export async function DELETE(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    // Once the ledger day this payment sits on has been closed, its entry is
-    // reconciled — deleting the payment would leave that closure disagreeing
-    // with reality, so this is the same rule creating a new entry already has.
-    const locked = await assertLedgerDateOpen(supabase, installment.payment_date, 'delete');
-    if (locked) return locked;
-
-    const verified = await assertNotVerified(supabase, installment.ledger_transaction_id);
-    if (verified) return verified;
+    // A payment locks when its own ledger entry is Closed (§3.2 row 9). Dates
+    // no longer lock anything, so this is the only lock left.
+    const closed = await assertEntryOpen(supabase, installment.ledger_transaction_id);
+    if (closed) return closed;
 
     await deletePayment(supabase, installment);
 
@@ -164,18 +160,10 @@ export async function PATCH(
       );
     }
 
-    // Same rule as delete: a payment on an already-closed day is reconciled
-    // and must not move. Also guard the date being moved *to*, if this edit
-    // changes it, so a closed day can't be backed into either.
-    const locked = await assertLedgerDateOpen(supabase, installment.payment_date, 'update');
-    if (locked) return locked;
-    if (check.value.payment_date !== installment.payment_date) {
-      const targetLocked = await assertLedgerDateOpen(supabase, check.value.payment_date, 'update');
-      if (targetLocked) return targetLocked;
-    }
-
-    const verified = await assertNotVerified(supabase, installment.ledger_transaction_id);
-    if (verified) return verified;
+    // Same rule as delete, and the only one: is this payment's ledger entry
+    // closed? Backdating is allowed now (Q-22) — the entry simply stays Open.
+    const closed = await assertEntryOpen(supabase, installment.ledger_transaction_id);
+    if (closed) return closed;
 
     const result = await updatePayment(supabase, {
       installment,

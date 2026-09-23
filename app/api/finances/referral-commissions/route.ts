@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { assertLedgerDateOpen } from '@/lib/ledger/closure'
 import { createLedgerTransactions } from '@/lib/ledger/transactions'
 import {
   verifyToken,
@@ -209,11 +208,6 @@ export async function POST(request: NextRequest) {
 
     const ledgerDate = istToday()
 
-    // Guard before the billings are marked settled, so a refused ledger write
-    // cannot leave commissions flagged as paid with no debit behind them.
-    const locked = await assertLedgerDateOpen(supabase, ledgerDate, 'settle')
-    if (locked) return locked
-
     // Update billing records
     const { data: updated, error: updateError } = await supabase
       .from('patient_billing')
@@ -247,8 +241,8 @@ export async function POST(request: NextRequest) {
           patient_id: billing.patient_id,
           description: `Referral commission - ${billing.patient?.name || 'Unknown Patient'}`,
           notes: settlement_notes,
-          status: 'verified' as const,
           created_by: payload.userId,
+          created_by_role: payload.role,
         })),
         { allowedSources: ['referral_commission'] }
       )

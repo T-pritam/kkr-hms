@@ -1,8 +1,21 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { requireBilling } from '@/lib/billing/authz'
 
+/**
+ * Referral people (PRD v2, CR-01 §3.2 row 3).
+ *
+ * Neither handler checked anything at all — not even that the caller was signed
+ * in — so anyone who could reach the URL could add a referral person, and the
+ * `created_by` it tried to record came from `supabase.auth.getUser()`, which is
+ * always null here: this app signs users in with its own JWT cookie. Reading is
+ * desk work, and so is adding one; editing and retiring stay with admin.
+ */
 export async function GET(request: NextRequest) {
   try {
+    const auth = await requireBilling(request, 'charge:read')
+    if (auth.response) return auth.response
+
     const supabase = await createClient()
 
     const { data, error } = await supabase
@@ -22,13 +35,11 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireBilling(request, 'charge:write')
+    if (auth.response) return auth.response
+    const { user } = auth
+
     const supabase = await createClient()
-
-    // Get current user for created_by field
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
     const body = await request.json()
     const { name, phone } = body
 
@@ -45,8 +56,8 @@ export async function POST(request: NextRequest) {
         name,
         phone: phone || null,
         status: 'active',
-        created_by: user?.id,
-        updated_by: user?.id,
+        created_by: user.id,
+        updated_by: user.id,
       })
       .select()
       .single()

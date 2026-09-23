@@ -94,28 +94,13 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
       icon: DollarSign,
       roles: ['ADMIN', 'DOCTOR'],
     },
+    // One ledger for everyone who handles money: all entries, not just your own
+    // (PRD v2 CR-05). The shift schedule and the daily summary are gone (CR-08).
     {
-      name: 'Daily Ledger',
-      icon: BookOpen,
-      roles: ['ADMIN', 'DOCTOR'],
-      submenu: [
-        {
-          name: 'Daily Summary',
-          href: '/ledger/summary',
-          roles: ['ADMIN', 'DOCTOR'],
-        },
-        {
-          name: 'Employee Shift Schedule',
-          href: '/ledger/employee-shift',
-          roles: ['ADMIN'],
-        },
-      ],
-    },
-    {
-      name: 'Daily Ledger',
+      name: 'Ledger',
       href: '/ledger/summary',
       icon: BookOpen,
-      roles: ['NURSE', 'RECEPTIONIST'],
+      roles: ['ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST'],
     },
     {
       name: 'Admin Panel',

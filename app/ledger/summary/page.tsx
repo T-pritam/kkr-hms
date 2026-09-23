@@ -1,65 +1,82 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+/**
+ * The ledger log (PRD v2, CR-05 · CR-06 · CR-08).
+ *
+ * What the client asked for, in their words: *"It should show all entries, so
+ * others don't have to guess whether a payment was received"*, and *"remove the
+ * per-user, per-day day close… list all rows, select in bulk and mark them
+ * closed… add a separate tab showing rows that are not yet marked closed."*
+ *
+ * So this page replaced three: the one-date daily summary, the employee shift
+ * schedule, and the Finances transactions table. One list, one set of filters,
+ * two tabs — **All** and **Not closed** — and one request per view.
+ */
+
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { 
-  Wallet, 
-  TrendingUp, 
-  TrendingDown, 
-  Calendar,
-  Plus,
+import { Badge } from '@/components/ui/badge'
+import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch'
+import { useUser } from '@/hooks/use-user'
+import {
+  ArrowDownCircle,
+  ArrowUpCircle,
+  ChevronLeft,
+  ChevronRight,
   Edit,
-  Trash2,
-  CheckCircle,
-  Clock,
   Lock,
+  Plus,
+  Search,
+  Trash2,
   Unlock,
-  Download
+  Wallet,
 } from 'lucide-react'
 import { OpdEntryModal } from '@/components/ledger/opd-entry-modal'
 import { ExpenseEntryModal } from '@/components/ledger/expense-entry-modal'
 import { EditTransactionModal } from '@/components/ledger/edit-transaction-modal'
 import { AddPatientInstallmentModal } from '@/components/ledger/add-patient-installment-modal'
-import { CloseDayDialog } from '@/components/ledger/close-day-dialog'
-import { ReopenDayDialog } from '@/components/ledger/reopen-day-dialog'
-import { DayCloseBanner } from '@/components/ledger/day-close-banner'
-import { useUser } from '@/hooks/use-user'
+import { CloseEntriesDialog } from '@/components/ledger/close-entries-dialog'
 import { ledgerExpenseCategoryLabel } from '@/lib/format/expense'
-import type { LedgerClosure } from '@/lib/ledger/closure'
 import { istToday } from '@/lib/dates/ist'
 
-interface Transaction {
+interface Entry {
   id: string
   transaction_date: string
   transaction_type: 'credit' | 'debit'
   source: string
   amount: number
   payment_mode: string
-  reference_number?: string
+  reference_number?: string | null
   description: string
-  notes?: string
-  /** Expense rows only — null on credits and OPD collections. */
+  notes?: string | null
   expense_category?: string | null
   expense_category_detail?: string | null
-  status: string
+  status: 'open' | 'closed'
   created_at: string
   created_by: string
   created_by_user?: { id: string; username: string }
-  verified_by_user?: { id: string; username: string }
-  patient?: { id: string; name: string }
-  /**
-   * Set when the row is a patient payment's credit. Those are changed from the
-   * patient's Payments tab, never here (PRD v2 CR-12).
-   */
+  closed_by_user?: { id: string; username: string }
+  closed_at?: string | null
+  reopen_reason?: string | null
+  patient?: { id: string; patient_id: string; name: string } | null
+  /** A patient payment is changed on the patient's Payments tab (CR-12). */
   payment_installment_id?: string | null
+  can_edit: boolean
 }
 
-/** What the Source column reads for a row. */
+interface Totals {
+  in: number
+  out: number
+  net: number
+  cash_in: number
+  cash_out: number
+  count: number
+}
+
 const SOURCE_LABELS: Record<string, string> = {
   patient: 'Patient payment',
   registration: 'Registration fee',
@@ -70,456 +87,449 @@ const SOURCE_LABELS: Record<string, string> = {
   salary: 'Salary',
 }
 
-const sourceLabel = (txn: Transaction) => {
-  const label = SOURCE_LABELS[txn.source] ?? txn.source
-  return txn.source === 'patient' || txn.source === 'registration'
-    ? `${label} (${txn.patient?.name || 'Unknown'})`
-    : label
+const MODES = ['cash', 'upi', 'card', 'bank_transfer', 'cheque'] as const
+
+const inr = (value: unknown) =>
+  `₹${(Number(value) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+const day = (value: string) =>
+  new Date(`${String(value).slice(0, 10)}T00:00:00`).toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+  })
+
+const time = (value: string) =>
+  new Date(value).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+
+/** The first and last day of the current IST month (Q-22: the default view). */
+function thisMonth() {
+  const today = istToday()
+  const [year, month] = today.split('-').map(Number)
+  const last = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return { from: `${year}-${pad(month)}-01`, to: `${year}-${pad(month)}-${pad(last)}` }
 }
 
-/** Payment credits are edited through the payment, so the ledger offers a link instead. */
-const isPaymentEntry = (txn: Transaction) =>
-  Boolean(txn.payment_installment_id) || txn.source === 'registration'
-
-interface DailySummary {
-  date: string
-  total_credits: number
-  total_debits: number
-  net_balance: number
-  total_credits_cash: number
-  total_credits_upi: number
-  total_credits_card: number
-  total_credits_other: number
-  credit_count: number
-  debit_count: number
-  transaction_count: number
-  payment_mode_summary: {
-    cash: number
-    upi: number
-    card: number
-    bank_transfer: number
-    cheque: number
-  }
-  debit_mode_summary: Record<string, number>
-  transactions: Transaction[]
-  /** Derived from daily_ledger_closures, not from any transaction's status. */
-  is_day_closed: boolean
-  closure: LedgerClosure | null
-  unverified_count: number
-  opening_balance_preview: number
-  opening_cash_balance_preview: number
-}
-
-export default function DailyLedgerSummaryPage() {
-
+export default function LedgerPage() {
   const { user } = useUser()
+  const isAdmin = user?.role === 'ADMIN'
 
-  const [selectedDate, setSelectedDate] = useState('')
-  const [summary, setSummary] = useState<DailySummary | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [showOpdModal, setShowOpdModal] = useState(false)
-  const [showExpenseModal, setShowExpenseModal] = useState(false)
-  const [showEditModal, setShowEditModal] = useState(false)
-  const [showInstallmentModal, setShowInstallmentModal] = useState(false)
-  const [showCloseDialog, setShowCloseDialog] = useState(false)
-  const [showReopenDialog, setShowReopenDialog] = useState(false)
-  const [closureRefreshKey, setClosureRefreshKey] = useState(0)
-  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null)
+  const [tab, setTab] = useState<'all' | 'open'>('all')
+  const [entries, setEntries] = useState<Entry[]>([])
+  const [totals, setTotals] = useState<Totals | null>(null)
+  const [page, setPage] = useState(1)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [users, setUsers] = useState<Array<{ id: string; username: string }>>([])
 
-  // Roles are upper case (types/auth.ts). The page used to fetch /api/auth/me into
-  // its own `userRole` and read `data.role`, but that route returns `{ user: { role } }`
-  // — so the value was always '' and every role-gated control stayed hidden.
-  const userRole = user?.role ?? ''
-  const canVerify = userRole === 'ADMIN' || userRole === 'DOCTOR'
-  // Closing reconciles the day's cash and locks the period; narrower than reading it.
-  const canCloseDay = userRole === 'ADMIN'
+  const month = useMemo(thisMonth, [])
+  const [filters, setFilters] = useState({
+    from: month.from,
+    to: month.to,
+    direction: '',
+    source: '',
+    mode: '',
+    added_by: '',
+    search: '',
+  })
 
-  useEffect(() => {
-    // Set default date to today
-    const today = istToday()
-    setSelectedDate(today)
-  }, [])
+  const [showPayment, setShowPayment] = useState(false)
+  const [showOpd, setShowOpd] = useState(false)
+  const [showExpense, setShowExpense] = useState(false)
+  const [editing, setEditing] = useState<Entry | null>(null)
+  const [closing, setClosing] = useState<'close' | 'reopen' | null>(null)
 
-  useEffect(() => {
-    if (selectedDate) {
-      fetchDailySummary()
-    }
-  }, [selectedDate])
+  const query = useMemo(() => {
+    const params = new URLSearchParams()
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value) params.set(key, value)
+    })
+    if (tab === 'open') params.set('status', 'open')
+    params.set('page', String(page))
+    return params.toString()
+  }, [filters, tab, page])
 
-  const fetchDailySummary = async () => {
+  const fetchEntries = useCallback(async () => {
     try {
-      setLoading(true)
-      // No user_id filter: the route scopes non-privileged roles to their own rows
-      // on the server. Sending it here re-scoped admins to themselves, which is why
-      // the whole-day totals and the closed/open flag were never right for them.
-      const response = await fetch(`/api/ledger/daily-summary/${selectedDate}`, {
-        credentials: 'include'
-      })
-      const data = await response.json()
-
-      if (response.ok && data.success) {
-        setSummary(data.data)
-      } else {
-        console.error('Failed to fetch summary:', data.error)
-      }
-    } catch (error) {
-      console.error('Fetch error:', error)
+      const response = await fetch(`/api/ledger/entries?${query}`)
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body?.error || 'Failed to load the ledger')
+      setEntries(body.data || [])
+      setTotals(body.totals || null)
+      setError('')
+    } catch (err: any) {
+      setError(err.message)
     } finally {
       setLoading(false)
     }
+  }, [query])
+
+  useEffect(() => {
+    void fetchEntries()
+  }, [fetchEntries])
+
+  useEffect(() => {
+    // Only for the "added by" filter; it never changes during a session.
+    fetch('/api/ledger/users')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => setUsers(body?.data || []))
+      .catch(() => {})
+  }, [])
+
+  useRealtimeRefetch(['daily_ledger_transactions', 'patient_billing_installments'], fetchEntries)
+
+  const setFilter = (key: string, value: string) => {
+    setPage(1)
+    setSelected(new Set())
+    setFilters((f) => ({ ...f, [key]: value }))
   }
 
-  useRealtimeRefetch(
-    ['daily_ledger_transactions', 'daily_ledger_closures', 'daily_ledger_shift_settlements', 'expenses'],
-    fetchDailySummary
+  const toggle = (id: string) =>
+    setSelected((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
+  const selectable = entries.filter((e) => (closing === 'reopen' ? e.status === 'closed' : e.status === 'open'))
+  const selectedRows = entries.filter((e) => selected.has(e.id))
+
+  /** Q-26: the ticked rows, by mode — "12 rows · cash ₹8,400 · UPI ₹3,900". */
+  const selection = selectedRows.reduce(
+    (acc, row) => {
+      const amount = Number(row.amount) || 0
+      acc.total += amount
+      acc.byMode[row.payment_mode] = (acc.byMode[row.payment_mode] || 0) + amount
+      return acc
+    },
+    { total: 0, byMode: {} as Record<string, number> },
   )
 
-  /** After a close or reopen, both the day and the open-day backlog have moved. */
-  const handleClosureChanged = () => {
-    fetchDailySummary()
-    setClosureRefreshKey((key) => key + 1)
-  }
-
-  const handleDeleteTransaction = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this transaction?')) return
-
-    try {
-      const response = await fetch(`/api/ledger/transactions/${id}`, {
-        method: 'DELETE',
-        credentials: 'include'
-      })
-
-      const data = await response.json()
-
-      if (response.ok && data.success) {
-        fetchDailySummary()
-      } else {
-        alert(data.error || 'Failed to delete transaction')
-      }
-    } catch (error) {
-      console.error('Delete error:', error)
-      alert('Failed to delete transaction')
+  const onDelete = async (entry: Entry) => {
+    if (!confirm('Delete this entry? This cannot be undone.')) return
+    const response = await fetch(`/api/ledger/transactions/${entry.id}`, { method: 'DELETE' })
+    const body = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      alert(body?.error || 'Could not delete the entry')
+      return
     }
+    void fetchEntries()
   }
 
-  const handleVerifyTransaction = async (id: string) => {
-    try {
-      const response = await fetch(`/api/ledger/transactions/${id}/status`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ status: 'verified' })
-      })
-
-      const data = await response.json()
-
-      if (response.ok && data.success) {
-        fetchDailySummary()
-      } else {
-        alert(data.error || 'Failed to verify transaction')
-      }
-    } catch (error) {
-      console.error('Verify error:', error)
-      alert('Failed to verify transaction')
-    }
-  }
-
-  const formatCurrency = (amount: number) => 
-    `₹${amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
-
-  const formatTime = (dateStr: string) => 
-    new Date(dateStr).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-
-  // A row is pending or verified. 'day_closed' used to appear here too, which is
-  // how one status came to mean both "reviewed" and "the period is locked".
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'verified':
-        return 'bg-success-subtle text-success-text border-success/20'
-      case 'pending':
-        return 'bg-warning-subtle text-warning-text border-warning/20'
-      default:
-        return 'bg-surface text-muted border-border'
-    }
-  }
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'verified':
-        return <CheckCircle size={14} />
-      case 'pending':
-        return <Clock size={14} />
-      default:
-        return null
-    }
-  }
+  const tabs = [
+    { id: 'all' as const, label: 'All entries' },
+    { id: 'open' as const, label: 'Not closed' },
+  ]
 
   return (
     <DashboardLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">
-              Daily Ledger Summary
+            <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+              <Wallet className="h-6 w-6" /> Ledger
             </h1>
-            <p className="text-muted mt-1">
-              Track daily financial transactions
+            <p className="text-sm text-muted">
+              Every payment, receipt and payout — everyone&apos;s, not just yours.
             </p>
           </div>
-
-          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-            <Input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              max={istToday()}
-              className="w-full sm:w-auto"
-            />
-            {!summary?.is_day_closed && (
-              <>
-                <Button onClick={() => setShowExpenseModal(true)} variant="outline">
-                  <TrendingDown size={18} className="mr-2" />
-                  Add Expense
-                </Button>
-                <Button onClick={() => setShowInstallmentModal(true)} variant="outline">
-                  <Plus size={18} className="mr-2" />
-                  Add Patient Installment
-                </Button>
-                <Button onClick={() => setShowOpdModal(true)}>
-                  <Plus size={18} className="mr-2" />
-                  Add OPD Entry
-                </Button>
-              </>
-            )}
-
-            {/* The close action had no UI at all — /api/ledger/close-day existed
-                and nothing in the app ever called it. */}
-            {canCloseDay && !summary?.is_day_closed && (summary?.transaction_count ?? 0) > 0 && (
-              <Button onClick={() => setShowCloseDialog(true)} variant="outline">
-                <Lock size={18} className="mr-2" />
-                Close Day
-              </Button>
-            )}
-            {canCloseDay && summary?.is_day_closed && (
-              <Button onClick={() => setShowReopenDialog(true)} variant="outline">
-                <Unlock size={18} className="mr-2" />
-                Reopen Day
-              </Button>
-            )}
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => setShowPayment(true)}>
+              <Plus className="h-4 w-4 mr-1" /> Add payment
+            </Button>
+            <Button variant="outline" onClick={() => setShowOpd(true)}>
+              <Plus className="h-4 w-4 mr-1" /> Add OPD receipt
+            </Button>
+            <Button variant="outline" onClick={() => setShowExpense(true)}>
+              <Plus className="h-4 w-4 mr-1" /> Add expense
+            </Button>
           </div>
         </div>
 
-        <DayCloseBanner
-          date={selectedDate}
-          closure={summary?.closure ?? null}
-          canReopen={canCloseDay}
-          onReopen={() => setShowReopenDialog(true)}
-          refreshKey={closureRefreshKey}
-        />
+        {/* Totals for the current filter (Q-22) */}
+        {totals && (
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            {[
+              ['Money in', inr(totals.in), 'text-success-text'],
+              ['Money out', inr(totals.out), 'text-destructive'],
+              ['Net', inr(totals.net), 'text-foreground'],
+              ['Cash in', inr(totals.cash_in), 'text-foreground'],
+              ['Cash out', inr(totals.cash_out), 'text-foreground'],
+            ].map(([label, value, tone]) => (
+              <Card key={String(label)}>
+                <CardContent className="p-4">
+                  <p className="text-xs text-muted">{label}</p>
+                  <p className={`text-xl font-bold ${tone}`}>{value}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
 
-        {/* Summary Statistics */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted">
-                Total Credits
-              </CardTitle>
-              <TrendingUp className="h-4 w-4 text-success-text" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-success-text">
-                {formatCurrency(summary?.total_credits || 0)}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {summary?.credit_count || 0} transactions
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted">
-                Total Debits
-              </CardTitle>
-              <TrendingDown className="h-4 w-4 text-destructive" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-destructive">
-                {formatCurrency(summary?.total_debits || 0)}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {summary?.debit_count || 0} transactions
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted">
-                Net Balance
-              </CardTitle>
-              <Wallet className="h-4 w-4 text-info" />
-            </CardHeader>
-            <CardContent>
-              <div className={`text-2xl font-bold ${(summary?.net_balance || 0) >= 0 ? 'text-success-text' : 'text-destructive'}`}>
-                {formatCurrency(summary?.net_balance || 0)}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {summary?.transaction_count || 0} total
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted">
-                Status
-              </CardTitle>
-              <Calendar className="h-4 w-4 text-accent" />
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2">
-                <span className={`px-3 py-1 rounded-full text-xs border ${summary?.is_day_closed ? 'bg-accent-subtle text-accent border-accent/20' : 'bg-success-subtle text-success-text border-success/20'}`}>
-                  {summary?.is_day_closed ? '🔒 CLOSED' : '✓ OPEN'}
-                </span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {summary?.is_day_closed
-                  ? `Close #${summary.closure?.version ?? 1}${
-                      summary.closure?.closed_by_user?.username
-                        ? ` · ${summary.closure.closed_by_user.username}`
-                        : ''
-                    }`
-                  : (summary?.unverified_count ?? 0) > 0
-                    ? `${summary?.unverified_count} unverified`
-                    : 'All entries verified'}
-              </p>
-            </CardContent>
-          </Card>
+        {/* Tabs */}
+        <div className="flex gap-1 border-b border-border">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => {
+                setTab(t.id)
+                setPage(1)
+                setSelected(new Set())
+              }}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                tab === t.id
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted hover:text-foreground'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
 
-        {/* Transactions Table */}
+        {/* Filters */}
         <Card>
-          <CardHeader>
-            <CardTitle>Transactions</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="text-center py-12 text-muted">Loading...</div>
-            ) : !summary?.transactions || summary.transactions.length === 0 ? (
-              <div className="text-center py-12 text-muted">
-                No transactions for this date
+          <CardContent className="p-4 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+            <div>
+              <label className="text-xs text-muted">From</label>
+              <Input type="date" value={filters.from} onChange={(e) => setFilter('from', e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs text-muted">To</label>
+              <Input type="date" value={filters.to} onChange={(e) => setFilter('to', e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs text-muted">In / out</label>
+              <select
+                className="w-full h-10 rounded-md border border-border bg-surface px-3 text-sm"
+                value={filters.direction}
+                onChange={(e) => setFilter('direction', e.target.value)}
+              >
+                <option value="">Both</option>
+                <option value="credit">Money in</option>
+                <option value="debit">Money out</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-muted">Type</label>
+              <select
+                className="w-full h-10 rounded-md border border-border bg-surface px-3 text-sm"
+                value={filters.source}
+                onChange={(e) => setFilter('source', e.target.value)}
+              >
+                <option value="">All</option>
+                {Object.entries(SOURCE_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-muted">Mode</label>
+              <select
+                className="w-full h-10 rounded-md border border-border bg-surface px-3 text-sm"
+                value={filters.mode}
+                onChange={(e) => setFilter('mode', e.target.value)}
+              >
+                <option value="">All</option>
+                {MODES.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {mode.replace('_', ' ')}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-muted">Added by</label>
+              <select
+                className="w-full h-10 rounded-md border border-border bg-surface px-3 text-sm"
+                value={filters.added_by}
+                onChange={(e) => setFilter('added_by', e.target.value)}
+              >
+                <option value="">Everyone</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.username}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-muted">Search</label>
+              <div className="relative">
+                <Search className="absolute left-2 top-3 h-4 w-4 text-muted" />
+                <Input
+                  className="pl-8"
+                  placeholder="Description"
+                  value={filters.search}
+                  onChange={(e) => setFilter('search', e.target.value)}
+                />
               </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* The admin's selection bar (CR-06) */}
+        {isAdmin && selected.size > 0 && (
+          <div className="sticky top-2 z-10 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary-subtle p-3">
+            <p className="text-sm text-foreground">
+              <strong>{selected.size} rows</strong> · {inr(selection.total)}
+              {Object.entries(selection.byMode).map(([mode, amount]) => (
+                <span key={mode} className="text-muted">
+                  {' '}
+                  · {mode.replace('_', ' ')} {inr(amount)}
+                </span>
+              ))}
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setSelected(new Set())}>
+                Clear
+              </Button>
+              {selectedRows.every((r) => r.status === 'closed') ? (
+                <Button onClick={() => setClosing('reopen')}>
+                  <Unlock className="h-4 w-4 mr-1" /> Reopen ({selected.size})
+                </Button>
+              ) : (
+                <Button onClick={() => setClosing('close')}>
+                  <Lock className="h-4 w-4 mr-1" /> Mark closed ({selectedRows.filter((r) => r.status === 'open').length})
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* The log */}
+        <Card>
+          <CardContent className="p-0">
+            {loading ? (
+              <p className="p-8 text-center text-muted">Loading…</p>
+            ) : error ? (
+              <p className="p-8 text-center text-destructive">{error}</p>
+            ) : entries.length === 0 ? (
+              <p className="p-8 text-center text-muted">
+                {tab === 'open' ? 'Nothing is waiting to be closed.' : 'No entries for this filter.'}
+              </p>
             ) : (
-              <>
-                {/* Desktop Table */}
-                <div className="hidden md:block overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="py-3 px-4 text-left text-muted">Time</th>
-                      <th className="py-3 px-4 text-left text-muted">Type</th>
-                      <th className="py-3 px-4 text-left text-muted">Source</th>
-                      <th className="py-3 px-4 text-left text-muted">Amount</th>
-                      <th className="py-3 px-4 text-left text-muted">Mode</th>
-                      <th className="py-3 px-4 text-left text-muted">Reference</th>
-                      <th className="py-3 px-4 text-left text-muted">Description</th>
-                      <th className="py-3 px-4 text-left text-muted">Status</th>
-                      <th className="py-3 px-4 text-left text-muted">Created By</th>
-                      <th className="py-3 px-4 text-left text-muted">Actions</th>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-surface-inset text-muted">
+                    <tr>
+                      {isAdmin && (
+                        <th className="p-3 w-10">
+                          <input
+                            type="checkbox"
+                            aria-label="Select all"
+                            checked={selectable.length > 0 && selectable.every((e) => selected.has(e.id))}
+                            onChange={(e) =>
+                              setSelected(e.target.checked ? new Set(selectable.map((r) => r.id)) : new Set())
+                            }
+                          />
+                        </th>
+                      )}
+                      <th className="p-3 text-left font-medium">Date</th>
+                      <th className="p-3 text-left font-medium">Type</th>
+                      <th className="p-3 text-left font-medium">Patient / description</th>
+                      <th className="p-3 text-right font-medium">In</th>
+                      <th className="p-3 text-right font-medium">Out</th>
+                      <th className="p-3 text-left font-medium">Mode</th>
+                      <th className="p-3 text-left font-medium">Added by</th>
+                      <th className="p-3 text-left font-medium">Status</th>
+                      <th className="p-3 text-right font-medium">Actions</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    {summary.transactions.map((txn) => (
-                      <tr key={txn.id} className="border-b border-border hover:bg-table-row-hover">
-                        <td className="py-3 px-4 text-foreground text-sm">
-                          {new Date(txn.created_at).toLocaleTimeString('en-GB', { hour12: false, hour: '2-digit', minute: '2-digit' })}
+                  <tbody className="divide-y divide-border">
+                    {entries.map((entry) => (
+                      <tr key={entry.id} className="hover:bg-surface-hover">
+                        {isAdmin && (
+                          <td className="p-3">
+                            <input
+                              type="checkbox"
+                              aria-label={`Select ${entry.description}`}
+                              checked={selected.has(entry.id)}
+                              onChange={() => toggle(entry.id)}
+                            />
+                          </td>
+                        )}
+                        <td className="p-3 whitespace-nowrap">
+                          {day(entry.transaction_date)}
+                          <span className="block text-xs text-muted">{time(entry.created_at)}</span>
                         </td>
-                        <td className="py-3 px-4">
-                          <span className={`px-3 py-1 rounded-full text-xs border ${
-                            txn.transaction_type === 'credit'
-                              ? 'bg-success-subtle text-success-text border-success/20'
-                              : 'bg-destructive-subtle text-destructive border-destructive/20'
-                          }`}>
-                            {txn.transaction_type.toUpperCase()}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-foreground text-sm">
-                          {sourceLabel(txn)}
-                          {txn.source === 'expense' && txn.expense_category && (
-                            // Not capitalized — it would title-case the free text.
-                            <span className="block text-xs text-muted normal-case">
-                              {ledgerExpenseCategoryLabel(txn.expense_category, txn.expense_category_detail)}
+                        <td className="p-3">
+                          {SOURCE_LABELS[entry.source] ?? entry.source}
+                          {entry.source === 'expense' && entry.expense_category && (
+                            <span className="block text-xs text-muted">
+                              {ledgerExpenseCategoryLabel(entry.expense_category, entry.expense_category_detail)}
                             </span>
                           )}
                         </td>
-                        <td className="py-3 px-4 text-foreground font-medium">
-                          {formatCurrency(txn.amount)}
+                        <td className="p-3">
+                          {entry.patient ? (
+                            <Link
+                              href={`/patients/${entry.patient.id}`}
+                              className="text-primary hover:underline"
+                            >
+                              {entry.description}
+                            </Link>
+                          ) : (
+                            entry.description
+                          )}
+                          {entry.reference_number && (
+                            <span className="block text-xs text-muted">Ref {entry.reference_number}</span>
+                          )}
                         </td>
-                        <td className="py-3 px-4 text-foreground text-sm capitalize">
-                          {txn.payment_mode.replace('_', ' ')}
+                        <td className="p-3 text-right text-success-text">
+                          {entry.transaction_type === 'credit' ? inr(entry.amount) : ''}
                         </td>
-                        <td className="py-3 px-4 text-foreground text-sm">
-                          {txn.reference_number || '-'}
+                        <td className="p-3 text-right text-destructive">
+                          {entry.transaction_type === 'debit' ? inr(entry.amount) : ''}
                         </td>
-                        <td className="py-3 px-4 text-foreground text-sm max-w-xs truncate">
-                          {txn.description}
+                        <td className="p-3 capitalize">{entry.payment_mode.replace('_', ' ')}</td>
+                        <td className="p-3">{entry.created_by_user?.username || '—'}</td>
+                        <td className="p-3">
+                          {entry.status === 'closed' ? (
+                            <Badge variant="accent" title={
+                              entry.closed_by_user?.username
+                                ? `Closed by ${entry.closed_by_user.username}`
+                                : undefined
+                            }>
+                              Closed
+                            </Badge>
+                          ) : (
+                            <Badge variant="warning">Open</Badge>
+                          )}
                         </td>
-                        <td className="py-3 px-4">
-                          <span className={`px-3 py-1 rounded-full text-xs border flex items-center gap-1 w-fit ${getStatusColor(txn.status)}`}>
-                            {getStatusIcon(txn.status)}
-                            {txn.status.toUpperCase().replace('_', ' ')}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-foreground text-sm">
-                          {txn.created_by_user?.username || 'Unknown'}
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="flex gap-2">
-                            {!summary.is_day_closed && (
+                        <td className="p-3">
+                          <div className="flex justify-end gap-1">
+                            {entry.payment_installment_id && entry.patient ? (
+                              <Link
+                                href={`/patients/${entry.patient.id}`}
+                                className="text-xs text-primary hover:underline"
+                              >
+                                On the patient
+                              </Link>
+                            ) : entry.can_edit ? (
                               <>
-                                {isPaymentEntry(txn) ? (
-                                  txn.patient?.id && (
-                                    <Link
-                                      href={`/patients/${txn.patient.id}`}
-                                      className="text-xs text-info hover:underline self-center whitespace-nowrap"
-                                      title="Payments are changed from the patient's Payments tab"
-                                    >
-                                      Open patient
-                                    </Link>
-                                  )
-                                ) : (
-                                  <>
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => {
-                                        setSelectedTransaction(txn)
-                                        setShowEditModal(true)
-                                      }}
-                                    >
-                                      <Edit size={16} />
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="destructive"
-                                      onClick={() => handleDeleteTransaction(txn.id)}
-                                    >
-                                      <Trash2 size={16} />
-                                    </Button>
-                                  </>
-                                )}
-                                {canVerify && txn.status === 'pending' && (
-                                  <Button
-                                    size="sm"
-                                    variant="default"
-                                    onClick={() => handleVerifyTransaction(txn.id)}
-                                  >
-                                    <CheckCircle size={16} />
-                                  </Button>
-                                )}
+                                <button
+                                  onClick={() => setEditing(entry)}
+                                  className="p-1.5 rounded hover:bg-surface-inset text-muted hover:text-foreground"
+                                  aria-label="Edit"
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </button>
+                                <button
+                                  onClick={() => onDelete(entry)}
+                                  className="p-1.5 rounded hover:bg-surface-inset text-muted hover:text-destructive"
+                                  aria-label="Delete"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
                               </>
+                            ) : (
+                              <span className="text-xs text-muted">—</span>
                             )}
                           </div>
                         </td>
@@ -527,148 +537,81 @@ export default function DailyLedgerSummaryPage() {
                     ))}
                   </tbody>
                 </table>
-                </div>
-
-                {/* Mobile Cards */}
-                <div className="md:hidden space-y-3">
-                  {summary.transactions.map((txn) => (
-                    <div key={txn.id} className="bg-surface-elevated rounded-lg p-3 border border-border space-y-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className={`shrink-0 px-2 py-1 rounded-full text-xs border font-medium ${
-                            txn.transaction_type === 'credit'
-                              ? 'bg-success-subtle text-success-text border-success/20'
-                              : 'bg-destructive-subtle text-destructive border-destructive/20'
-                          }`}>
-                            {txn.transaction_type === 'credit' ? '+' : '-'}
-                          </span>
-                          <span className={`font-bold text-lg ${
-                            txn.transaction_type === 'credit' ? 'text-success-text' : 'text-destructive'
-                          }`}>
-                            {formatCurrency(txn.amount)}
-                          </span>
-                        </div>
-                        <span className={`shrink-0 px-2 py-1 rounded-full text-xs border flex items-center gap-1 ${getStatusColor(txn.status)}`}>
-                          {getStatusIcon(txn.status)}
-                          {txn.status.replace('_', ' ')}
-                        </span>
-                      </div>
-
-                      <div className="text-sm text-foreground">{txn.description}</div>
-                      
-                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
-                        <span>{new Date(txn.created_at).toLocaleTimeString('en-GB', { hour12: false, hour: '2-digit', minute: '2-digit' })}</span>
-                        <span>{sourceLabel(txn)}</span>
-                        {txn.source === 'expense' && txn.expense_category && (
-                          <span>{ledgerExpenseCategoryLabel(txn.expense_category, txn.expense_category_detail)}</span>
-                        )}
-                        <span className="capitalize">{txn.payment_mode.replace('_', ' ')}</span>
-                        {txn.reference_number && <span>Ref: {txn.reference_number}</span>}
-                        <span>By: {txn.created_by_user?.username || 'Unknown'}</span>
-                      </div>
-
-                      {!summary.is_day_closed && (
-                        <div className="flex gap-2 pt-1">
-                          {isPaymentEntry(txn) ? (
-                            txn.patient?.id && (
-                              <Link
-                                href={`/patients/${txn.patient.id}`}
-                                className="flex-1 text-sm text-info hover:underline self-center"
-                              >
-                                Open patient to change this payment
-                              </Link>
-                            )
-                          ) : (
-                            <>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="flex-1"
-                                onClick={() => {
-                                  setSelectedTransaction(txn)
-                                  setShowEditModal(true)
-                                }}
-                              >
-                                <Edit size={14} className="mr-1" />
-                                Edit
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                onClick={() => handleDeleteTransaction(txn.id)}
-                              >
-                                <Trash2 size={14} />
-                              </Button>
-                            </>
-                          )}
-                          {canVerify && txn.status === 'pending' && (
-                            <Button
-                              size="sm"
-                              variant="default"
-                              onClick={() => handleVerifyTransaction(txn.id)}
-                            >
-                              <CheckCircle size={14} />
-                            </Button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </>
+              </div>
             )}
           </CardContent>
         </Card>
+
+        {/* Paging: 50 a page, newest first (Q-22) */}
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted">
+            {totals ? `${totals.count} entries match this filter` : ''}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" disabled={page === 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+              <ChevronLeft className="h-4 w-4" /> Previous
+            </Button>
+            <span className="text-sm text-muted">Page {page}</span>
+            <Button
+              variant="outline"
+              disabled={entries.length < 50}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Next <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
       </div>
 
-      {/* Modals */}
-      <OpdEntryModal
-        isOpen={showOpdModal}
-        onClose={() => setShowOpdModal(false)}
-        onSuccess={fetchDailySummary}
-        selectedDate={selectedDate}
-      />
-
-      <ExpenseEntryModal
-        isOpen={showExpenseModal}
-        onClose={() => setShowExpenseModal(false)}
-        onSuccess={fetchDailySummary}
-        selectedDate={selectedDate}
-      />
-
       <AddPatientInstallmentModal
-        isOpen={showInstallmentModal}
-        onClose={() => setShowInstallmentModal(false)}
-        onSuccess={fetchDailySummary}
-        selectedDate={selectedDate}
-      />
-
-      <EditTransactionModal
-        isOpen={showEditModal}
-        onClose={() => {
-          setShowEditModal(false)
-          setSelectedTransaction(null)
+        isOpen={showPayment}
+        onClose={() => setShowPayment(false)}
+        onSuccess={() => {
+          setShowPayment(false)
+          void fetchEntries()
         }}
-        onSuccess={fetchDailySummary}
-        transaction={selectedTransaction}
+        selectedDate={istToday()}
       />
-
-      {summary && (
-        <CloseDayDialog
-          isOpen={showCloseDialog}
-          onClose={() => setShowCloseDialog(false)}
-          onSuccess={handleClosureChanged}
-          date={selectedDate}
-          totals={summary}
-        />
-      )}
-
-      <ReopenDayDialog
-        isOpen={showReopenDialog}
-        onClose={() => setShowReopenDialog(false)}
-        onSuccess={handleClosureChanged}
-        date={selectedDate}
-        closure={summary?.closure ?? null}
+      <OpdEntryModal
+        isOpen={showOpd}
+        onClose={() => setShowOpd(false)}
+        onSuccess={() => {
+          setShowOpd(false)
+          void fetchEntries()
+        }}
+        selectedDate={istToday()}
+      />
+      <ExpenseEntryModal
+        isOpen={showExpense}
+        onClose={() => setShowExpense(false)}
+        onSuccess={() => {
+          setShowExpense(false)
+          void fetchEntries()
+        }}
+        selectedDate={istToday()}
+      />
+      <EditTransactionModal
+        isOpen={editing !== null}
+        onClose={() => setEditing(null)}
+        onSuccess={() => {
+          setEditing(null)
+          void fetchEntries()
+        }}
+        transaction={editing as any}
+      />
+      <CloseEntriesDialog
+        mode={closing}
+        ids={selectedRows
+          .filter((r) => (closing === 'reopen' ? r.status === 'closed' : r.status === 'open'))
+          .map((r) => r.id)}
+        total={selection.total}
+        byMode={selection.byMode}
+        onClose={() => setClosing(null)}
+        onDone={() => {
+          setClosing(null)
+          setSelected(new Set())
+          void fetchEntries()
+        }}
       />
     </DashboardLayout>
   )

@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { verifyAuth } from '@/lib/auth/verify';
+import { canModify } from '@/lib/authz/ownership';
+import { requireBilling } from '@/lib/billing/authz';
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; consultationId: string }> }
 ) {
   try {
-    const authResult = await verifyAuth(request);
-    if (!authResult.isValid || !authResult.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requireBilling(request, 'charge:write');
+    if (auth.response) return auth.response;
+    const { user } = auth;
 
     const supabase = await createClient();
     const { id: patientId, consultationId } = await params;
@@ -31,21 +31,10 @@ export async function PATCH(
       );
     }
 
-    // Check if user has permission to edit (creator or admin)
-    const { data: user } = await supabase
-      .from('users')
-      .select('role')
-      .eq('id', authResult.user.id)
-      .single();
-
-    const isAdmin = user?.role === 'ADMIN';
-    const isCreator = consultation.created_by === authResult.user.id;
-
-    if (!isAdmin && !isCreator) {
-      return NextResponse.json(
-        { error: 'You do not have permission to edit this consultation' },
-        { status: 403 }
-      );
+    // Your own visit, unless you are the admin (§3.2 row 6).
+    const allowed = canModify(user, { created_by: consultation.created_by });
+    if (!allowed.ok) {
+      return NextResponse.json({ error: allowed.error, code: allowed.code }, { status: allowed.status });
     }
 
     // An edit must not be able to clear the doctor, now that creating without one is
@@ -75,7 +64,7 @@ export async function PATCH(
         body.visit_purpose_id !== undefined ? body.visit_purpose_id : consultation.visit_purpose_id,
       notes: body.notes !== undefined ? body.notes : consultation.notes,
       billing_id: body.billing_id !== undefined ? body.billing_id : consultation.billing_id,
-      updated_by: authResult.user.id,
+      updated_by: user.id,
       updated_at: new Date().toISOString(),
     };
 
@@ -115,10 +104,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; consultationId: string }> }
 ) {
   try {
-    const authResult = await verifyAuth(request);
-    if (!authResult.isValid || !authResult.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const auth = await requireBilling(request, 'charge:write');
+    if (auth.response) return auth.response;
+    const { user } = auth;
 
     const supabase = await createClient();
     const { id: patientId, consultationId } = await params;
@@ -138,22 +126,11 @@ export async function DELETE(
       );
     }
 
-    // Check if user has permission to delete
-    const { data: user } = await supabase
-      .from('users')
-      .select('role')
-      .eq('id', authResult.user.id)
-      .single();
 
-    const isAdmin = user?.role === 'ADMIN';
-    const isCreator = consultation.created_by === authResult.user.id;
-
-    // Only creator (if they created it) or admin can delete
-    if (!isAdmin && !isCreator) {
-      return NextResponse.json(
-        { error: 'You do not have permission to delete this consultation' },
-        { status: 403 }
-      );
+    // Your own visit, unless you are the admin (§3.2 row 6).
+    const allowed = canModify(user, { created_by: consultation.created_by });
+    if (!allowed.ok) {
+      return NextResponse.json({ error: allowed.error, code: allowed.code }, { status: allowed.status });
     }
 
     // Refuse only if *this visit's own* settlement has been settled — not merely

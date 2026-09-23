@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { requireBilling } from '@/lib/billing/authz';
-import { getActiveClosures } from '@/lib/ledger/closure';
 import { isDeskPaymentKind, recordPayment, validatePayment, type PaymentKind } from '@/lib/billing/payments';
 
 export async function GET(
@@ -11,6 +10,7 @@ export async function GET(
   try {
     const auth = await requireBilling(request, 'charge:read');
     if (auth.response) return auth.response;
+    const { user } = auth;
 
     const supabase = await createClient();
     const { searchParams } = new URL(request.url);
@@ -36,24 +36,17 @@ export async function GET(
 
     if (error) throw error;
 
-    // A payment can no longer be edited/deleted once either fact is true: its
-    // own date has been closed, or an admin has already verified the ledger
-    // credit it created — "settled", in the word staff actually use, day to
-    // day, well before the whole day gets closed. Neither is a property of the
-    // installment row itself, so both are decorated on here rather than left
-    // for the client to work out.
-    const dates = (data ?? []).map((row) => row.payment_date).filter(Boolean);
-    let decorated = data ?? [];
-    if (dates.length > 0) {
-      const minDate = dates.reduce((a, b) => (a < b ? a : b));
-      const maxDate = dates.reduce((a, b) => (a > b ? a : b));
-      const closures = await getActiveClosures(supabase, minDate, maxDate);
-      decorated = decorated.map((row) => ({
-        ...row,
-        day_closed: closures.has(row.payment_date),
-        ledger_verified: row.ledger_transaction?.status === 'verified',
-      }));
-    }
+    // A payment is locked once its own ledger entry is Closed (§3.2 row 9).
+    // Dates no longer lock anything (CR-08), so this is now a property of the
+    // one row the payment points at, decorated on here so the tab can hide the
+    // actions rather than let them fail.
+    const decorated = (data ?? []).map((row) => ({
+      ...row,
+      entry_closed: row.ledger_transaction?.status === 'closed',
+      can_edit:
+        row.ledger_transaction?.status !== 'closed' &&
+        (user.role === 'ADMIN' || row.created_by === user.id),
+    }));
 
     return NextResponse.json(decorated);
   } catch (error) {
@@ -119,6 +112,7 @@ export async function POST(
       kind,
       input: check.value,
       userId: user.id,
+      userRole: user.role,
     });
 
     if (!result.ok) {
@@ -126,7 +120,6 @@ export async function POST(
         {
           error: result.error,
           ...(result.code ? { code: result.code } : {}),
-          ...(result.closure ? { closure: result.closure } : {}),
         },
         { status: result.status }
       );
