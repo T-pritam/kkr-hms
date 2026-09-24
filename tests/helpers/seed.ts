@@ -129,7 +129,6 @@ export function aCharge(overrides: Row = {}): Row {
     charge_group_id: null,
     source_sheet_id: null,
     lab_medicine_status: null,
-    collected_installment_id: null,
     created_by: null,
     ...overrides,
   })[0]

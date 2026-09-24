@@ -278,10 +278,11 @@ export const SCHEMA: Record<string, string[]> = {
     'created_at', 'created_by', 'updated_at', 'updated_by', 'qty',
     // 20260808000002 — catalogue link, and the group a date range's rows share
     'charge_item_id', 'billing_mode', 'charge_group_id', 'source_sheet_id',
-    // 20260923000001 — lab / medicine. Only `included` survives; the charge is
-    // the hospital's expense, and `collected_installment_id` is on its way out
-    // (20260925000002) now that there is no separate payment to point at.
-    'lab_medicine_status', 'collected_installment_id',
+    // 20260923000001, narrowed by 20260925000002 — lab / medicine. Only
+    // `included` survives: the charge is the hospital's expense.
+    // `collected_installment_id` is dropped, there being no separate payment
+    // left for it to point at.
+    'lab_medicine_status',
   ],
 
   patient_consultations: [
