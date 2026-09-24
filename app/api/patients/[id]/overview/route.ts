@@ -94,7 +94,7 @@ export async function GET(
       supabase
         .from('patient_charges')
         .select(
-          'id, charge_type, amount, qty, charge_date, lab_medicine_status, collected_installment_id, charge_item:charge_items(id, category)'
+          'id, charge_type, amount, qty, charge_date, lab_medicine_status, charge_item:charge_items(id, category)'
         )
         .eq('patient_billing_id', billing.id)
         .order('charge_date', { ascending: false }),
@@ -109,7 +109,6 @@ export async function GET(
     const paymentRows = installments ?? []
     const byLabel = Object.fromEntries(PAYMENT_KINDS.map(k => [k, 0])) as Record<PaymentKind, number>
     let totalBill = 0
-    let passedOn = 0
 
     for (const row of paymentRows) {
       const amount = num(row.amount)
@@ -118,11 +117,15 @@ export async function GET(
         : 'regular'
       totalBill += amount
       byLabel[kind] += amount
-      // Collected at the desk for the lab or pharmacy, so not the hospital's.
-      if (kind === 'lab' || kind === 'medicine') passedOn += amount
     }
 
-    const hospitalIncome = totalBill - passedOn
+    /**
+     * Every payment is the hospital's now. "Passed on" is gone with the lab and
+     * medicine labels: an amount the patient paid the lab directly is not
+     * recorded at all, so there is nothing here to hand back (Q-82, revised
+     * 2026-09-24). What the hospital owes the lab is an expense below instead.
+     */
+    const hospitalIncome = totalBill
 
     const doctorFees = (settlements ?? []).reduce(
       (acc, s: any) => {
@@ -142,14 +145,14 @@ export async function GET(
       pending: billing.referral_settled ? 0 : commissionAmount,
     }
 
-    // Counted as soon as they are priced or set, paid or not (Q-81).
-    const expensesTotal = doctorFees.total + commission.amount
-
     // ── Lab & medicine, and the services used ────────────────────────────────
+    //
+    // `included` is what the hospital carries for this patient and owes the lab
+    // or pharmacy — an expense, counted below (Q-83, revised 2026-09-24).
+    // `undecided` is a charge nobody has answered for yet: it is not an expense
+    // until someone says it is, and it is shown so a person resolves it.
     const labMedicine = {
       included: 0,
-      to_collect: 0,
-      collected: 0,
       undecided: 0,
       rows: [] as any[],
     }
@@ -175,20 +178,24 @@ export async function GET(
       const kind = labMedicineKind(category)
       if (!kind) continue
 
-      const status: string = charge.lab_medicine_status ?? 'undecided'
-      if (status in labMedicine) {
-        ;(labMedicine as any)[status] += total
-      }
+      if (charge.lab_medicine_status === 'included') labMedicine.included += total
+      else labMedicine.undecided += total
+
       labMedicine.rows.push({
         id: charge.id,
         charge_type: charge.charge_type,
         charge_date: charge.charge_date,
         kind,
         amount: total,
-        status: charge.lab_medicine_status ?? null,
-        collected_installment_id: charge.collected_installment_id ?? null,
+        status: charge.lab_medicine_status === 'included' ? 'included' : null,
       })
     }
+
+    /**
+     * Counted as soon as they are priced or set, paid or not (Q-81) — and the
+     * lab/medicine the hospital carries, from the day the charge is dated.
+     */
+    const expensesTotal = doctorFees.total + commission.amount + labMedicine.included
 
     // ── Activity ─────────────────────────────────────────────────────────────
     const [visits, labOrders, pharmacyBills] = await Promise.all([
@@ -243,11 +250,11 @@ export async function GET(
       money: {
         total_bill: totalBill,
         by_label: byLabel,
-        passed_on: passedOn,
         hospital_income: hospitalIncome,
         expenses: {
           doctor_fees: doctorFees,
           referral_commission: commission,
+          lab_medicine: labMedicine.included,
           total: expensesTotal,
         },
         // What the hospital keeps. Admin only — reception sees the rest (Q-66).

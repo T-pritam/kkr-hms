@@ -195,6 +195,14 @@ describe('POST /api/patients/[id]/settlements', () => {
   })
 })
 
+/**
+ * This route was the fourth way to pay a doctor fee, and the last one still
+ * setting `settled`, `settlement_date` and `settled_by` by hand — with no
+ * payment mode, no record of who handed the money over, and without making
+ * `total_amount` agree with what was actually paid. It now goes through
+ * `payDoctorFee` like the other three (CR-13), which is what the two known
+ * defects below were waiting for.
+ */
 describe('PATCH /api/patients/[id]/settlements — mark settled', () => {
   it('marks the settlement paid with the supplied details', async () => {
     await signInAs('ADMIN', { userId: 'u-admin' })
@@ -206,52 +214,101 @@ describe('PATCH /api/patients/[id]/settlements — mark settled', () => {
       settlement_notes: 'Paid by bank transfer',
       payment_method: 'bank_transfer',
       transaction_reference: 'NEFT-1',
-      settlement_date: '2026-03-12T00:00:00.000Z',
     })
 
     expect(status).toBe(200)
     expect(settlementRow('s1')).toMatchObject({
       settled: true,
       settlement_amount: 4500,
+      // What was paid is what it cost (Q-37 b) — this route never did this.
+      total_amount: 4500,
       settlement_notes: 'Paid by bank transfer',
       payment_method: 'bank_transfer',
       transaction_reference: 'NEFT-1',
-      settlement_date: '2026-03-12T00:00:00.000Z',
+      settled_by: 'u-admin',
+      status_set_by: 'u-admin',
+      // Whoever marks it paid is who handed the money over, unless they say so.
+      given_by_user_id: 'u-admin',
       updated_by: 'u-admin',
+    })
+    // A payout writes no ledger entry: the money comes straight from the admin.
+    expect(db.count('daily_ledger_transactions')).toBe(0)
+  })
+
+  it('records someone else as having handed the money over', async () => {
+    await signInAs('ADMIN', { userId: 'u-admin' })
+    aSettlement({ id: 's1', settled: false })
+
+    await settle('p1', {
+      settlement_id: 's1',
+      settlement_amount: 1000,
+      payment_method: 'cash',
+      given_by_user_id: 'u-recep',
+    })
+
+    expect(settlementRow('s1')).toMatchObject({
+      given_by_user_id: 'u-recep',
+      // …and who says so, which is a different fact.
+      given_by_set_by: 'u-admin',
     })
   })
 
-  it('defaults the settlement date to now', async () => {
+  it('dates the payout to now', async () => {
     await signInAs('ADMIN')
     aSettlement({ id: 's1', settled: false })
 
-    await settle('p1', { settlement_id: 's1', settlement_amount: 1000 })
+    await settle('p1', { settlement_id: 's1', settlement_amount: 1000, payment_method: 'cash' })
 
     expect(settlementRow('s1').settlement_date).toBe(NOW.toISOString())
   })
 
-  it('returns 500 for an unknown settlement id', async () => {
+  it('refuses a payout with no payment mode', async () => {
+    await signInAs('ADMIN')
+    aSettlement({ id: 's1', settled: false })
+
+    const { status } = await settle('p1', { settlement_id: 's1', settlement_amount: 1000 })
+
+    expect(status).toBe(400)
+    expect(settlementRow('s1').settled).toBe(false)
+  })
+
+  it('404s for an unknown settlement id', async () => {
     await signInAs('ADMIN')
 
-    expect((await settle('p1', { settlement_id: 'missing' })).status).toBe(500)
+    expect((await settle('p1', { settlement_id: 'missing' })).status).toBe(404)
+  })
+
+  it('refuses to pay a fee that is already paid', async () => {
+    await signInAs('ADMIN')
+    aSettlement({ id: 's1', settled: true })
+
+    const { status, body } = await settle('p1', {
+      settlement_id: 's1',
+      settlement_amount: 1000,
+      payment_method: 'cash',
+    })
+
+    expect(status).toBe(409)
+    expect(body.code).toBe('ALREADY_PAID')
   })
 
   /** Known defect — see BUGS.md #27. Nothing checks that the settlement belongs to this patient. */
-  it.fails('should refuse to settle another patient’s settlement', async () => {
+  it.fails('should refuse to settle another patient\u2019s settlement', async () => {
     await signInAs('ADMIN')
     aSettlement({ id: 's-other', patient_id: 'p2', settled: false })
 
-    await settle('p1', { settlement_id: 's-other', settlement_amount: 1000 })
+    await settle('p1', { settlement_id: 's-other', settlement_amount: 1000, payment_method: 'cash' })
 
     expect(settlementRow('s-other').settled).toBe(false)
   })
 
-  /** Known defect — see BUGS.md #27. A settlement can be marked paid for any amount, including none. */
-  it.fails('should require a settlement amount', async () => {
+  // Was a known defect (BUGS.md #27): a fee could be marked paid for nothing at
+  // all. `payDoctorFee` refuses an amount of zero, so this now holds.
+  it('refuses to pay a fee that is priced at nothing', async () => {
     await signInAs('ADMIN')
-    aSettlement({ id: 's1', settled: false, total_amount: 4500 })
+    aSettlement({ id: 's1', settled: false, total_amount: 0 })
 
-    const { status } = await settle('p1', { settlement_id: 's1' })
+    const { status } = await settle('p1', { settlement_id: 's1', payment_method: 'cash' })
     expect(status).toBe(400)
   })
 })

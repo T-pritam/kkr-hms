@@ -113,6 +113,8 @@ export async function POST(request: NextRequest) {
       payment_method: body.payment_method,
       transaction_reference: body.transaction_reference,
       notes: body.settlement_notes,
+      given_by_user_id: body.given_by_user_id,
+      given_by: body.given_by,
     })
     if (!details.ok) {
       return NextResponse.json(
@@ -133,9 +135,10 @@ export async function POST(request: NextRequest) {
 
     const settled: any[] = []
 
-    // One path for every payout (CR-13): the commission is marked paid only
-    // once its ledger OUT exists, and that row is kept on the bill so un-paying
-    // can remove it again.
+    // One path for every payout (CR-13), so a commission paid from here means
+    // the same thing as one paid from the patient's Billing tab. Nothing goes to
+    // the ledger: the bill row is the record, and Finances counts money out from
+    // it (client revision, 2026-09-24).
     for (const billing of pending ?? []) {
       const result = await payReferralCommission(supabase, user, billing, { details: details.value })
 

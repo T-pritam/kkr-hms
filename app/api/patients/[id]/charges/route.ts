@@ -32,15 +32,14 @@ import {
 } from '@/lib/billing/validate'
 import { firstError } from '@/lib/patients/validate'
 import { recalculatePatientBilling } from '@/lib/recalculate-billing'
-import { collectCharges, labMedicineKind, parseLabMedicineChoice } from '@/lib/billing/lab-medicine'
+import { labMedicineKind, parseLabMedicineChoice } from '@/lib/billing/lab-medicine'
 
 const LIST_SELECT = `
   *,
   users!created_by(id, username),
   updated_by_user:users!updated_by(id, username),
   charge_item:charge_items(id, name, category, billing_mode, unit_label),
-  pharmacy_bill:pharmacy_bills!patient_charge_id(id, entry_number, entry_date, external_bill_id, invoice_url),
-  collected_installment:patient_billing_installments!collected_installment_id(id, installment_number, payment_method, payment_date)
+  pharmacy_bill:pharmacy_bills!patient_charge_id(id, entry_number, entry_date, external_bill_id, invoice_url)
 `
 
 /**
@@ -175,9 +174,9 @@ export async function POST(
     }
 
     /**
-     * Lab and medicine ask one more thing, at the moment of saving (PRD v2 CR-15):
-     * collect it now, mark it excluded and collect later, or say the patient's
-     * payments already include it. Checked here, before anything is written.
+     * Lab and medicine ask one more thing, at the moment of saving (PRD v2
+     * CR-15): is it included in the patient's payments, or did the patient pay
+     * the lab directly? Checked here, before anything is written.
      */
     const labMedicine = labMedicineKind(chargeItem?.category)
     const choice = labMedicine ? parseLabMedicineChoice(body.lab_medicine) : null
@@ -188,6 +187,25 @@ export async function POST(
       )
     }
     const decision = choice?.ok ? choice.value : null
+
+    /**
+     * "Paid directly to the lab" records **nothing at all** (Q-82, revised
+     * 2026-09-24). The hospital never handled that money, so there is no charge
+     * to keep: saving one and flagging it would leave a row that has to be
+     * excluded from every total by hand, which is how the old `to_collect`
+     * state ended up in three places at once.
+     *
+     * A 200 rather than a 201, and a message that says so plainly — a charge
+     * that vanishes on save with a cheerful "Charge added" is baffling.
+     */
+    if (labMedicine && decision?.choice === 'direct') {
+      return NextResponse.json({
+        recorded: false,
+        lab_medicine: { kind: labMedicine, status: 'direct' },
+        message:
+          'Nothing recorded \u2014 the patient pays the lab directly, so this is not the hospital\u2019s money.',
+      })
+    }
 
     const shared = {
       patient_id: patientId,
@@ -200,12 +218,9 @@ export async function POST(
       qty: values.qty,
       created_by: user.id,
       updated_by: user.id,
-      // Excluded until collected; nothing is collected unless the desk said so.
-      lab_medicine_status: labMedicine
-        ? decision?.choice === 'included'
-          ? 'included'
-          : 'to_collect'
-        : null,
+      // Only `included` survives. A caller that did not answer leaves it NULL,
+      // which reads as *not decided* and is nobody's expense yet.
+      lab_medicine_status: labMedicine && decision?.choice === 'included' ? 'included' : null,
     }
 
     // One row per day for either range mode, one row otherwise. The group id ties
@@ -247,35 +262,6 @@ export async function POST(
 
     if (error) throw error
 
-    // "Collect separately now": the payment, labelled Lab or Medicine, is taken
-    // for everything this entry added. If it is refused, the charge goes too —
-    // the desk answered one question, and gets one outcome.
-    let collected: { installment_id: string; installment_number: number } | null = null
-    if (labMedicine && decision?.choice === 'collect' && decision.payment) {
-      const result = await collectCharges(supabase, {
-        patientId,
-        billingId,
-        kind: labMedicine,
-        rows: data ?? [],
-        chargeName: values.charge_type ?? chargeItem?.name ?? 'Charge',
-        payment: decision.payment,
-        userId: user.id,
-      })
-
-      if (!result.ok) {
-        await supabase.from('patient_charges').delete().in('id', (data ?? []).map((r: any) => r.id))
-        await recalculatePatientBilling(supabase, billingId)
-        return NextResponse.json(
-          { error: result.error, fieldErrors: result.fieldErrors, ...(result.code ? { code: result.code } : {}) },
-          { status: result.status }
-        )
-      }
-      collected = {
-        installment_id: result.installment.id,
-        installment_number: result.installment.installment_number,
-      }
-    }
-
     await recalculatePatientBilling(supabase, billingId)
 
     return NextResponse.json(
@@ -293,8 +279,7 @@ export async function POST(
           ? {
               lab_medicine: {
                 kind: labMedicine,
-                status: collected ? 'collected' : decision?.choice === 'included' ? 'included' : 'to_collect',
-                ...(collected ?? {}),
+                status: decision?.choice === 'included' ? 'included' : null,
               },
             }
           : {}),

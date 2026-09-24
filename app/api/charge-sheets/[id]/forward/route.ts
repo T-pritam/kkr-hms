@@ -156,7 +156,11 @@ export async function POST(
           charge_date: item.service_date ?? istToday(),
           charge_group_id: groupId,
           source_sheet_id: sheet.id,
-          lab_medicine_status: labMedicineKind(categoryById.get(item.charge_item_id)) ? 'to_collect' : null,
+          // A forwarded lab/medicine charge arrives *not decided*: the sheet was
+          // a quote and nobody has yet said whether the hospital carries it
+          // (CR-15, revised 2026-09-24). It shows as such on the patient's
+          // Overview until someone answers, and is nobody's expense meanwhile.
+          lab_medicine_status: null,
           created_by: user.id,
           updated_by: user.id,
         }))

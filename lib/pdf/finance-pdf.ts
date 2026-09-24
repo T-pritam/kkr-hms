@@ -335,6 +335,7 @@ export async function generateExpenseBreakdownPDF(monthYear: string, summary: an
     ['Ledger (legacy)',      exp.ledger_expenses],
     ['Doctor Fees',          exp.doctor_fees || 0],
     ['Referral Commissions', exp.referral_commissions],
+    ['Lab & Medicine',       exp.lab_medicine || 0],
   ]
   rows.forEach(([label, val], i) => {
     trow(h, [
@@ -440,6 +441,7 @@ export async function generateMonthlyFinancePDF(monthYear: string, summary: any)
     ['Ledger',      fmt(summary.expenses.ledger_expenses)],
     ['Doctor Fees', fmt(summary.expenses.doctor_fees || 0)],
     ['Referral',    fmt(summary.expenses.referral_commissions)],
+    ['Lab & Med',   fmt(summary.expenses.lab_medicine || 0)],
   ]
   const maxRows = Math.max(incRows.length, expRows.length)
   for (let i = 0; i < maxRows; i++) {

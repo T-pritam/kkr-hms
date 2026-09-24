@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { requireBilling } from '@/lib/billing/authz';
 import {
-  adjustPayoutLedgerAmount,
   canAmendPayout,
   payDoctorFee,
   unpayDoctorFee,
@@ -98,8 +97,8 @@ export async function PUT(
 
     if (currentSettlement.settled === true && wantsToUnsettle) {
       wasSettled = true;
-      // Un-paying removes the ledger OUT this payout wrote (CR-13, AC-13.2).
-      // Money that came back must not stay in the books as money that left.
+      // Un-paying clears the payout from the row that records it, which is what
+      // Finances counts money out from (CR-13, AC-13.2).
       const reversed = await unpayDoctorFee(supabase, authResult.user, currentSettlement);
 
       if (!reversed.ok) {
@@ -107,8 +106,9 @@ export async function PUT(
       }
     }
 
-    // An admin correcting what a settled fee cost: the row stays settled and
-    // its debit is restated to match.
+    // An admin correcting what a settled fee cost: the row stays settled and the
+    // amount on it is restated. There is no ledger row to keep in step any more
+    // — the settlement *is* the record — so this is one write, not two.
     const amendingSettled =
       currentSettlement.settled === true && !wantsToUnsettle && isPricingUpdate;
 
@@ -166,22 +166,14 @@ export async function PUT(
     }
 
     /**
-     * The amendment itself: what was paid becomes the new total, and the ledger
-     * OUT this payout wrote is restated to match. The ledger goes first, as it
-     * does when paying — if the money cannot be restated, nothing else moves.
+     * The amendment itself: what was paid becomes the new total. `amount_set_by`
+     * is stamped here rather than only on the original pricing, so the name
+     * beside the amount is whoever last changed *that number*.
      */
     if (amendingSettled) {
       updateData.settlement_amount = updateData.total_amount;
-
-      const adjusted = await adjustPayoutLedgerAmount(
-        supabase,
-        currentSettlement.ledger_transaction_id,
-        updateData.total_amount,
-      );
-
-      if (!adjusted.ok) {
-        return NextResponse.json({ error: adjusted.error, code: adjusted.code }, { status: adjusted.status });
-      }
+      updateData.amount_set_by = authResult.user.id;
+      updateData.amount_set_at = updateData.updated_at;
     }
 
     /**
@@ -271,15 +263,6 @@ export async function PUT(
       );
     }
     if (error) {
-      // The debit was restated before the row; put it back so the ledger never
-      // claims an amount the settlement does not.
-      if (amendingSettled) {
-        await adjustPayoutLedgerAmount(
-          supabase,
-          currentSettlement.ledger_transaction_id,
-          Number(currentSettlement.settlement_amount) || Number(currentSettlement.total_amount) || 0,
-        );
-      }
       throw error;
     }
 
@@ -290,8 +273,10 @@ export async function PUT(
     /**
      * Now pay it, if that is what was asked. The pricing above has landed, so
      * `data` carries the amount to hand over unless the caller named one.
-     * `payDoctorFee` writes the ledger OUT, links it to the row and marks it
-     * settled — the same path the Finances screen and the Settle button use.
+     * `payDoctorFee` marks it settled and records who paid it, who handed the
+     * money over and how — the same path the Finances screen and the Settle
+     * button use. Nothing is written to the ledger: the money comes straight
+     * from the admin (client revision, 2026-09-24).
      */
     let settledRow = data;
 
@@ -300,6 +285,8 @@ export async function PUT(
         payment_method: body.payment_method,
         transaction_reference: body.transaction_reference,
         notes: body.settlement_notes,
+        given_by_user_id: body.given_by_user_id,
+        given_by: body.given_by,
       });
 
       if (!details.ok) {
@@ -331,9 +318,9 @@ export async function PUT(
     }
 
     const message = wantsToSettle
-      ? 'Fee paid, and booked to the ledger.'
+      ? 'Fee marked paid.'
       : amendingSettled
-      ? 'Settled fee updated, and its ledger entry adjusted to match.'
+      ? 'Settled fee updated.'
       : wasSettled
         ? 'Payout reversed and the settlement reopened.'
         : 'Settlement updated successfully';
@@ -382,7 +369,7 @@ export async function DELETE(
 
     const { data: settlement } = await supabase
       .from('doctor_visit_settlements')
-      .select('patient_billing_id, settled, ledger_transaction_id')
+      .select('patient_billing_id, settled')
       .eq('id', settlementId)
       .maybeSingle();
 
@@ -429,15 +416,6 @@ export async function DELETE(
         .eq('id', settlementId);
 
       if (error) throw error;
-    }
-
-    // The payout goes with the fee. Money that was never really paid must not
-    // stay in the books as money that left (CR-13).
-    if (settlement.ledger_transaction_id) {
-      await supabase
-        .from('daily_ledger_transactions')
-        .delete()
-        .eq('id', settlement.ledger_transaction_id);
     }
 
     if (billingId) {

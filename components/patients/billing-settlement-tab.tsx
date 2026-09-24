@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import { CommissionStamps, FeeStamps } from '@/components/patients/payout-stamps';
+import { GivenByPicker } from '@/components/finances/given-by-picker';
 import { Plus, Check, X, Download, RefreshCw } from 'lucide-react';
 import { useUser } from '@/hooks/use-user';
 import { fetchPatientPDFData, generatePatientPDF } from '@/lib/pdf/patient-pdf';
@@ -53,6 +55,7 @@ export default function BillingSettlementTab({
     settlement_notes: '',
     settlement_type: 'regular',
     given_by: '',
+    given_by_user_id: null as string | null,
   });
   const [syncing, setSyncing] = useState(false);
   const [editingSettlement, setEditingSettlement] = useState<any>(null);
@@ -77,6 +80,7 @@ export default function BillingSettlementTab({
     transaction_reference: '',
     settlement_notes: '',
     given_by: '',
+    given_by_user_id: null as string | null,
   });
   /** Which "Settled" summaries are expanded to show the individual payments behind them. */
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -185,6 +189,7 @@ export default function BillingSettlementTab({
       settlement_notes: '',
       settlement_type: settlement.settlement_type || 'regular',
       given_by: '',
+    given_by_user_id: null as string | null,
     });
     setShowSettleModal(true);
   };
@@ -406,6 +411,7 @@ export default function BillingSettlementTab({
           transaction_reference: settleData.transaction_reference,
           settlement_notes: settleData.settlement_notes,
           given_by: settleData.given_by,
+          given_by_user_id: settleData.given_by_user_id,
         }),
       });
 
@@ -421,6 +427,7 @@ export default function BillingSettlementTab({
           settlement_notes: '',
           settlement_type: 'regular',
           given_by: '',
+    given_by_user_id: null as string | null,
         });
       } else {
         const error = await response.json();
@@ -479,6 +486,7 @@ export default function BillingSettlementTab({
           referral_settlement_transaction_ref: settleReferralData.transaction_reference,
           referral_settlement_notes: settleReferralData.settlement_notes,
           referral_settlement_given_by: settleReferralData.given_by,
+          referral_given_by_user_id: settleReferralData.given_by_user_id,
         }),
       });
 
@@ -491,6 +499,7 @@ export default function BillingSettlementTab({
           transaction_reference: '',
           settlement_notes: '',
           given_by: '',
+    given_by_user_id: null as string | null,
         });
       } else {
         const error = await response.json();
@@ -649,10 +658,8 @@ export default function BillingSettlementTab({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-4 text-sm">
-            <span className="text-muted">
-              Given by: <span className="text-foreground">{billing.referral_settlement_given_by || '—'}</span>
-            </span>
+          <div className="flex flex-wrap items-start justify-between gap-3 mb-4 text-sm">
+            <CommissionStamps billing={billing} />
             <RecordedStamp record={billing} />
           </div>
 
@@ -740,9 +747,8 @@ export default function BillingSettlementTab({
                                 <div>
                                   <span className="text-muted">
                                     {s.settlement_date ? new Date(s.settlement_date).toLocaleDateString() : '—'}
-                                    {s.given_by ? ` · ${s.given_by}` : ''}
                                   </span>
-                                  <UpdatedStamp by={s.settled_by_user?.username} at={s.settlement_date} action="Settled" />
+                                  <FeeStamps settlement={s} />
                                 </div>
                                 <div className="flex items-center gap-3">
                                   <span className="text-foreground">
@@ -845,6 +851,7 @@ export default function BillingSettlementTab({
                     settlement_notes: '',
                     settlement_type: 'regular',
                     given_by: '',
+    given_by_user_id: null as string | null,
                   });
                 }}
                 className="text-muted hover:text-foreground"
@@ -957,7 +964,7 @@ export default function BillingSettlementTab({
                     onClick={() => {
                       setShowSettleModal(false);
                       setSettlePricingComplete(false);
-                      setSettleData({ settlement_id: '', settlement_amount: 0, payment_method: 'cash', transaction_reference: '', settlement_notes: '', settlement_type: 'regular', given_by: '' });
+                      setSettleData({ settlement_id: '', settlement_amount: 0, payment_method: 'cash', transaction_reference: '', settlement_notes: '', settlement_type: 'regular', given_by: '', given_by_user_id: null });
                     }}
                     className="bg-surface-inset hover:bg-surface-inset text-foreground px-6 py-2 rounded-lg transition-colors"
                   >
@@ -1026,17 +1033,18 @@ export default function BillingSettlementTab({
                   />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-muted mb-2">Given By</label>
-                  <input
-                    type="text"
-                    placeholder="Who handed over the payment"
-                    value={settleData.given_by}
-                    onChange={e => setSettleData({ ...settleData, given_by: e.target.value })}
-                    className={numInputClass}
-                  />
-                  <p className="text-xs text-muted mt-1">Leave blank if that was you.</p>
-                </div>
+                {/* A picked user is a record; the free-text box under it is for
+                    someone with no login. Defaults to whoever is paying. */}
+                <GivenByPicker
+                  value={{ given_by_user_id: settleData.given_by_user_id, given_by: settleData.given_by }}
+                  onChange={next =>
+                    setSettleData({
+                      ...settleData,
+                      given_by_user_id: next.given_by_user_id,
+                      given_by: next.given_by,
+                    })
+                  }
+                />
 
                 <div>
                   <label className="block text-sm font-medium text-muted mb-2">Notes</label>
@@ -1261,17 +1269,19 @@ export default function BillingSettlementTab({
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-muted mb-2">Given By</label>
-              <input
-                type="text"
-                placeholder="Who handed over the commission"
-                value={settleReferralData.given_by}
-                onChange={e => setSettleReferralData({ ...settleReferralData, given_by: e.target.value })}
-                className={numInputClass}
-              />
-              <p className="text-xs text-muted mt-1">Leave blank if that was you.</p>
-            </div>
+            <GivenByPicker
+              value={{
+                given_by_user_id: settleReferralData.given_by_user_id,
+                given_by: settleReferralData.given_by,
+              }}
+              onChange={next =>
+                setSettleReferralData({
+                  ...settleReferralData,
+                  given_by_user_id: next.given_by_user_id,
+                  given_by: next.given_by,
+                })
+              }
+            />
 
             <div>
               <label className="block text-sm font-medium text-muted mb-2">Notes</label>

@@ -75,7 +75,7 @@
    (plus a base package with "included" flags)            expenses = doctor fees + referral commission
  Payments have no type                                  Every payment labelled: Advance · Regular · Discharge ·
                                                           Lab · Medicine · Misc · Registration
- Numbers spread over several patient tabs               Patient Overview tab: total bill, what is passed on,
+ Numbers spread over several patient tabs               Patient Overview tab: total bill, what it costs,
                                                           expenses, net, services used (internal)   [built]
  Doctor pricing, referral commission, payouts: admin    Reception too (own entries only)
  Advances: admin/doctor only                            Reception pays advances (no salary figures shown)
@@ -158,12 +158,11 @@ Priorities are from Q-56 and Q-76 ("as proposed"), with CR-11 at P0 from the cli
 | **Registration fee** | Taken at registration. Both a charge line and a payment (Q-45 = B), counted as income. |
 | **Charges (services used)** | What the patient used: room, procedures, nursing, the registration line and so on. Recorded for internal knowledge only; **no finance figure uses them**, and there's no balance or due (req 12). |
 | **Patient income / total bill** | Every payment received for the stay, all labels, including the registration fee when it was collected. |
-| **Passed on** | Money the desk collected for the lab or pharmacy: the payments labelled Lab or Medicine. It's in the total bill, but it isn't the hospital's (Q-82). |
-| **Hospital income** | Total bill − passed on. |
-| **Patient expenses** | Doctor fees + referral commission only, always paid from the patient's money, counted as soon as they're priced (Q-81c). A lab or medicine charge marked **Included** is income, not an expense (Q-83). |
+| **Hospital income** | The total bill. Nothing is "passed on" any more: an amount the patient paid the lab directly isn't recorded at all (Q-82, reversed 2026-09-24). |
+| **Patient expenses** | Doctor fees + referral commission + **lab/medicine marked Included**, all paid from the patient's money and counted as soon as they're priced or marked (Q-81c, Q-83 reversed). |
 | **Net** | Hospital income − patient expenses: what the hospital keeps from the stay. Admin only (Q-66). |
-| **Included / Excluded (lab / medicine)** | Asked when a lab or medicine charge is saved; default **Excluded**. **Excluded — collect now:** the app adds a separate payment tagged Lab or Medicine (Ledger IN). **Excluded — collect later:** the charge reads "collect ₹x from the patient" until someone collects it. **Included:** the patient's regular payments already cover it, so nothing extra is collected. |
-| **Payment label** | Advance · Regular · Discharge · Lab · Medicine · Misc · Registration, shown as "12/26 Ramesh Kumar (Advance)" (Q-80). |
+| **Included / paid directly (lab / medicine)** | Asked when a lab or medicine charge is saved; two answers. **Included:** the patient's regular payments cover it, so nothing extra is collected — and because the lab bills the hospital, the amount becomes a hospital **expense**. **Paid directly to the lab / pharmacy:** the hospital never handled that money, so **nothing is recorded at all** — no charge, no payment, no ledger row. |
+| **Payment label** | Advance · Regular · Discharge · Misc · Registration, shown as "12/26 Ramesh Kumar (Advance)" (Q-80). Lab and Medicine are gone with the payments they described. |
 | **Stay** | One admission, with one bill (Q-54 = new bill per stay, CR-17). |
 
 ### 3.2 The permission rule (Req 1)
@@ -249,16 +248,14 @@ Charges record what the patient used; they're for internal knowledge and move no
 ```
 Charges (services used) = internal record only: no balance, no due
 Total bill      = Σ payments on the stay (all labels; registration fee only if collected)
-Passed on       = payments labelled Lab / Medicine: collected at the desk for the lab or
-                  pharmacy, so not the hospital's money                            (Q-82)
-Hospital income = Total bill − Passed on
+Hospital income = Total bill  — nothing is passed on any more                      (Q-82)
 Expenses        = doctor fees + referral commission, always paid from the patient's money,
                   counted as soon as they are priced, paid or not                  (Q-81)
-                  An Included lab / medicine amount is NOT an expense: it is income (Q-83)
-Lab / medicine charge, asked when saving, default Excluded:
-  Excluded → collect now:   a separate payment tagged Lab / Medicine, shown in the Ledger
-          → or collect later: the charge reads "collect ₹x from the patient"       (Q-87)
-  Included → nothing extra is collected; the patient's regular payments cover it
+                + lab / medicine marked Included: the patient's payments covered it and
+                  the lab bills the hospital, so the hospital owes it               (Q-83)
+Lab / medicine charge, asked when saving:
+  Included → nothing extra is collected; the amount becomes a hospital expense
+  Paid directly to the lab → NOTHING is recorded: no charge, no payment, no ledger
 Net = Hospital income − Expenses                                (admin only, Q-66)
 ```
 
@@ -510,7 +507,8 @@ Decided for the removal (all in CR-15):
 - [D] **Navigation (Q-38 = A):** Ledger, Petty cash and Employee Advance are menu items shared with reception. Finances keeps Overview · Expenses · Settlements.
 - [D] **Overview (Q-36), cash basis:**
   - **Money in** = patient payments (all labels, incl. registration and the automatic lab/medicine payments) + OPD receipts.
-  - **Money out** = general expenses + desk (petty cash) expenses + salary for settled months + doctor and referral payouts actually made. No lab/pharmacy payout is tracked: an included amount is income (Q-83), and a separately collected one is passed on at the desk (Q-82).
+  - **Money out** = general expenses + desk (petty cash) expenses + salary for settled months + doctor and referral payouts actually made (read from the settlement rows, not the ledger) + **lab and medicine marked Included** + the frozen legacy ledger expenses.
+  - One deliberate exception to the cash basis: a lab/medicine amount counts from the day the charge is dated, which may be before the lab is paid. The patient's money has already come in, so the obligation is real and belongs beside it.
   - Advances count once, inside salary. Top-ups aren't expenses.
   - **Profit** = money in − money out.
 - [D] Pending receivables removed (Q-32 = A).
@@ -591,7 +589,10 @@ Decided for the removal (all in CR-15):
 ### CR-13 — One payout path
 **From gaps G-09 … G-12** · **Priority** P2 · **Status** 🟡 built on `feature/v2-ledger-desk-finance` (phase 2), not deployed
 
-- [D] Q-37 = B: whichever screen a doctor fee or referral commission is paid from, it writes exactly one ledger OUT. Un-paying reverses it, and the payout's ledger row can't be deleted on its own.
+- [D] ~~Q-37 = B: whichever screen a doctor fee or referral commission is paid from, it writes exactly one ledger OUT.~~ **Reversed 2026-09-24:** a payout writes **no ledger entry at all**. The client: *"they take money directly from the admin and handover to the concerned person directly so there is no ledger entry required (so ledger has no out payment)."* The ledger is a receipts book — money in, plus 6 frozen legacy expense debits. The **settlement row is the record**, and Finances counts money out by reading those rows. One path is still one path: every screen goes through `lib/billing/payouts.ts`.
+- [D] Because nothing else records a payout now, each row carries **who last changed each of the three things that matter** — the amount, the status (paid / not paid), and who handed the money over. The client, on being shown a vaguer "priced by / edited by" pair: *"keep the name who changed 3 of the most important fields like amount, status and given by only"*.
+- [D] **Given by** is a real user, picked from a list and defaulting to whoever marks it paid; the free-text box beside it is for someone with no login. Both Settle dialogs in Finances recorded no given-by at all before.
+- Un-paying is now just un-paying: with no ledger row there is nothing to reopen first, so the `ENTRY_LOCKED` refusal is gone — it used to make an admin reopen a closed ledger entry before reversing their own payout.
 - [D] Q-37 (b): paying a different amount than priced updates the fee total to the amount paid.
 - [D] Reception can pay out too (Q-19).
 - [D] Doctor fees and the referral commission are always the patient's expenses, paid from the patient's money: a ledger OUT "for sure" (clarification, point 2).
@@ -646,8 +647,9 @@ Decided for the removal (all in CR-15):
 2. **Nothing is pre-decided.** Admin decides, bit by bit, how much to collect, and the desk takes it as payments. **All money comes in through the desk** (point 1, Q-60).
 3. **Total bill** = every payment received on the stay, including the registration fee when it was collected (point 1).
 4. **Expenses** = **doctor fees + referral commission**, always paid from the patient's money (point 2), counted as soon as they're priced, paid or not (Q-81c).
-   - A lab or medicine charge marked **Included** is **not** an expense. Q-83: *"Included lab or medicine amount is hospital income; we add this only for the logs and to know the patient while seeing the charges."* That money stays with the hospital, and no payout to the lab or pharmacy is tracked here.
-   - Money **collected separately** for lab or medicine is **passed on** to the lab or pharmacy (Q-82 = A). It counts in the patient's total bill, and is subtracted again to give the hospital's income.
+   - **[D] Q-83, reversed 2026-09-24.** A lab or medicine charge marked **Included** *is* an expense. The patient's regular payments covered it, and the lab or pharmacy bills the hospital, so the money is the hospital's to pay out. It's worked out from the charges, never stored: Finances → Expenses gains a **Lab & medicine** line, clickable, listing each patient behind it. The same amounts show on the patient's Overview in a block admin *and reception* can change at any time.
+   - **[D] Q-82, reversed 2026-09-24.** An amount the patient **paid the lab directly** is **not recorded at all** — no charge, no payment, no ledger row. The hospital never handled that money. The save dialog says so before the charge is discarded.
+   - Gone with the reversal: the Lab and Medicine payment labels, the `to_collect` and `collected` charge states, the whole *Collect now* flow and `collected_installment_id`.
 5. **Only lab and medicine charges ask** "included or not?" (point 3):
    - The question is asked when the charge is saved, as an alert, defaulting to **Excluded** (Q-59), with three answers (Q-87):
    - **Excluded — collect now:** the desk takes the amount there and then. The app adds a separate payment tagged **Lab** or **Medicine**, with an automatic note, and it shows in the Ledger as "12/26 Ramesh Kumar (Medicine)".
@@ -658,7 +660,7 @@ Decided for the removal (all in CR-15):
    - **Lab** = the catalogue's new **Lab** category (the "Lab Test" item moved there).
    - **Medicine** = the **Pharmacy** category ("Medication").
    - The amount is typed on the charge; no SmartPharma360 bill is used (Q-62, Q-63).
-7. **Every payment carries a label:** Advance · Regular · Discharge · Misc (the desk picks) · Lab · Medicine · Registration (set by the app). It shows as "12/26 Ramesh Kumar (Advance)" (point 5).
+7. **Every payment carries a label:** Advance · Regular · Discharge · Misc (the desk picks) · Registration (set by the app). It shows as "12/26 Ramesh Kumar (Advance)" (point 5). Lab and Medicine were labels too, until the payments they described were removed.
 
 **Worked example** (one stay)
 
@@ -668,19 +670,17 @@ Decided for the removal (all in CR-15):
 | Registration fee, collected | 100 | 100 | — | IN · "12/26 Ramesh Kumar (Registration)" |
 | Advance | 10,000 | 10,000 | — | IN · "… (Advance)" |
 | Regular payment | 15,000 | 15,000 | — | IN · "… (Regular)" |
-| Medicine ₹9,000, **Excluded** (default): collected now | 9,000 | 9,000 *(separate payment)* | — *(passed on to the pharmacy)* | IN · "… (Medicine)", note "Medicine — Medication (collected separately)" |
-| Lab ₹3,000, **Included**: covered by the payments above | 3,000 | — | — *(income, Q-83)* | — |
+| Medicine ₹9,000, **paid directly to the pharmacy** | — | — | — | — *(nothing is recorded at all, Q-82)* |
+| Lab ₹3,000, **Included**: covered by the payments above | 3,000 | — | 3,000 *(the hospital owes the lab, Q-83)* | — |
 | Discharge payment | 5,000 | 5,000 | — | IN · "… (Discharge)" |
 | Doctor fees (Dr Rao) | 6,000 | — | 6,000 | OUT when paid |
 | Referral commission | 2,000 | — | 2,000 | OUT when paid |
-| **Stay totals** | | **Total bill 39,100** | **Expenses 8,000** | |
+| **Stay totals** | | **Total bill 30,100** | **Expenses 11,000** | |
 
 ```
-Total bill       39,100
-− passed on       9,000   (the Medicine payment, collected for the pharmacy)
-= hospital income 30,100
-− expenses         8,000  (doctor fees 6,000 + commission 2,000)
-= Net             22,100  (admin only)
+Total bill       30,100   (every payment is the hospital's; nothing is passed on)
+− expenses        11,000  (doctor fees 6,000 + commission 2,000 + lab 3,000)
+= Net             19,100  (admin only)
 ```
 
 **What was built** (branch `feature/v2-patient-money`, on top of `feature/v2-registration-fee-payments`)
@@ -692,27 +692,28 @@ Total bill       39,100
 | Saving a lab/medicine charge asks: **Excluded — collect now** (default, with the mode and UPI reference) · **Excluded — collect later** · **Included in the patient's payments** | `components/patients/charge-entry-modal.tsx`, `app/api/patients/[id]/charges/route.ts`, `lib/billing/lab-medicine.ts` |
 | **Excluded:** one payment tagged Lab/Medicine for the charge, with a ledger IN and an automatic note. If the payment is refused, the charge is removed too | same |
 | Charges tab: "Excluded — collect ₹x from the patient" / "Included in payments" / "Collected · payment #N", with **Collect now**, **Included** and **Collect separately** actions — offered on charges with no status too, so older rows can be decided (Q-87) | `components/patients/charges-tab.tsx`, `…/charges/[chargeId]/lab-medicine` |
-| A collected charge keeps its amount and can't be deleted until its payment is deleted, which puts it back to "To collect". A lab/medicine payment's amount comes from its charge | charges and installments routes |
-| Forwarded quotes bring lab/medicine lines in as "To collect" | `app/api/charge-sheets/[id]/forward/route.ts` |
+| ~~A collected charge keeps its amount…~~ **gone** with the payment it protected; an Included charge is an ordinary charge that can be corrected or deleted | charges and installments routes |
+| Forwarded quotes bring lab/medicine lines in **not decided** — a quote is not an agreement to carry the cost | `app/api/charge-sheets/[id]/forward/route.ts` |
 | Charges internal: no Base Charge, Total Charges or Balance on the Billing tab (now Services used · Doctor fees · Referral commission · Total bill), with paise; the "Referral & Commission" dialog without package fields; Finances without Pending receivables; the patient PDF shows services used and payments (with labels) only (Q-35) | `components/patients/billing-settlement-tab.tsx`, `set-charges-modal.tsx`, `app/api/finances/summary/route.ts`, `app/finances/page.tsx`, `lib/pdf/patient-pdf.ts`, `lib/recalculate-billing.ts` |
 | Tests | `tests/api/billing/lab-medicine.test.ts` (23), `tests/api/billing/patient-overview.test.ts` (11), updated billing, installments, finances, recalculate and pdf tests |
 
-**Answered on 2026-09-23** (round 3, §9.1) — nothing is open:
-- **Q-82** = A: separately collected lab/medicine money is **passed on**, not the hospital's income.
-- **Q-83:** an **Included** amount is **hospital income, not an expense**, kept for the logs. No lab/pharmacy payout list is tracked (this supersedes the "as proposed" on Q-61).
+**Answered on 2026-09-23** (round 3, §9.1), and the first three **reversed on 2026-09-24**:
+- ~~**Q-82** = A: separately collected lab/medicine money is **passed on**~~ → **nothing is recorded at all** when the patient pays the lab directly.
+- ~~**Q-83:** an **Included** amount is **hospital income, not an expense**~~ → it **is** an expense: the patient's payments covered it and the lab bills the hospital.
+- ~~**Q-87:** a third answer, **Excluded — collect later**~~ → gone with the separate payment; a charge is Included or not yet decided.
 - **Q-84:** the pharmacy bill can still be attached, as a **record only** for a patient who wants the full bill; it touches no finance figure. The 2 bills already attached are left as they are.
 - **Q-85 / Q-86:** as proposed (X-Ray, CT and MRI stay the hospital's own; forwarded lines arrive "To collect").
-- **Q-87:** a third answer, **Excluded — collect later**, with the line "collect ₹x from the patient"; charges with no status ask nothing and can be decided later.
-- **Q-78, Q-79, Q-80:** as built.
+- **Q-78, Q-79, Q-80:** as built. A charge with no status still asks nothing and can be decided later — that half of Q-87 survives.
 
 **Acceptance criteria**
-- [x] AC-15.1 Only lab and medicine charges ask, when saved, and the default is Excluded.
-- [x] AC-15.2 Excluded → one payment tagged Lab/Medicine, with an automatic note, in Payments and the Ledger. Included → nothing collected.
+- [x] AC-15.1 Only lab and medicine charges ask, when saved, and there are two answers.
+- [x] AC-15.2 Included → the charge is saved and the amount is a hospital expense, on the patient's Overview and in Finances → Expenses. Paid directly → **nothing at all** is written.
 - [x] AC-15.3 No finance figure reads charges, and no balance or due appears (Billing tab, Finances, patient PDF).
 - [x] AC-15.4 Every payment carries a label, and the Ledger reads "<patient ID> <name> (<label>)".
 - [x] AC-15.5 No base charge or package flag remains; the legacy ₹20,000 becomes a charge line.
-- [x] AC-15.6 Doctor fees and the referral commission appear as the patient's expenses, with Net, in CR-16. An included lab/medicine amount is income, not an expense (Q-83).
-- [x] AC-15.8 A lab/medicine charge can be left "collect later" and collected from the Charges tab afterwards (Q-87).
+- [x] AC-15.6 Doctor fees, the referral commission **and an included lab/medicine amount** appear as the patient's expenses, with Net, in CR-16 (Q-83, reversed).
+- [x] AC-15.8 Admin *and* reception can change a lab/medicine decision at any time, from the patient's Overview block or the Charges tab.
+- [x] AC-15.9 Finances → Expenses shows a **Lab & medicine** line for the month; clicking it lists each patient ID, name, charge and amount behind it.
 - [ ] AC-15.7 Checked on production after deploy (§8.4).
 
 ### CR-16 — Patient Overview (dashboard) (Req 12)
@@ -729,12 +730,11 @@ Total bill       39,100
    - referral person
    - a stay picker (CR-17)
 2. **Money:**
-   - the **total bill**, broken down by label (Registration, Advance, Regular, Discharge, Lab, Medicine, Misc)
-   - **collected for lab / pharmacy** — passed on, so not the hospital's (Q-82)
-   - **expenses:** doctor fees by doctor and the referral commission, each marked paid or pending, counted as soon as they're priced (Q-81c)
-   - **Net** = (total bill − passed on) − expenses, **admin only** (Q-66)
+   - the **total bill**, broken down by label (Registration, Advance, Regular, Discharge, Misc)
+   - **expenses:** doctor fees by doctor, the referral commission and the lab/medicine the hospital carries, each marked paid or pending, counted as soon as they're priced or marked (Q-81c, Q-83 reversed)
+   - **Net** = total bill − expenses, **admin only** (Q-66)
    - the registration fee status (collected / not collected / waived)
-3. **Lab & medicine:** each charge with what was decided — Included in payments · To collect · Collected — and the four totals.
+3. **Lab & medicine:** each charge with what was decided — *Hospital pays* or *Not decided* — and both totals, with the actions to change either. Admin **and reception**, at any time: Finances is admin-only, so this block is reception's way in.
 4. **Services used (internal):** charges by category, with their total, marked "for reference, not billed".
 5. **Activity:** counts and last dates for visits, charges, lab orders, pharmacy bills and payments, plus the case sheet status.
 
@@ -747,11 +747,11 @@ Total bill       39,100
 |---|---|
 | `GET /api/patients/[id]/overview?billing_id=` — the stay (dates, days, referral, registration fee status), the money block, lab & medicine by status, services used by category, the doctor fee rows and the activity counts. Net is `null` for anyone but an admin | `app/api/patients/[id]/overview/route.ts` |
 | The **Overview** tab, now the first tab and the one a patient opens on; it refetches live on payments, charges and settlements | `components/patients/overview-tab.tsx`, `app/patients/[id]/page.tsx` |
-| Tests: the worked example end to end (total bill 39,100 · passed on 9,000 · income 30,100 · expenses 8,000 · **Net 22,100**), an included amount staying out of the expenses, paid vs pending fees, Net hidden from reception, lab/medicine grouping, services by category, and the activity counts | `tests/api/billing/patient-overview.test.ts` (11) |
+| Tests: the worked example end to end (total bill 30,100 · expenses 11,000 · **Net 19,100**), an included amount counted as an expense, paid vs pending fees, Net hidden from reception, lab/medicine split into carried vs undecided, services by category, and the activity counts | `tests/api/billing/patient-overview.test.ts` (11) |
 
 **Acceptance criteria**
 - [x] AC-16.1 Opening a patient lands on Overview, showing the current stay's bill, expenses and net from CR-15.
-- [x] AC-16.2 The total bill equals the Payments tab total to the paisa, and the expenses equal the doctor fee rows + the referral commission (an included lab/medicine amount is income, Q-83).
+- [x] AC-16.2 The total bill equals the Payments tab total to the paisa, and the expenses equal the doctor fee rows + the referral commission + the included lab/medicine charges (Q-83, reversed).
 - [x] AC-16.3 Reception sees everything except Net (Q-66).
 - [ ] AC-16.4 Switching stays (CR-17) switches every figure — CR-17 is dropped for now, and `?billing_id=` is already accepted.
 - [ ] AC-16.5 Checked on production after deploy (§8.4).
@@ -1000,7 +1000,7 @@ This is the target after v2, using the money model settled on 2026-09-22/23 (CR-
       │
  ④ Take payments as admin says ──────────► payment (Advance / Regular / Discharge / Misc) + ledger IN   OPEN
     ("take ₹X now"; nothing pre-decided)    "12/26 Ramesh Kumar (Advance)"                         🟡
-      │     Overview tab: total bill · passed on · expenses · Net · services used (internal)  (CR-16) 🟡
+      │     Overview tab: total bill · expenses · Net · lab & medicine · services used         (CR-16) ✅
       │
  ⑤ Desk spending ────────────────────────► petty cash OUT only                        ◄── ⑥ Top up petty cash
       │
@@ -1025,7 +1025,7 @@ This is the target after v2, using the money model settled on 2026-09-22/23 (CR-
 | ② | Doctor fee price / referral commission | Reception or Admin | fee rows / `patient_billing` | expense | — | paid (⑧) |
 | ② | Other charges | Reception | `patient_charges` | none (internal) | — | the patient is Discharged |
 | ③ | Lab / medicine charge (included / excluded) 🟡 | Reception | `patient_charges` | none (internal); included = income (Q-83) | — | collected: fixed until its payment is deleted |
-| ③ | Lab/Medicine payment (excluded, collected now) + ledger IN 🟡 | Reception | installments + ledger | total bill, then passed on (Q-82) | ⑦ | ⑦ (amount comes from the charge) |
+| ③ | ~~Lab/Medicine payment (excluded, collected now)~~ **removed 2026-09-24** — there is no separate lab/medicine payment | — | — | — | — | — |
 | ④ | Payment + ledger IN 🟡 | Reception | installments + ledger | income | ⑦ | ⑦ |
 | ⑤ | Desk expense / advance | Reception | petty cash (+ `advances`) | hospital spending | never | any time / month settled |
 | ⑥ | Top-up | Admin | petty cash | internal transfer | — | never (admin's) |
@@ -1162,22 +1162,22 @@ Six things found in use rather than in the spec. Two were outright bugs.
 |---|---|---|---|
 | Q-67 | The patient's billing PDF | "Yes": services used and the labelled payments, with no balance, doctor fees or commission | CR-15 (built) |
 | Q-78 | Payment modes for collecting lab/medicine | As proposed: all modes (UPI needs a reference), dated today | CR-15 (built) |
-| Q-79 | Changing a lab/medicine charge later | As proposed: switchable while To collect or Included; a Collected one is locked until its payment is deleted | CR-15 (built) |
-| Q-80 | Payment labels | As proposed: Advance · Regular · Discharge · Misc at the desk, Lab · Medicine · Registration set by the app; labels are on payments | CR-15 (built) |
-| Q-81 | Unpaid doctor fees and commission | As proposed: (a) paying writes a ledger OUT, (b) the Expenses tab lists the unpaid ones per patient and "money out" counts only paid ones, (c) a patient's figures count them as soon as they're priced | CR-10, CR-13, CR-16 |
-| Q-82 ★ | Whose money is a separately collected lab/medicine amount | As proposed = **A**: passed on to the lab or pharmacy, so not the hospital's income | CR-15, CR-16 (built) |
-| Q-83 ★ | Paying the lab or pharmacy | *"Included lab or medicine amount is hospital income; we add this only for the logs and to know the patient while seeing the charges."* → an **Included** amount is **income, not an expense**, and no payout list is kept. This supersedes the "as proposed" on Q-61 | CR-15, CR-16 (built) |
+| Q-79 | Changing a lab/medicine charge later | ~~switchable while To collect or Included; a Collected one is locked~~ → **reversed 2026-09-24:** admin and reception can change it at any time; nothing locks it, because nothing was collected | CR-15 (built) |
+| Q-80 | Payment labels | Advance · Regular · Discharge · Misc at the desk, Registration set by the app. ~~Lab · Medicine~~ removed 2026-09-24 with the payments they described | CR-15 (built) |
+| Q-81 | Unpaid doctor fees and commission | (a) ~~paying writes a ledger OUT~~ → **reversed 2026-09-24:** no ledger entry; money out reads the settlement rows. (b) and (c) unchanged | CR-10, CR-13, CR-16 |
+| Q-82 ★ | Whose money is a separately collected lab/medicine amount | ~~**A**: passed on to the lab or pharmacy~~ → **reversed 2026-09-24:** there is no separate collection. An amount the patient paid the lab directly is **not recorded at all** | CR-15, CR-16 (built) |
+| Q-83 ★ | Paying the lab or pharmacy | ~~an **Included** amount is **income, not an expense**~~ → **reversed 2026-09-24:** it **is** an expense. *"Mark that amount as Expense; place directly in Expenses in the finances tab, nothing in the ledger; create a different expense type; make it clickable and show patient id and name with the amount for the selected month."* Derived from the charges, never stored | CR-15, CR-16 (built) |
 | Q-84 | SmartPharma360 attach | *"If the patient needs a full bill, attach it in the charges with the medicine details, but it has nothing to do with the finance part; pharma/medicine is a different entity"* → the button stays as a **record only**; the 2 bills already attached are left as they are | CR-15 |
 | Q-85 | X-Ray, CT, MRI | As proposed: the hospital's own, staying in Diagnostics, asking nothing | CR-15 (built) |
-| Q-86 | Forwarded quotes with lab/medicine lines | As proposed: they arrive "To collect" | CR-15 (built) |
-| Q-87 | Older lab/medicine charges, and the wording at save | *"Keep it excluded by default and on saving put a line 'marked excluded from the payment, collect ₹x from the patient', or mark it no status and later you can change"* → a third answer, **Excluded — collect later**, and charges with no status ask nothing and can be decided at any time | CR-15 (built) |
+| Q-86 | Forwarded quotes with lab/medicine lines | ~~they arrive "To collect"~~ → **reversed 2026-09-24:** they arrive **not decided**; a quote is not an agreement to carry the cost | CR-15 (built) |
+| Q-87 | Older lab/medicine charges, and the wording at save | ~~a third answer, **Excluded — collect later**~~ → **reversed 2026-09-24** with the separate payment. The other half stands: a charge with no status asks nothing and can be decided at any time | CR-15 (built) |
 
 Three points were checked back with you the same day, because the answers could be read two ways:
 
 | Asked | Your answer | Effect |
 |---|---|---|
-| Is an Included lab/medicine amount income or an expense? (Q-61 vs Q-83) | **Income, not an expense** | The worked example's Net is ₹22,100, not ₹19,100. No lab/pharmacy payout is tracked |
-| Should "collect later" be a third answer at save? (Q-87) | **Yes, add it** | Three radio choices, and the charge reads "collect ₹x from the patient" |
+| Is an Included lab/medicine amount income or an expense? (Q-61 vs Q-83) | ~~Income~~ → **an expense**, on being asked again on 2026-09-24 | The worked example's Net is ₹19,100 after all, not ₹22,100 |
+| Should "collect later" be a third answer at save? (Q-87) | ~~Yes~~ → **no**, reversed 2026-09-24 | Two answers: Included, or paid directly to the lab |
 | What happens to the pharmacy bill attach button? (Q-84) | **Record only, as built** | It stays, attaches medicine details to the charges, and touches no finance figure |
 
 ### 9.2 Round 2 — answers received 2026-09-22
@@ -1300,4 +1300,4 @@ The baseline `PRD.md` §10 questions were carried into round 1: Q1 → Q-37 · Q
 | 2026-09-23 | **Phase 3 built** on `feature/v2-ledger-desk-finance`, which finishes every change request: CR-07 (an admin's expense is a general expense, with its payment mode, its author and a required reason; `expense` is no longer a ledger source, so the desk's float and the admin's log stop overlapping) and CR-10 (the Overview on a cash basis — money in = patient payments + OPD receipts, money out = general expenses + petty cash spent + salary + the payouts **actually made**; charges, pending receivables and the transaction list are gone, and what is priced but unpaid is listed as "Still to pay"). Migration `20260924000003` applied. Phase 2 merged to `main` earlier the same day | Claude |
 | 2026-09-24 | **Round 4**, from using the app rather than reading the spec. Two bugs: an idle session broke every button until a manual reload (three compounding faults — the renewed token never reached the handler, a 20-minute cookie around a 10-minute token, and `verifyAuth` renewing only when the cookie was absent), and reception was redirected away from the advance log CR-03 had built for them, because `middleware.ts` was never updated. Plus: the sidebar now names who is signed in (BUGS #2), the petty cash top-up defaults its reason and lists only receptionists, a doctor's visits and payments are a report you can download (CR-18), and **Q-88 replaces Q-20** — an unsettled fee or commission is the desk's, a settled one is the admin's, and an admin's correction amends the ledger in place instead of reopening it. BUGS #2, #7, #8, #33, #43, #46, #49, #50 and #55 cleared | Claude |
 | 2026-09-24 | Round 4, continued: reception gets **Sync Visits** (Q-94), so it can raise a fee row as well as price one. The doctor fee settled from the patient's Billing tab now **books its ledger debit** (Q-95) — it set the flags and wrote nothing, so a fee paid there was money gone with no debit behind it, while the same payout from Finances booked one. And the doctor form drops designation and specialist and requires a department (Q-96) | Claude |
-
+| 2026-09-24 | **Round 5** on `feature/v2-lab-medicine-expense`, reversing two shipped rules and building one proposal. (1) **Lab & medicine** stop involving payments: *Included* is now the hospital's **expense**, derived from the charges and never stored, shown as a clickable line in Finances → Expenses with the patients behind it and as an editable block on the patient's Overview (admin *and* reception, at any time); *paid directly to the lab* records **nothing at all** (Q-82, Q-83, Q-86, Q-87 reversed). (2) **Payouts leave the ledger** — *"they take money directly from the admin and handover to the concerned person directly so there is no ledger entry required"* — so money out reads the settlement rows instead, which also picks up the payouts the patient's Billing tab never booked (Q-37/CR-13 reversed). (3) **Given by** becomes a real user picker on both payouts, with the name against each of the amount, the status and who carried the cash. Migration `20260925000001` applied to production: 4 payout debits (₹16,000) removed, the 1 lab payment relabelled Regular and its charge marked Included, every settled fee made to agree with itself. `20260925000002` narrows the schema after deploy | Claude |

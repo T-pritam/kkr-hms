@@ -49,15 +49,20 @@ export async function GET(request: NextRequest) {
           money_in: overview.money_in.total,
         },
 
-        // What went out — and only what actually went out. Doctor fees and
-        // commissions are counted when they are paid, not when they are priced,
-        // which is what used to make profit a comparison of two different bases.
+        // What went out. Doctor fees and commissions are counted when they are
+        // paid, not when they are priced, which is what used to make profit a
+        // comparison of two different bases. Lab and medicine is the one
+        // exception, counted from the day the charge is dated — see the note in
+        // lib/finances/overview.ts.
         expenses: {
           general_expenses: overview.money_out.general_expenses,
           petty_cash: overview.money_out.petty_cash,
           salary_expenses: overview.money_out.salary,
           doctor_fees: overview.money_out.doctor_fees_paid,
           referral_commissions: overview.money_out.referral_commissions_paid,
+          // Lab and medicine the hospital carries for its patients (Q-83,
+          // revised): worked out from the Included charges, not stored.
+          lab_medicine: overview.money_out.lab_medicine,
           ledger_expenses: overview.money_out.legacy_ledger_expenses,
           total_expenses: overview.money_out.total,
         },

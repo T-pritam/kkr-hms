@@ -25,6 +25,7 @@ import {
   anExpense,
   aBilling,
   aCharge,
+  aChargeItem,
   anInstallment,
   aSalaryRecord,
   aTransaction,
@@ -438,19 +439,82 @@ describe('GET /api/finances/summary — the Overview, on a cash basis (Q-36)', (
      * paid, not when it is priced. The old summary added up every fee on every
      * bill in the month, paid or not, and called the result an expense.
      */
+    /**
+     * Money out reads the **settlement rows**, not ledger debits — a payout
+     * writes none any more (client revision, 2026-09-24). Reading the rows also
+     * fixes a disagreement that predates the change: settling from the patient's
+     * Billing tab never wrote a debit, so the ledger only ever held some of the
+     * payouts. A fee paid in April is April's money, whenever it was priced.
+     */
     it('counts doctor fees and commissions only once they are actually paid', async () => {
       await signInAs('ADMIN')
       // Priced, unpaid: it is money the hospital owes, not money it has spent.
-      aBilling({ month_year: THIS_MONTH, total_doctor_fees: 6500, referral_commission_amount: 3000 })
-      // Paid: the ledger debit each payout writes (CR-13).
-      aTransaction({ transaction_type: 'debit', source: 'doctor_settlement', amount: 2200, transaction_date: '2026-03-05' })
-      aTransaction({ transaction_type: 'debit', source: 'referral_commission', amount: 800, transaction_date: '2026-03-06' })
-      aTransaction({ transaction_type: 'debit', source: 'doctor_settlement', amount: 9999, transaction_date: '2026-02-05' })
+      aSettlement({ settled: false, total_amount: 6500 })
+      aBilling({ referral_settled: false, referral_commission_amount: 3000 })
+      // Paid this month.
+      aSettlement({ settled: true, settlement_amount: 2200, total_amount: 2200, settlement_date: '2026-03-05T06:00:00.000Z' })
+      aBilling({ referral_settled: true, referral_commission_amount: 800, referral_settlement_date: '2026-03-06T06:00:00.000Z' })
+      // Paid in another month.
+      aSettlement({ settled: true, settlement_amount: 9999, total_amount: 9999, settlement_date: '2026-02-05T06:00:00.000Z' })
 
       const { body } = await summary({ month_year: THIS_MONTH })
 
       expect(body.expenses.doctor_fees).toBe(2200)
       expect(body.expenses.referral_commissions).toBe(800)
+    })
+
+    /**
+     * Two columns hold a settled fee's amount and they disagree on live rows —
+     * one had `total_amount` 0 against `settlement_amount` 1,000. Money out and
+     * the patient's Overview must pick the same one, or the two screens report
+     * different figures for the same payout.
+     */
+    it("prefers the settled amount over the priced one, as the patient's Overview does", async () => {
+      await signInAs('ADMIN')
+      aSettlement({ settled: true, total_amount: 0, settlement_amount: 1000, settlement_date: '2026-03-05T06:00:00.000Z' })
+      aSettlement({ settled: true, total_amount: 2000, settlement_amount: null, settlement_date: '2026-03-06T06:00:00.000Z' })
+
+      expect((await summary({ month_year: THIS_MONTH })).body.expenses.doctor_fees).toBe(3000)
+    })
+
+    /**
+     * Both settlement dates are instants, not dates. A fee paid at 02:00 IST on
+     * the 1st is 20:30 UTC on the last of the month before, so a `YYYY-MM-DD`
+     * string compare would file it in the wrong month.
+     */
+    it('puts an early-morning payout in the right IST month', async () => {
+      await signInAs('ADMIN')
+      // 00:30 IST on 1 March = 19:00 UTC on 28 February.
+      aSettlement({ settled: true, total_amount: 500, settlement_amount: 500, settlement_date: '2026-02-28T19:00:00.000Z' })
+      // 23:45 IST on 31 March = 18:15 UTC on 31 March.
+      aSettlement({ settled: true, total_amount: 700, settlement_amount: 700, settlement_date: '2026-03-31T18:15:00.000Z' })
+      // 00:30 IST on 1 April = 19:00 UTC on 31 March — next month's.
+      aSettlement({ settled: true, total_amount: 900, settlement_amount: 900, settlement_date: '2026-03-31T19:00:00.000Z' })
+
+      expect((await summary({ month_year: THIS_MONTH })).body.expenses.doctor_fees).toBe(1200)
+    })
+
+    /**
+     * The other half of the reversal: an Included lab or medicine charge is the
+     * hospital's expense (Q-83, reversed), counted in the month of the charge
+     * rather than when the lab is paid — the patient's money has already come
+     * in, so the obligation belongs beside it.
+     */
+    it('counts an included lab or medicine charge as an expense', async () => {
+      await signInAs('ADMIN')
+      aChargeItem({ id: 'lab', name: 'Lab Test', category: 'lab' })
+      aChargeItem({ id: 'med', name: 'Medication', category: 'pharmacy' })
+      aChargeItem({ id: 'room', name: 'Room', category: 'room' })
+      aCharge({ charge_item_id: 'lab', amount: 300, qty: 2, charge_date: '2026-03-05', lab_medicine_status: 'included' })
+      aCharge({ charge_item_id: 'med', amount: 900, qty: 1, charge_date: '2026-03-06', lab_medicine_status: 'included' })
+      // Not decided: nobody has said the hospital carries it, so it is nobody's.
+      aCharge({ charge_item_id: 'med', amount: 5000, qty: 1, charge_date: '2026-03-07', lab_medicine_status: null })
+      // A room charge is internal and moves no money, whatever its status says.
+      aCharge({ charge_item_id: 'room', amount: 8000, qty: 1, charge_date: '2026-03-08', lab_medicine_status: 'included' })
+      // Another month's.
+      aCharge({ charge_item_id: 'lab', amount: 4000, qty: 1, charge_date: '2026-02-20', lab_medicine_status: 'included' })
+
+      expect((await summary({ month_year: THIS_MONTH })).body.expenses.lab_medicine).toBe(1500)
     })
 
     /** Desk expenses booked to the ledger before petty cash existed (CR-07). */
@@ -468,9 +532,14 @@ describe('GET /api/finances/summary — the Overview, on a cash basis (Q-36)', (
       anExpense({ amount: 4000, month_year: THIS_MONTH })
       aPettyCashEntry({ kind: 'expense', direction: 'out', amount: 500, entry_date: '2026-03-05' })
       aSalaryRecord({ month_year: THIS_MONTH, status: 'settled', calculated_salary: 20000 })
-      aTransaction({ transaction_type: 'debit', source: 'doctor_settlement', amount: 1000, transaction_date: '2026-03-05' })
+      aSettlement({ settled: true, total_amount: 1000, settlement_amount: 1000, settlement_date: '2026-03-05T06:00:00.000Z' })
+      aBilling({ referral_settled: true, referral_commission_amount: 300, referral_settlement_date: '2026-03-05T06:00:00.000Z' })
+      aChargeItem({ id: 'lab', name: 'Lab Test', category: 'lab' })
+      aCharge({ charge_item_id: 'lab', amount: 200, qty: 1, charge_date: '2026-03-05', lab_medicine_status: 'included' })
+      aTransaction({ transaction_type: 'debit', source: 'expense', amount: 100, transaction_date: '2026-03-05' })
 
-      expect((await summary({ month_year: THIS_MONTH })).body.expenses.total_expenses).toBe(25500)
+      // 4,000 + 500 + 20,000 + 1,000 + 300 + 200 + 100
+      expect((await summary({ month_year: THIS_MONTH })).body.expenses.total_expenses).toBe(26100)
     })
   })
 
@@ -580,8 +649,8 @@ describe('POST /api/finances/doctor-settlements — pay out', () => {
     expect((await paySettlements({ settlement_ids: ['s1'] })).status).toBe(400)
   })
 
-  it('marks the fees settled and books a ledger debit for each', async () => {
-    await signInAs('ADMIN')
+  it('marks the fees settled, recording how and by whom', async () => {
+    await signInAs('ADMIN', { userId: 'u-admin' })
     aDoctor({ id: 'd1', name: 'Dr. Ramesh' })
     aSettlement({ id: 's1', doctor_id: 'd1', settled: false, total_amount: 4500, patient_id: 'p1' })
 
@@ -592,32 +661,69 @@ describe('POST /api/finances/doctor-settlements — pay out', () => {
     })
 
     expect(status).toBe(200)
-    expect(db.find('doctor_visit_settlements', (r) => r.id === 's1')!.settled).toBe(true)
+    expect(db.find('doctor_visit_settlements', (r) => r.id === 's1')).toMatchObject({
+      settled: true,
+      settlement_amount: 4500,
+      payment_method: 'bank_transfer',
+      transaction_reference: 'NEFT-1',
+      settled_by: 'u-admin',
+      status_set_by: 'u-admin',
+      given_by_user_id: 'u-admin',
+    })
+    // The money comes straight from the admin, so the ledger sees none of it.
+    expect(db.count('daily_ledger_transactions')).toBe(0)
+  })
 
-    expect(db.rows('daily_ledger_transactions')[0]).toMatchObject({
-      transaction_type: 'debit',
-      source: 'doctor_settlement',
-      amount: 4500,
-      payment_mode: 'bank_transfer',
-      status: 'closed',
+  /**
+   * Both Settle dialogs in Finances used to accept no "given by" at all, so a
+   * payout made here recorded less than the same payout made from the patient.
+   */
+  it('records who handed the money over, when it was not the person paying', async () => {
+    await signInAs('ADMIN', { userId: 'u-admin' })
+    aSettlement({ id: 's1', settled: false, total_amount: 4500 })
+
+    await paySettlements({
+      settlement_ids: ['s1'],
+      payment_method: 'cash',
+      given_by_user_id: 'u-recep',
+    })
+
+    expect(db.find('doctor_visit_settlements', (r) => r.id === 's1')).toMatchObject({
+      given_by_user_id: 'u-recep',
+      given_by_set_by: 'u-admin',
+    })
+  })
+
+  it('takes a typed name for someone with no login', async () => {
+    await signInAs('ADMIN', { userId: 'u-admin' })
+    aSettlement({ id: 's1', settled: false, total_amount: 4500 })
+
+    await paySettlements({
+      settlement_ids: ['s1'],
+      payment_method: 'cash',
+      given_by: 'Ravi (ward boy)',
+    })
+
+    expect(db.find('doctor_visit_settlements', (r) => r.id === 's1')).toMatchObject({
+      given_by: 'Ravi (ward boy)',
+      given_by_user_id: null,
     })
   })
 
   it('skips settlements that were already paid', async () => {
     await signInAs('ADMIN')
-    aSettlement({ id: 's1', settled: true, total_amount: 4500 })
+    aSettlement({ id: 's1', settled: true, settlement_amount: 4500, total_amount: 4500 })
 
     await paySettlements({ settlement_ids: ['s1'], payment_method: 'cash' })
 
-    expect(db.count('daily_ledger_transactions')).toBe(0)
+    expect(db.find('doctor_visit_settlements', (r) => r.id === 's1')!.status_set_by ?? null).toBeNull()
   })
 
   /**
    * One amount cannot describe several settlements. The route used to write
-   * `settlement_amount` onto every selected row and book a debit of that size for
-   * each, so paying "5000" against three selected fees recorded 15,000 leaving the
-   * hospital and stamped each doctor as paid 5,000 regardless of what they were
-   * owed.
+   * `settlement_amount` onto every selected row, so paying "5000" against three
+   * selected fees stamped each doctor as paid 5,000 regardless of what they were
+   * owed — and booked 15,000 as leaving the hospital.
    */
   it('pays each selected fee at its own total, not one figure for all of them', async () => {
     await signInAs('ADMIN')
@@ -633,12 +739,11 @@ describe('POST /api/finances/doctor-settlements — pay out', () => {
 
     expect(status).toBe(200)
 
-    const amounts = db.rows('daily_ledger_transactions').map((t) => Number(t.amount)).sort((a, b) => a - b)
+    const amounts = db
+      .rows('doctor_visit_settlements')
+      .map((r) => Number(r.settlement_amount))
+      .sort((a, b) => a - b)
     expect(amounts).toEqual([600, 5000])
-
-    // ...and each row records what it was actually paid.
-    expect(Number(db.find('doctor_visit_settlements', (r) => r.id === 's1')!.settlement_amount)).toBe(600)
-    expect(Number(db.find('doctor_visit_settlements', (r) => r.id === 's2')!.settlement_amount)).toBe(5000)
   })
 
   it('refuses an explicit amount when more than one fee is selected', async () => {
@@ -653,7 +758,6 @@ describe('POST /api/finances/doctor-settlements — pay out', () => {
     })
 
     expect(status).toBe(400)
-    expect(db.count('daily_ledger_transactions')).toBe(0)
     expect(db.find('doctor_visit_settlements', (r) => r.id === 's1')!.settled).toBe(false)
   })
 
@@ -670,45 +774,26 @@ describe('POST /api/finances/doctor-settlements — pay out', () => {
     })
 
     expect(status).toBe(200)
-    expect(Number(db.rows('daily_ledger_transactions')[0].amount)).toBe(3000)
-  })
-
-  /**
-   * The ledger write used to happen after the settlements were marked paid, and with no
-   * closed-day check at all. Guard ordering is the whole point of this test: a refusal
-   * must leave nothing behind, or doctors end up flagged as settled with no debit against
-   * them.
-   */
-  // Closing is per row now (CR-06), so a payout is never blocked by a date. An
-  // admin's debit is born Closed, because they are the one who would close it.
-  it('books the payout debit as closed, credited to the admin', async () => {
-    await signInAs('ADMIN', { userId: 'u-admin' })
-    aSettlement({ id: 's1', settled: false, total_amount: 4500 })
-
-    const { status } = await paySettlements({ settlement_ids: ['s1'], payment_method: 'cash' })
-
-    expect(status).toBe(200)
-    expect(db.rows('daily_ledger_transactions')[0]).toMatchObject({
-      status: 'closed',
-      closed_by: 'u-admin',
+    // What was paid is what it cost (Q-37 b): both columns say 3,000.
+    expect(db.find('doctor_visit_settlements', (r) => r.id === 's1')).toMatchObject({
+      settlement_amount: 3000,
+      total_amount: 3000,
     })
   })
 
   /**
-   * BUGS.md #52, resolved. The description was built from the row returned by the
-   * update, which carries no joins, so `settlement.doctor?.name` was always
-   * undefined and every payout read "Unknown Doctor". The route now reads each
-   * settlement (with its doctor) before settling it — which it has to do anyway,
-   * to know each row's own total.
+   * Was BUGS.md #52: the route settled each row blind, from the ids alone, so it
+   * could not know what any of them was owed. It reads each settlement first
+   * now, which is also what lets each be paid at its own total.
    */
-  it('names the doctor in the ledger entry', async () => {
+  it('returns each settled fee with its doctor', async () => {
     await signInAs('ADMIN')
     aDoctor({ id: 'd1', name: 'Dr. Ramesh' })
     aSettlement({ id: 's1', doctor_id: 'd1', settled: false, total_amount: 4500 })
 
-    await paySettlements({ settlement_ids: ['s1'], payment_method: 'cash' })
+    const { body } = await paySettlements({ settlement_ids: ['s1'], payment_method: 'cash' })
 
-    expect(db.rows('daily_ledger_transactions')[0].description).toContain('Dr. Ramesh')
+    expect(body.data[0].doctor).toMatchObject({ name: 'Dr. Ramesh' })
   })
 })
 
@@ -740,8 +825,8 @@ describe('/api/finances/referral-commissions', () => {
     expect((await payCommission({ billing_ids: ['b1'] })).status).toBe(400)
   })
 
-  it('settles the commissions and books a ledger debit for each', async () => {
-    await signInAs('ADMIN')
+  it('settles the commissions, recording how and by whom', async () => {
+    await signInAs('ADMIN', { userId: 'u-admin' })
     aPatient({ id: 'p1' })
     aBilling({ id: 'b1', patient_id: 'p1', referral_commission_amount: 3000, referral_settled: false })
 
@@ -757,27 +842,30 @@ describe('/api/finances/referral-commissions', () => {
     expect(db.find('patient_billing', (r) => r.id === 'b1')).toMatchObject({
       referral_settled: true,
       referral_settlement_notes: 'March payout',
+      referral_settlement_payment_method: 'cash',
+      // Who marked it paid — there was no record of this at all before.
+      referral_status_set_by: 'u-admin',
+      referral_given_by_user_id: 'u-admin',
     })
-
-    expect(db.rows('daily_ledger_transactions')[0]).toMatchObject({
-      transaction_type: 'debit',
-      source: 'referral_commission',
-      amount: 3000,
-      payment_mode: 'cash',
-      patient_id: 'p1',
-      status: 'closed',
-    })
+    // Nothing reaches the ledger: the admin hands the money over directly.
+    expect(db.count('daily_ledger_transactions')).toBe(0)
   })
 
-  /** Same guard-ordering concern as the doctor payout: a refusal must leave nothing behind. */
-  it('books the commission debit as closed for an admin', async () => {
+  it('records someone else as having carried the commission', async () => {
     await signInAs('ADMIN', { userId: 'u-admin' })
     aBilling({ id: 'b1', referral_commission_amount: 3000, referral_settled: false })
 
-    const { status } = await payCommission({ billing_ids: ['b1'], payment_method: 'cash' })
+    const { status } = await payCommission({
+      billing_ids: ['b1'],
+      payment_method: 'cash',
+      given_by_user_id: 'u-recep',
+    })
 
     expect(status).toBe(200)
-    expect(db.rows('daily_ledger_transactions')[0]).toMatchObject({ status: 'closed', closed_by: 'u-admin' })
+    expect(db.find('patient_billing', (r) => r.id === 'b1')).toMatchObject({
+      referral_given_by_user_id: 'u-recep',
+      referral_given_by_set_by: 'u-admin',
+    })
   })
 
   it('skips commissions that were already settled', async () => {
@@ -786,6 +874,6 @@ describe('/api/finances/referral-commissions', () => {
 
     await payCommission({ billing_ids: ['b1'], payment_method: 'cash' })
 
-    expect(db.count('daily_ledger_transactions')).toBe(0)
+    expect(db.find('patient_billing', (r) => r.id === 'b1')!.referral_status_set_by ?? null).toBeNull()
   })
 })

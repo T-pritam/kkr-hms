@@ -164,34 +164,32 @@ describe('PUT /api/doctor-settlements/[settlementId] — pricing', () => {
    * to settle again — three steps, and a hole in the books for anyone who
    * forgot the third. An admin now amends it in one action.
    */
-  it('lets an admin correct a settled fee in place, and restates its ledger entry', async () => {
+  it('lets an admin correct a settled fee in place', async () => {
     await signInAs('ADMIN', { userId: 'u-admin' })
     aSettlement({ id: 's1', visit_count: 3, amount_per_visit: 0, settled: false })
 
     await settle({ settlement_id: 's1', settlement_amount: 4500, payment_method: 'cash' })
-    const debit = db.rows('daily_ledger_transactions')[0]
-    expect(Number(debit.amount)).toBe(4500)
 
     const { status, body } = await price('s1', { pricing_mode: 'per_visit', amount_per_visit: 2000 })
 
     expect(status).toBe(200)
-    expect(body.message).toBe('Settled fee updated, and its ledger entry adjusted to match.')
+    expect(body.message).toBe('Settled fee updated.')
     // Still settled — no reopen, nothing to resettle.
-    expect(row('s1')).toMatchObject({ settled: true })
+    expect(row('s1')).toMatchObject({ settled: true, amount_set_by: 'u-admin' })
     expect(Number(row('s1').total_amount)).toBe(6000)
     expect(Number(row('s1').settlement_amount)).toBe(6000)
-    // And the money that left says the same thing.
-    expect(Number(db.find('daily_ledger_transactions', (r) => r.id === debit.id)!.amount)).toBe(6000)
+    // One row is the whole record now, so there is nothing to disagree with it.
+    expect(db.count('daily_ledger_transactions')).toBe(0)
   })
 
   /**
    * Settling from the patient's Billing tab used to set the flags and write
-   * **nothing** to the ledger, while the same payout from Finances booked a
-   * debit — so a fee paid here was money gone with nothing to show for it. A
-   * doctor's fee is deducted directly in the finances (it is not petty cash),
-   * so this goes through the one payout path now, like every other route to it.
+   * nothing else, while the same payout from Finances booked a ledger debit —
+   * the same act meaning two different things depending on the button pressed.
+   * Both go through the one payout path now. Neither writes to the ledger: the
+   * money comes straight from the admin (client revision, 2026-09-24).
    */
-  it('marks a settlement settled, computing the amount from the rate, and books the debit', async () => {
+  it('marks a settlement settled, computing the amount from the rate', async () => {
     await signInAs('ADMIN', { userId: 'u-admin' })
     aDoctor({ id: 'd1', name: 'Dr Rao' })
     aSettlement({ id: 's1', doctor_id: 'd1', visit_count: 3, amount_per_visit: 0, settled: false })
@@ -204,20 +202,18 @@ describe('PUT /api/doctor-settlements/[settlementId] — pricing', () => {
     })
 
     expect(status).toBe(200)
-    expect(row('s1')).toMatchObject({ settled: true, settlement_amount: 4500 })
-    expect(row('s1').settlement_date).toBe(NOW.toISOString())
-
-    const debits = db.rows('daily_ledger_transactions')
-    expect(debits).toHaveLength(1)
-    expect(debits[0]).toMatchObject({
-      transaction_type: 'debit',
-      source: 'doctor_settlement',
-      amount: 4500,
+    expect(row('s1')).toMatchObject({
+      settled: true,
+      settlement_amount: 4500,
+      settled_by: 'u-admin',
+      status_set_by: 'u-admin',
+      given_by_user_id: 'u-admin',
     })
-    expect(row('s1').ledger_transaction_id).toBe(debits[0].id)
+    expect(row('s1').settlement_date).toBe(NOW.toISOString())
+    expect(db.count('daily_ledger_transactions')).toBe(0)
   })
 
-  it('will not settle a fee without saying how the money left', async () => {
+  it('will not settle a fee without saying how it was paid', async () => {
     await signInAs('ADMIN')
     aSettlement({ id: 's1', visit_count: 1, amount_per_visit: 500, settled: false })
 
@@ -444,72 +440,71 @@ describe('POST /api/doctor-settlements/settle — single', () => {
    * write nothing to the ledger, while the Finances screen wrote the debit. The
    * same payout was money out on one screen and invisible on the other.
    */
-  it('books exactly one ledger OUT, and links it to the settlement', async () => {
+  /**
+   * The ledger is a receipts book now: money in only. A doctor's fee is handed
+   * over by the admin directly and never reaches the desk's cash box, so
+   * booking it there described a movement that never happened — and it made the
+   * two screens disagree, because settling from the patient's Billing tab never
+   * wrote a debit at all. The settlement row is the record.
+   */
+  it('writes no ledger entry at all', async () => {
     await signInAs('ADMIN', { userId: 'u-admin' })
     aDoctor({ id: 'd1', name: 'Dr Rao' })
     aSettlement({ id: 's1', doctor_id: 'd1', visit_count: 2, settled: false })
 
     await settle({ settlement_id: 's1', settlement_amount: 3000, payment_method: 'cash' })
 
-    const debits = db.rows('daily_ledger_transactions')
-    expect(debits).toHaveLength(1)
-    expect(debits[0]).toMatchObject({
-      transaction_type: 'debit',
-      source: 'doctor_settlement',
-      amount: 3000,
-      description: 'Doctor fee — Dr Rao',
-      // An admin's payout is born Closed (Q-25 = A).
-      status: 'closed',
-    })
-    expect(row('s1').ledger_transaction_id).toBe(debits[0].id)
-  })
-
-  it("leaves a receptionist's payout Open, for the admin to close (Q-71)", async () => {
-    await signInAs('RECEPTIONIST', { userId: 'u-recep' })
-    aSettlement({ id: 's1', visit_count: 1, settled: false })
-
-    await settle({ settlement_id: 's1', settlement_amount: 800, payment_method: 'cash' })
-
-    expect(db.rows('daily_ledger_transactions')[0]).toMatchObject({
-      status: 'open',
-      created_by: 'u-recep',
-    })
-  })
-
-  it('takes the ledger OUT back when the fee is un-paid (AC-13.2)', async () => {
-    await signInAs('RECEPTIONIST', { userId: 'u-recep' })
-    aSettlement({ id: 's1', visit_count: 1, settled: false })
-
-    await settle({ settlement_id: 's1', settlement_amount: 800, payment_method: 'cash' })
-    expect(db.count('daily_ledger_transactions')).toBe(1)
-
-    // Reversing a settled fee is the admin's, even one reception paid.
-    await signInAs('ADMIN')
-    const { status } = await price('s1', { settled: false })
-
-    expect(status).toBe(200)
     expect(db.count('daily_ledger_transactions')).toBe(0)
-    expect(row('s1')).toMatchObject({ settled: false, ledger_transaction_id: null })
+    expect(row('s1')).toMatchObject({
+      settled: true,
+      settlement_amount: 3000,
+      total_amount: 3000,
+      payment_method: 'cash',
+    })
+  })
+
+  it("records reception's payout the same way as an admin's", async () => {
+    await signInAs('RECEPTIONIST', { userId: 'u-recep' })
+    aSettlement({ id: 's1', visit_count: 1, settled: false })
+
+    await settle({ settlement_id: 's1', settlement_amount: 800, payment_method: 'cash' })
+
+    // There is no Open/Closed to inherit any more — that was the ledger row's.
+    expect(db.count('daily_ledger_transactions')).toBe(0)
+    expect(row('s1')).toMatchObject({
+      settled: true,
+      settled_by: 'u-recep',
+      status_set_by: 'u-recep',
+      given_by_user_id: 'u-recep',
+    })
   })
 
   /**
-   * An admin's payout is born Closed (Q-25 = A), and a closed entry is reopened
-   * before anything touches it (Q-04 = B, AC-06.3) — including the reversal of
-   * the payout that wrote it. The two rules meet here.
+   * Un-paying is just un-paying now. It used to be refused while the payout's
+   * ledger row was closed (`ENTRY_LOCKED`) — and an admin's row was born closed,
+   * so an admin had to reopen a ledger entry before reversing their own payout.
+   * With no ledger row there is nothing to reopen.
    */
-  it('refuses to un-pay while its ledger entry is closed', async () => {
-    await signInAs('ADMIN')
+  it('reverses a payout with no reopening step (AC-13.2)', async () => {
+    await signInAs('RECEPTIONIST', { userId: 'u-recep' })
     aSettlement({ id: 's1', visit_count: 1, settled: false })
 
     await settle({ settlement_id: 's1', settlement_amount: 800, payment_method: 'cash' })
-    expect(db.rows('daily_ledger_transactions')[0].status).toBe('closed')
 
-    const { status, body } = await price('s1', { settled: false })
+    // Reversing a settled fee is the admin's, even one reception paid.
+    await signInAs('ADMIN', { userId: 'u-admin' })
+    const { status } = await price('s1', { settled: false })
 
-    expect(status).toBe(409)
-    expect(body.code).toBe('ENTRY_LOCKED')
-    expect(row('s1').settled).toBe(true)
-    expect(db.count('daily_ledger_transactions')).toBe(1)
+    expect(status).toBe(200)
+    expect(row('s1')).toMatchObject({
+      settled: false,
+      settlement_amount: null,
+      settled_by: null,
+      given_by_user_id: null,
+      // "Who un-paid this?" had no answer before: `settled_by` is wiped by the
+      // very reversal it would have had to explain.
+      status_set_by: 'u-admin',
+    })
   })
 
   /**

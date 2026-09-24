@@ -456,17 +456,6 @@ export async function updatePayment(
  * The caller has already checked ownership, closed days and verification.
  */
 export async function deletePayment(db: Db, installment: any): Promise<void> {
-  // A lab/medicine charge this payment collected goes back to "to collect". Done
-  // before the delete: the charge must never say "collected" by a payment that
-  // no longer exists (pc_collected_has_payment_check refuses it).
-  if (installment.kind === 'lab' || installment.kind === 'medicine') {
-    const { error: chargeError } = await db
-      .from('patient_charges')
-      .update({ lab_medicine_status: 'to_collect', collected_installment_id: null })
-      .eq('collected_installment_id', installment.id)
-    if (chargeError) throw chargeError
-  }
-
   const { error } = await db.from('patient_billing_installments').delete().eq('id', installment.id)
   if (error) throw error
 

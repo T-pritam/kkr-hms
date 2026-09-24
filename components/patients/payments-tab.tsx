@@ -208,8 +208,9 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
     );
   };
 
-  // A lab/medicine payment's amount comes from its charge (the API refuses a change).
-  const amountLocked = !!editingId && (formData.kind === 'lab' || formData.kind === 'medicine');
+  // Nothing locks a payment's amount any more: the lab/medicine labels are gone,
+  // and they were the only payments whose amount belonged to something else.
+  const amountLocked = false;
 
   return (
     <div className="space-y-6">

@@ -84,12 +84,6 @@ export async function POST(
       body.kind === undefined || body.kind === null || body.kind === '' || body.kind === 'payment'
         ? 'regular'
         : body.kind;
-    if (kind === 'lab' || kind === 'medicine') {
-      return NextResponse.json(
-        { error: 'Lab and medicine payments are collected from their charge on the Charges tab' },
-        { status: 400 }
-      );
-    }
     if (!isDeskPaymentKind(kind) && kind !== 'registration') {
       return NextResponse.json({ error: 'Invalid payment label' }, { status: 400 });
     }

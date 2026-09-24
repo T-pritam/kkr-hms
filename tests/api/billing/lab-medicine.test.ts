@@ -1,12 +1,18 @@
 /**
- * Lab and medicine charges — included, or collected separately (PRD v2 CR-15),
- * and payment labels.
+ * Lab and medicine charges — included, or paid straight to the lab (PRD v2
+ * CR-15), and payment labels.
  *
- * The client's words (2026-09-22): "include means included in the payments so
- * not to collect this from the patient separately; exclude means collect and at
- * the same time that thing adds as a separate [payment] of the patient, and as
- * installments show in the ledger (with proper patient details and lab or
- * medicine as tag)". Excluded is the default, asked at the time of saving.
+ * The client reversed both halves of this on 2026-09-24. It used to be three
+ * answers and a payment: *excluded* meant collecting the money at the desk as
+ * its own installment tagged Lab or Medicine, and *included* meant the hospital
+ * kept it as income. It is now two answers and no payment at all:
+ *
+ *   included → the charge is saved and the amount is the **hospital's expense**,
+ *              because the patient's payments covered it and the lab bills us
+ *   direct   → **nothing is recorded**, not even the charge: the patient paid
+ *              the lab themselves and that money never came near the hospital
+ *
+ * So the tests below are mostly about what is *not* written.
  */
 
 import { describe, it, expect } from 'vitest'
@@ -74,39 +80,56 @@ const medicine = (extra = {}) => ({
 })
 
 describe('adding a lab / medicine charge — the save-time choice', () => {
-  it('collects it separately: a Medicine payment, in the ledger with the patient', async () => {
+  it("included: the charge is saved, and it is the hospital's expense", async () => {
     await signInAs('RECEPTIONIST', { userId: 'u-recep' })
     setup()
 
-    const { status, body } = await addCharge(
-      medicine({ lab_medicine: { choice: 'collect', payment_method: 'cash' } }),
-    )
+    const { status, body } = await addCharge(medicine({ lab_medicine: { choice: 'included' } }))
 
     expect(status).toBe(201)
-    expect(body.lab_medicine).toMatchObject({ kind: 'medicine', status: 'collected', installment_number: 1 })
+    expect(body.lab_medicine).toMatchObject({ kind: 'medicine', status: 'included' })
+    expect(onlyCharge()).toMatchObject({ lab_medicine_status: 'included', amount: 9000 })
 
-    const payment = db.rows('patient_billing_installments')[0]
-    expect(payment).toMatchObject({
-      patient_billing_id: 'b1',
-      kind: 'medicine',
-      amount: 9000,
-      payment_method: 'cash',
-      payment_date: TODAY,
-      remarks: 'Medicine — Medication (collected separately)',
-      created_by: 'u-recep',
-    })
-    expect(db.rows('daily_ledger_transactions')[0]).toMatchObject({
-      transaction_type: 'credit',
-      source: 'patient',
-      amount: 9000,
-      patient_id: 'p1',
-      description: '12/26 Ramesh Kumar (Medicine)',
-    })
-    expect(onlyCharge()).toMatchObject({ lab_medicine_status: 'collected', collected_installment_id: payment.id })
-    expect(Number(db.find('patient_billing', (r) => r.id === 'b1')!.patient_paid_amount)).toBe(9000)
+    // No payment and no ledger row: the patient paid us nothing extra for it.
+    expect(db.count('patient_billing_installments')).toBe(0)
+    expect(db.count('daily_ledger_transactions')).toBe(0)
   })
 
-  it('tags a lab charge Lab', async () => {
+  it('paid directly to the lab: nothing at all is recorded', async () => {
+    await signInAs('RECEPTIONIST')
+    setup()
+
+    const { status, body } = await addCharge(medicine({ lab_medicine: { choice: 'direct' } }))
+
+    expect(status).toBe(200)
+    expect(body.recorded).toBe(false)
+    expect(body.lab_medicine).toMatchObject({ kind: 'medicine', status: 'direct' })
+
+    // The point of the reversal: no charge, no payment, no ledger entry.
+    expect(db.count('patient_charges')).toBe(0)
+    expect(db.count('patient_billing_installments')).toBe(0)
+    expect(db.count('daily_ledger_transactions')).toBe(0)
+  })
+
+  it('records nothing for a whole date range answered "paid directly"', async () => {
+    await signInAs('RECEPTIONIST')
+    setup()
+
+    const { status } = await addCharge({
+      patient_billing_id: 'b1',
+      charge_item_id: 'med',
+      amount: 500,
+      billing_mode: 'per_day',
+      from_date: '2026-03-01',
+      to_date: '2026-03-05',
+      lab_medicine: { choice: 'direct' },
+    })
+
+    expect(status).toBe(200)
+    expect(db.count('patient_charges')).toBe(0)
+  })
+
+  it('a lab charge answers the same question', async () => {
     await signInAs('RECEPTIONIST')
     setup()
 
@@ -115,114 +138,81 @@ describe('adding a lab / medicine charge — the save-time choice', () => {
       charge_item_id: 'lab',
       amount: 3000,
       charge_date: TODAY,
-      lab_medicine: { choice: 'collect', payment_method: 'upi', transaction_reference: 'UPI-5' },
+      lab_medicine: { choice: 'included' },
     })
 
-    expect(db.rows('patient_billing_installments')[0]).toMatchObject({ kind: 'lab', payment_method: 'upi' })
-    expect(db.rows('daily_ledger_transactions')[0].description).toBe('12/26 Ramesh Kumar (Lab)')
-  })
-
-  it('included: nothing is collected — the regular payments cover it', async () => {
-    await signInAs('RECEPTIONIST')
-    setup()
-
-    const { status, body } = await addCharge(medicine({ lab_medicine: { choice: 'included' } }))
-
-    expect(status).toBe(201)
-    expect(body.lab_medicine).toMatchObject({ status: 'included' })
-    expect(onlyCharge().lab_medicine_status).toBe('included')
+    expect(onlyCharge()).toMatchObject({ lab_medicine_status: 'included', charge_item_id: 'lab' })
     expect(db.count('patient_billing_installments')).toBe(0)
-    expect(db.count('daily_ledger_transactions')).toBe(0)
   })
 
-  it('with no answer, it stays excluded and waits to be collected', async () => {
+  it('with no answer it is saved, but not decided — so it is nobody\u2019s expense yet', async () => {
     await signInAs('RECEPTIONIST')
     setup()
 
     await addCharge(medicine())
 
-    expect(onlyCharge().lab_medicine_status).toBe('to_collect')
+    expect(onlyCharge()).toMatchObject({ lab_medicine_status: null, amount: 9000 })
     expect(db.count('patient_billing_installments')).toBe(0)
   })
 
-  it('refuses UPI without a reference, and saves nothing', async () => {
+  it('refuses an answer that is neither', async () => {
     await signInAs('RECEPTIONIST')
     setup()
 
-    const { status, body } = await addCharge(
-      medicine({ lab_medicine: { choice: 'collect', payment_method: 'upi' } }),
-    )
+    const { status, body } = await addCharge(medicine({ lab_medicine: { choice: 'collect' } }))
 
     expect(status).toBe(400)
-    expect(body.fieldErrors).toHaveProperty('lab_medicine.transaction_reference')
+    expect(body.fieldErrors).toHaveProperty('lab_medicine.choice')
     expect(db.count('patient_charges')).toBe(0)
-  })
-
-  it('removes the charge again if the payment is refused', async () => {
-    await signInAs('RECEPTIONIST')
-    setup()
-    db.failNext('daily_ledger_transactions')
-
-    const { status } = await addCharge(medicine({ lab_medicine: { choice: 'collect', payment_method: 'cash' } }))
-
-    expect(status).toBe(500)
-    expect(db.count('patient_charges')).toBe(0)
-    expect(db.count('patient_billing_installments')).toBe(0)
   })
 
   it('asks nothing of other charges', async () => {
     await signInAs('RECEPTIONIST')
     setup()
 
-    await addCharge({
+    const { status } = await addCharge({
       patient_billing_id: 'b1',
       charge_item_id: 'room',
       amount: 2000,
       charge_date: TODAY,
-      lab_medicine: { choice: 'collect', payment_method: 'cash' },
+      // Even answered "direct", a room charge is saved: the question is not its.
+      lab_medicine: { choice: 'direct' },
     })
 
+    expect(status).toBe(201)
     expect(onlyCharge().lab_medicine_status).toBeNull()
     expect(db.count('patient_billing_installments')).toBe(0)
   })
 })
 
 describe('deciding later — …/charges/[chargeId]/lab-medicine', () => {
-  it('collects a charge left to collect', async () => {
+  it('marks one included, and back to not decided', async () => {
     await signInAs('RECEPTIONIST')
     setup()
-    aCharge({ id: 'c1', patient_id: 'p1', patient_billing_id: 'b1', charge_item_id: 'med', charge_type: 'Medication', amount: 1200, lab_medicine_status: 'to_collect' })
-
-    const { status, body } = await decideCharge('c1', { action: 'collect', payment_method: 'cash' })
-
-    expect(status).toBe(200)
-    expect(body.status).toBe('collected')
-    expect(db.rows('patient_billing_installments')[0]).toMatchObject({ kind: 'medicine', amount: 1200 })
-    expect(charge('c1').lab_medicine_status).toBe('collected')
-  })
-
-  it('marks one included, and back to be collected', async () => {
-    await signInAs('RECEPTIONIST')
-    setup()
-    aCharge({ id: 'c1', patient_id: 'p1', patient_billing_id: 'b1', charge_item_id: 'lab', lab_medicine_status: 'to_collect' })
+    aCharge({ id: 'c1', patient_id: 'p1', patient_billing_id: 'b1', charge_item_id: 'lab' })
 
     expect((await decideCharge('c1', { action: 'include' })).status).toBe(200)
     expect(charge('c1').lab_medicine_status).toBe('included')
 
-    expect((await decideCharge('c1', { action: 'to_collect' })).status).toBe(200)
-    expect(charge('c1').lab_medicine_status).toBe('to_collect')
+    expect((await decideCharge('c1', { action: 'clear' })).status).toBe(200)
+    expect(charge('c1').lab_medicine_status).toBeNull()
   })
 
-  it('refuses to change a collected charge', async () => {
-    await signInAs('ADMIN')
+  /**
+   * The client's wording: admin and reception can change this at any time. There
+   * is no own-row rule and no discharge lock, because it is a running correction
+   * to what the hospital owes and whoever notices it is rarely whoever typed it.
+   */
+  it('lets reception change a charge an admin entered', async () => {
+    await signInAs('RECEPTIONIST', { userId: 'u-recep' })
     setup()
-    anInstallment({ id: 'i1', patient_billing_id: 'b1', kind: 'medicine' })
-    aCharge({ id: 'c1', patient_id: 'p1', patient_billing_id: 'b1', charge_item_id: 'med', lab_medicine_status: 'collected', collected_installment_id: 'i1' })
+    aCharge({
+      id: 'c1', patient_id: 'p1', patient_billing_id: 'b1', charge_item_id: 'med',
+      created_by: 'u-admin', lab_medicine_status: 'included',
+    })
 
-    const { status, body } = await decideCharge('c1', { action: 'include' })
-
-    expect(status).toBe(409)
-    expect(body.code).toBe('LAB_MEDICINE_COLLECTED')
+    expect((await decideCharge('c1', { action: 'clear' })).status).toBe(200)
+    expect(charge('c1').lab_medicine_status).toBeNull()
   })
 
   it('refuses a charge that is not lab or medicine', async () => {
@@ -230,23 +220,29 @@ describe('deciding later — …/charges/[chargeId]/lab-medicine', () => {
     setup()
     aCharge({ id: 'c1', patient_id: 'p1', patient_billing_id: 'b1', charge_item_id: 'room' })
 
+    expect((await decideCharge('c1', { action: 'include' })).status).toBe(400)
+  })
+
+  it('refuses an action it does not know', async () => {
+    await signInAs('RECEPTIONIST')
+    setup()
+    aCharge({ id: 'c1', patient_id: 'p1', patient_billing_id: 'b1', charge_item_id: 'med' })
+
     expect((await decideCharge('c1', { action: 'collect', payment_method: 'cash' })).status).toBe(400)
   })
 
   it('refuses roles that do not take payments', async () => {
     await signInAs('LAB_TECHNICIAN')
     setup()
-    aCharge({ id: 'c1', patient_id: 'p1', patient_billing_id: 'b1', charge_item_id: 'med', lab_medicine_status: 'to_collect' })
+    aCharge({ id: 'c1', patient_id: 'p1', patient_billing_id: 'b1', charge_item_id: 'med' })
 
-    expect((await decideCharge('c1', { action: 'collect', payment_method: 'cash' })).status).toBe(403)
+    expect((await decideCharge('c1', { action: 'include' })).status).toBe(403)
   })
 })
 
-describe('a collected charge and its payment stay together', () => {
-  function collected() {
+describe('an included charge is an ordinary charge', () => {
+  function included() {
     setup()
-    aTransaction({ id: 't1', source: 'patient', amount: 9000, patient_id: 'p1' })
-    anInstallment({ id: 'i1', patient_billing_id: 'b1', kind: 'medicine', amount: 9000, ledger_transaction_id: 't1' })
     aCharge({
       id: 'c1',
       patient_id: 'p1',
@@ -254,57 +250,28 @@ describe('a collected charge and its payment stay together', () => {
       charge_item_id: 'med',
       amount: 9000,
       qty: 1,
-      lab_medicine_status: 'collected',
-      collected_installment_id: 'i1',
+      lab_medicine_status: 'included',
     })
   }
 
-  it("won't change the charge's amount", async () => {
+  // Nothing was collected for it, so nothing disagrees when it changes. The
+  // guards that refused this (LAB_MEDICINE_COLLECTED, LAB_MEDICINE_AMOUNT_FIXED)
+  // existed only to protect a payment that no longer exists.
+  it('can have its amount corrected', async () => {
     await signInAs('ADMIN')
-    collected()
+    included()
 
-    const { status, body } = await patchCharge('c1', { amount: 8000 })
-
-    expect(status).toBe(409)
-    expect(body.code).toBe('LAB_MEDICINE_COLLECTED')
-    expect(charge('c1').amount).toBe(9000)
+    expect((await patchCharge('c1', { amount: 8000 })).status).toBe(200)
+    expect(Number(charge('c1').amount)).toBe(8000)
+    expect(charge('c1').lab_medicine_status).toBe('included')
   })
 
-  it('still lets the description be corrected', async () => {
+  it('can be deleted', async () => {
     await signInAs('ADMIN')
-    collected()
+    included()
 
-    expect((await patchCharge('c1', { description: 'Discharge medicines' })).status).toBe(200)
-  })
-
-  it("won't delete the charge while its payment exists", async () => {
-    await signInAs('ADMIN')
-    collected()
-
-    expect((await deleteCharge('c1')).status).toBe(409)
-    expect(db.count('patient_charges')).toBe(1)
-  })
-
-  it("won't change the payment's amount — it comes from the charge", async () => {
-    await signInAs('ADMIN')
-    collected()
-
-    const { status, body } = await patchPayment('i1', { amount: 100 })
-
-    expect(status).toBe(400)
-    expect(body.code).toBe('LAB_MEDICINE_AMOUNT_FIXED')
-  })
-
-  it('deleting the payment puts the charge back to "to collect"', async () => {
-    await signInAs('ADMIN')
-    collected()
-
-    expect((await deletePayment('i1')).status).toBe(200)
-
-    expect(charge('c1')).toMatchObject({ lab_medicine_status: 'to_collect', collected_installment_id: null })
-    expect(db.count('daily_ledger_transactions')).toBe(0)
-    // …after which the charge can be corrected or removed.
     expect((await deleteCharge('c1')).status).toBe(200)
+    expect(db.count('patient_charges')).toBe(0)
   })
 })
 
@@ -329,7 +296,8 @@ describe('payment labels', () => {
     expect(db.rows('patient_billing_installments').map((r) => r.kind)).toEqual(['regular', 'regular'])
   })
 
-  it('refuses Lab and Medicine by hand — they come from a charge', async () => {
+  // The Lab and Medicine labels are gone with the payments they described.
+  it('refuses a label it does not know, Lab and Medicine among them', async () => {
     await signInAs('RECEPTIONIST')
     setup()
 
@@ -360,7 +328,12 @@ describe('payment labels', () => {
 })
 
 describe('forwarding a quote', () => {
-  it('brings lab and medicine lines in as "to collect"', async () => {
+  /**
+   * A forwarded charge arrives *not decided*. The sheet was a quote, so nobody
+   * has yet said whether the hospital carries it — and defaulting it to
+   * Included would silently book an expense that nobody agreed to.
+   */
+  it('brings lab and medicine lines in undecided', async () => {
     await signInAs('ADMIN')
     setup()
     aChargeSheet({ id: 's1', patient_id: 'p1' })
@@ -371,7 +344,7 @@ describe('forwarding a quote', () => {
 
     expect(status).toBe(200)
     const rows = db.rows('patient_charges')
-    expect(rows.find((r) => r.charge_item_id === 'med')!.lab_medicine_status).toBe('to_collect')
+    expect(rows.find((r) => r.charge_item_id === 'med')!.lab_medicine_status).toBeNull()
     expect(rows.find((r) => r.charge_item_id === 'room')!.lab_medicine_status).toBeNull()
     expect(db.count('patient_billing_installments')).toBe(0)
   })

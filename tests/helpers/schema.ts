@@ -81,7 +81,13 @@ export const SCHEMA: Record<string, string[]> = {
     // 20260812000001 — who marked it settled, distinct from who last edited it
     'settled_by',
     // 20260924000002 — who last set the amount, and the ledger OUT that paid it
+    // (`ledger_transaction_id` is dead history: a payout writes no ledger row)
     'amount_set_by', 'ledger_transaction_id',
+    // 20260925000001 — the three stamps a payout carries now that the ledger
+    // no longer proves it: who set the amount, who changed paid/unpaid, and who
+    // handed the money over
+    'amount_set_at', 'status_set_by', 'status_set_at',
+    'given_by_user_id', 'given_by_set_by', 'given_by_set_at',
   ],
 
   doctors: [
@@ -235,7 +241,11 @@ export const SCHEMA: Record<string, string[]> = {
     // 20260922000001 — pending / collected / waived; null on older bills
     'registration_fee_status',
     // 20260924000002 — who set the commission, and the ledger OUT that paid it
+    // (`referral_ledger_transaction_id` is dead history, as above)
     'referral_commission_set_by', 'referral_ledger_transaction_id',
+    // 20260925000001 — the same three stamps on the commission
+    'referral_commission_set_at', 'referral_status_set_by', 'referral_status_set_at',
+    'referral_given_by_user_id', 'referral_given_by_set_by', 'referral_given_by_set_at',
   ],
 
   patient_billing_installments: [
@@ -268,7 +278,9 @@ export const SCHEMA: Record<string, string[]> = {
     'created_at', 'created_by', 'updated_at', 'updated_by', 'qty',
     // 20260808000002 — catalogue link, and the group a date range's rows share
     'charge_item_id', 'billing_mode', 'charge_group_id', 'source_sheet_id',
-    // 20260923000001 — lab / medicine: included, to collect, or collected (and by which payment)
+    // 20260923000001 — lab / medicine. Only `included` survives; the charge is
+    // the hospital's expense, and `collected_installment_id` is on its way out
+    // (20260925000002) now that there is no separate payment to point at.
     'lab_medicine_status', 'collected_installment_id',
   ],
 

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { GivenByPicker, emptyGivenBy, givenByPayload, type GivenBy } from '@/components/finances/given-by-picker'
 import { X, Check, Search } from 'lucide-react'
 
 interface ReferralCommission {
@@ -38,6 +39,7 @@ export function SettleReferralCommissionModal({
   const [transactionRef, setTransactionRef] = useState('')
   const [notes, setNotes] = useState('')
   const [settling, setSettling] = useState(false)
+  const [givenBy, setGivenBy] = useState<GivenBy>(emptyGivenBy())
 
   useEffect(() => {
     if (isOpen) {
@@ -82,6 +84,7 @@ export function SettleReferralCommissionModal({
           payment_method: paymentMethod,
           transaction_reference: transactionRef || undefined,
           settlement_notes: notes || undefined,
+          ...givenByPayload(givenBy),
         }),
       })
 
@@ -289,6 +292,14 @@ export function SettleReferralCommissionModal({
                   className="w-full px-4 py-2 bg-input border border-input-border rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 />
               </div>
+            </div>
+
+            {/* Neither Settle dialog recorded this at all before: a payout made
+                from Finances said less than the same payout made from the
+                patient. Now that no ledger row stands behind it, the settlement
+                row has to carry the whole story. */}
+            <div className="mb-4">
+              <GivenByPicker value={givenBy} onChange={setGivenBy} disabled={settling} />
             </div>
 
             <div className="mb-4">

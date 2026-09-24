@@ -64,13 +64,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Settlement not found' }, { status: 404 });
     }
 
-    // A payout writes a ledger OUT, and the ledger needs to know how the money
-    // left — this route used to record a payout with no mode at all (CR-13).
+    // This route used to record a payout with no mode and no payer at all: it
+    // set three flags on the row and stopped (CR-13).
     const details = validatePayout({
       payment_method: body.payment_method,
       transaction_reference: body.transaction_reference,
       // The screens have always called this `settlement_notes`.
       notes: body.settlement_notes,
+      given_by_user_id: body.given_by_user_id,
+      given_by: body.given_by,
     });
     if (!details.ok) {
       return NextResponse.json(

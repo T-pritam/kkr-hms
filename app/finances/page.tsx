@@ -30,6 +30,7 @@ import {
 import { SettleDoctorFeesModal } from '@/components/finances/settle-doctor-fees-modal'
 import { SettleReferralCommissionModal } from '@/components/finances/settle-referral-commission-modal'
 import { GeneralExpenseModal } from '@/components/finances/general-expense-modal'
+import { Modal } from '@/components/ui/modal'
 import {
   generateSalaryPDF,
   generateExpensesPDF,
@@ -62,6 +63,8 @@ interface FinancialSummary {
     ledger_expenses: number
     referral_commissions: number
     doctor_fees: number
+    /** Included lab/medicine charges — the hospital's, worked out from them. */
+    lab_medicine: number
     total_expenses: number
   }
   profit: {
@@ -98,6 +101,9 @@ export default function FinancesPage() {
   // Surfaced on the tab label so the backlog is visible without opening the panel.
   const [openDayCount, setOpenDayCount] = useState(0)
   const [doctorFeesModalOpen, setDoctorFeesModalOpen] = useState(false)
+  // The Lab & medicine line opens the charges behind it, for the month shown.
+  const [labMedicineOpen, setLabMedicineOpen] = useState(false)
+  const [labMedicineRows, setLabMedicineRows] = useState<any[] | null>(null)
   const [referralModalOpen, setReferralModalOpen] = useState(false)
   const [showAddForm, setShowAddForm] = useState(false)
   const [expenses, setExpenses] = useState<any[]>([])
@@ -144,6 +150,23 @@ export default function FinancesPage() {
       console.error('Error fetching financial summary:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  /**
+   * The charges behind the Lab & medicine line, for the month on screen. Loaded
+   * on demand rather than with the summary: it is a list of patients, which the
+   * Overview does not need until someone asks what the figure is made of.
+   */
+  const loadLabMedicine = async () => {
+    setLabMedicineRows(null)
+    try {
+      const response = await fetch(`/api/finances/lab-medicine?month=${selectedMonth}`)
+      const result = await response.json()
+      setLabMedicineRows(response.ok ? result.rows ?? [] : [])
+    } catch (error) {
+      console.error('Error fetching the lab & medicine breakdown:', error)
+      setLabMedicineRows([])
     }
   }
 
@@ -630,6 +653,27 @@ export default function FinancesPage() {
                     </button>
                   </div>
 
+                  {/* Lab & medicine the hospital carries for its patients (Q-83,
+                      revised 2026-09-24). Worked out from the Included charges,
+                      so the drill-down is the same query, not a second copy. */}
+                  <div className="flex items-center py-2 px-2 border-b border-border hover:bg-surface-hover rounded-lg transition-colors group">
+                    <button
+                      onClick={() => {
+                        setLabMedicineOpen(true)
+                        void loadLabMedicine()
+                      }}
+                      className="flex-1 flex justify-between items-center cursor-pointer"
+                    >
+                      <span className="text-muted group-hover:text-foreground flex items-center gap-1 transition-colors">
+                        Lab &amp; Medicine
+                        <ChevronRight className="h-3.5 w-3.5 opacity-0 group-hover:opacity-60 transition-opacity" />
+                      </span>
+                      <span className="font-semibold text-foreground">
+                        {formatCurrency(summary.expenses.lab_medicine)}
+                      </span>
+                    </button>
+                  </div>
+
                   <div className="flex justify-between items-center pt-2 px-2">
                     <span className="font-semibold text-foreground">Total Expenses</span>
                     <span className="font-bold text-xl text-destructive">
@@ -934,6 +978,55 @@ export default function FinancesPage() {
             fetchSummary()
           }}
         />
+      )}
+
+      {labMedicineOpen && (
+        <Modal
+          isOpen={labMedicineOpen}
+          onClose={() => setLabMedicineOpen(false)}
+          size="lg"
+          title="Lab & medicine"
+          description={`Charges the hospital carries for its patients in ${selectedMonth}. The patient's payments covered them and the lab bills us, so each is one of the hospital's expenses.`}
+        >
+          {labMedicineRows === null ? (
+            <p className="text-sm text-muted py-6 text-center">Loading…</p>
+          ) : labMedicineRows.length === 0 ? (
+            <p className="text-sm text-muted py-6 text-center">
+              Nothing marked Included this month.
+            </p>
+          ) : (
+            <div className="divide-y divide-border">
+              {labMedicineRows.map((row: any) => (
+                <div key={row.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
+                  <span className="min-w-0">
+                    {row.patient ? (
+                      <Link
+                        href={`/patients/${row.patient.id}`}
+                        className="text-info hover:underline font-medium"
+                      >
+                        {row.patient.patient_id} {row.patient.name}
+                      </Link>
+                    ) : (
+                      <span className="text-muted">Unknown patient</span>
+                    )}
+                    <span className="block text-xs text-muted">
+                      {row.description} · {row.charge_date}
+                    </span>
+                  </span>
+                  <span className="font-medium text-foreground">{formatCurrency(row.amount)}</span>
+                </div>
+              ))}
+              <div className="flex justify-between items-center pt-3 text-sm">
+                <span className="font-semibold text-foreground">
+                  Total — {labMedicineRows.length} charge{labMedicineRows.length === 1 ? '' : 's'}
+                </span>
+                <span className="font-bold text-foreground">
+                  {formatCurrency(labMedicineRows.reduce((t: number, r: any) => t + Number(r.amount || 0), 0))}
+                </span>
+              </div>
+            </div>
+          )}
+        </Modal>
       )}
 
       {referralModalOpen && (

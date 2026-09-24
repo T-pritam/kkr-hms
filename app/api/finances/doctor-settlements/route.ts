@@ -102,6 +102,8 @@ export async function POST(request: NextRequest) {
       payment_method: body.payment_method,
       transaction_reference: body.transaction_reference,
       notes: body.settlement_notes,
+      given_by_user_id: body.given_by_user_id,
+      given_by: body.given_by,
     })
     if (!details.ok) {
       return NextResponse.json(

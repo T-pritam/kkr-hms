@@ -3,7 +3,6 @@ import { createClient } from '@/lib/supabase/server';
 import { verifyAuth } from '@/lib/auth/verify';
 import { requireBilling } from '@/lib/billing/authz';
 import {
-  adjustPayoutLedgerAmount,
   canAmendPayout,
   payReferralCommission,
   unpayReferralCommission,
@@ -44,7 +43,11 @@ export async function GET(
       .select(`
         *,
         created_by_user:users!created_by(id, username),
-        updated_by_user:users!updated_by(id, username)
+        updated_by_user:users!updated_by(id, username),
+        referral_commission_set_by_user:users!referral_commission_set_by(id, username),
+        referral_status_set_by_user:users!referral_status_set_by(id, username),
+        referral_given_by_user:users!referral_given_by_user_id(id, username),
+        referral_given_by_set_by_user:users!referral_given_by_set_by(id, username)
       `)
       .eq('patient_id', patientId)
       .order('created_at', { ascending: false });
@@ -187,7 +190,7 @@ export async function PATCH(
 
     const { data: target } = await supabase
       .from('patient_billing')
-      .select('id, patient_id, referral_settled, referral_commission_set_by, referral_ledger_transaction_id, referral_commission_amount')
+      .select('id, patient_id, referral_settled, referral_commission_set_by, referral_commission_amount')
       .eq('id', body.billing_id)
       .maybeSingle();
 
@@ -248,26 +251,25 @@ export async function PATCH(
     if (body.referral_commission_amount !== undefined) {
       updateData.referral_commission_amount = body.referral_commission_amount;
       // Still recorded on every change — it is the audit trail now, not a lock.
-      if (changingAmount) updateData.referral_commission_set_by = authResult.user.id;
-    }
-
-    // An admin correcting a settled commission: the debit already written for it
-    // is restated to match, and the commission stays settled.
-    if (settled && changingAmount) {
-      const adjusted = await adjustPayoutLedgerAmount(
-        supabase,
-        target.referral_ledger_transaction_id,
-        Number(body.referral_commission_amount),
-      );
-      if (!adjusted.ok) {
-        return NextResponse.json({ error: adjusted.error, code: adjusted.code }, { status: adjusted.status });
+      // An admin correcting a settled commission amends it in place; there is no
+      // ledger debit to keep in step, because a payout no longer writes one.
+      if (changingAmount) {
+        updateData.referral_commission_set_by = authResult.user.id;
+        updateData.referral_commission_set_at = new Date().toISOString();
       }
     }
     if (body.referral_settlement_notes !== undefined) {
       updateData.referral_settlement_notes = body.referral_settlement_notes;
     }
-    if (body.referral_settlement_given_by !== undefined) {
+    // Only when this request is not also settling: a settle routes given-by
+    // through the payout path, which records the picked user beside the typed
+    // name, and a blind write here afterwards would erase it.
+    const settlingNow = body.referral_settled === true && !target.referral_settled;
+    if (body.referral_settlement_given_by !== undefined && !settlingNow) {
       updateData.referral_settlement_given_by = body.referral_settlement_given_by?.trim() || null;
+      updateData.referral_given_by_user_id = body.referral_given_by_user_id || null;
+      updateData.referral_given_by_set_by = authResult.user.id;
+      updateData.referral_given_by_set_at = new Date().toISOString();
     }
     if (body.referral_settlement_payment_method !== undefined) {
       updateData.referral_settlement_payment_method = body.referral_settlement_payment_method;
@@ -277,12 +279,15 @@ export async function PATCH(
     }
     if (body.referral_settled !== undefined && body.referral_settled !== target.referral_settled) {
       // Paying is not a flag: it moves money, so it goes through the one payout
-      // path, which writes (or removes) the ledger OUT (CR-13).
+      // path, which records who paid it, who carried it and how (CR-13). No
+      // ledger entry — the money comes straight from the admin.
       if (body.referral_settled === true) {
         const details = validatePayout({
           payment_method: body.referral_settlement_payment_method,
           transaction_reference: body.referral_settlement_transaction_ref,
           notes: body.referral_settlement_notes,
+          given_by_user_id: body.referral_given_by_user_id,
+          given_by: body.referral_settlement_given_by,
         });
         if (!details.ok) {
           return NextResponse.json(

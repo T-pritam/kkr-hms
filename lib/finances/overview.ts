@@ -1,6 +1,12 @@
 /**
  * The Finances Overview, on a cash basis (PRD v2, CR-10 and Q-36).
  *
+ * One deliberate exception, added 2026-09-24: **lab and medicine marked
+ * Included** count from the day the charge is dated, which may be before the
+ * hospital has actually settled with the lab. The patient has already paid us
+ * for it, so the obligation is real, and dating it to the charge keeps it beside
+ * the money that funded it. Everything else here is still strictly what moved.
+ *
  * The old summary mixed two bases and nobody could say which. "Income" was the
  * payments actually received, while "expenses" included doctor fees and
  * referral commissions the hospital had merely *priced* — money that had not
@@ -15,7 +21,8 @@
  *   Money out = general expenses (the admin's, CR-07)
  *             + petty cash spent (the desk's float, one line, Q-69)
  *             + salary                                  (see the note below)
- *             + doctor fees and referral commissions **actually paid**.
+ *             + doctor fees and referral commissions **actually paid**
+ *             + lab and medicine the hospital carries for its patients.
  *   Profit    = money in − money out.
  *
  * Three things are deliberately *not* here:
@@ -24,15 +31,17 @@
  *     incurred" left the Overview with the base package.
  *   * **Petty cash top-ups.** Handing the desk ₹5,000 moves money from one
  *     pocket to another; the expense is what the desk then spends (Q-10).
- *   * **Lab and pharmacy payouts.** An included amount is the hospital's income
- *     (Q-83) and a separately collected one is passed on at the desk (Q-82), so
- *     there is nothing to pay out from here.
+ *   * **Excluded lab and medicine.** The patient pays the lab directly and the
+ *     hospital never sees that money, so nothing is recorded at all (Q-82,
+ *     revised 2026-09-24). Only an *Included* amount is ours to pay.
  *
  * Salary counts once, advances included (Q-36). A settled month pays out the
  * whole `calculated_salary` — the advances already handed over, plus the
  * balance on settlement day. An unsettled month has paid out only its advances
  * so far, so that is what it contributes.
  */
+
+import { labMedicineExpense } from '@/lib/finances/lab-medicine-expense'
 
 type Db = { from: (table: string) => any }
 
@@ -42,18 +51,36 @@ const sum = (rows: any[] | null | undefined, field = 'amount') =>
 
 export interface MonthRange {
   month: string
+  /** `YYYY-MM-DD`, for the columns that are a plain date. */
   start: string
   end: string
+  /** UTC instants, for the columns that are a `timestamptz`. */
+  startsAt: string
+  endsBefore: string
 }
 
-/** The first and last day of an IST month, as `YYYY-MM-DD`. */
+/**
+ * The first and last day of an IST month, both ways.
+ *
+ * `start`/`end` compare against a `date` column. `startsAt`/`endsBefore` are the
+ * same boundaries as instants — IST midnight either end, which is 18:30 UTC on
+ * the day before — for the `timestamptz` columns the payouts use. Mixing them up
+ * moves anything paid before 05:30 IST into the previous month.
+ */
 export function monthRange(monthYear: string): MonthRange {
   const [year, month] = monthYear.split('-').map(Number)
   const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate()
+
+  // IST is UTC+5:30 the year round: midnight IST is 18:30 UTC the day before.
+  const istMidnight = (y: number, m: number) =>
+    new Date(Date.UTC(y, m - 1, 1, 0, 0, 0) - 5.5 * 60 * 60 * 1000).toISOString()
+
   return {
     month: monthYear,
     start: `${monthYear}-01`,
     end: `${monthYear}-${String(lastDay).padStart(2, '0')}`,
+    startsAt: istMidnight(year, month),
+    endsBefore: istMidnight(month === 12 ? year + 1 : year, month === 12 ? 1 : month + 1),
   }
 }
 
@@ -69,6 +96,8 @@ export interface MoneyOut {
   salary: number
   doctor_fees_paid: number
   referral_commissions_paid: number
+  /** Lab and medicine the hospital carries for its patients (Q-83, revised). */
+  lab_medicine: number
   /** Desk expenses booked to the ledger before petty cash existed (CR-07). */
   legacy_ledger_expenses: number
   total: number
@@ -115,10 +144,27 @@ export async function moneyIn(db: Db, range: MonthRange): Promise<MoneyIn> {
 }
 
 /**
- * Money out: what actually left the hospital this month.
+ * Money out: what the hospital paid out this month.
  *
- * The payouts are counted from the ledger debits they wrote, not from the fee
- * rows — a fee priced in March and paid in April is April's money (CR-13).
+ * The payouts are counted from **the rows that record them** — settled doctor
+ * fees by `settlement_date`, settled commissions by `referral_settlement_date` —
+ * not from ledger debits. A payout writes no ledger entry any more: the money
+ * comes straight from the admin and never reaches the desk's cash book (client
+ * revision, 2026-09-24, superseding Q-37 = B).
+ *
+ * Reading the rows also fixes a disagreement that predates the change. Settling
+ * from the patient's Billing tab never wrote a debit, so the ledger only ever
+ * held some of the payouts — on production, none of the settled fees and two of
+ * the four commissions. Counting from the rows picks up every one.
+ *
+ * A fee's amount is `settlement_amount ?? total_amount`, the same expression the
+ * patient's own Overview uses, so the two screens cannot disagree about what a
+ * fee cost.
+ *
+ * Both settlement dates are `timestamptz`, not dates, so the month is bounded by
+ * IST instants rather than by `YYYY-MM-DD` strings: a fee paid at 02:00 IST on
+ * the 1st is 20:30 UTC on the last of the previous month, and a string compare
+ * would file it in the wrong month.
  */
 export async function moneyOut(db: Db, range: MonthRange): Promise<MoneyOut> {
   const { data: expenses } = await db
@@ -147,21 +193,40 @@ export async function moneyOut(db: Db, range: MonthRange): Promise<MoneyOut> {
     0,
   )
 
-  const { data: payouts } = await db
+  const { data: fees } = await db
+    .from('doctor_visit_settlements')
+    .select('settlement_amount, total_amount, settlement_date, settled, deleted_at')
+    .eq('settled', true)
+    .is('deleted_at', null)
+    .gte('settlement_date', range.startsAt)
+    .lt('settlement_date', range.endsBefore)
+
+  const { data: commissions } = await db
+    .from('patient_billing')
+    .select('referral_commission_amount, referral_settlement_date, referral_settled')
+    .eq('referral_settled', true)
+    .gte('referral_settlement_date', range.startsAt)
+    .lt('referral_settlement_date', range.endsBefore)
+
+  // Only the legacy desk expenses are left in the ledger; no payout writes one.
+  const { data: ledgerExpenses } = await db
     .from('daily_ledger_transactions')
     .select('amount, source, transaction_type, transaction_date')
     .gte('transaction_date', range.start)
     .lte('transaction_date', range.end)
     .eq('transaction_type', 'debit')
-
-  const bySource = (source: string) =>
-    sum((payouts ?? []).filter((row: any) => row.source === source))
+    .eq('source', 'expense')
 
   const generalExpenses = sum(expenses)
   const pettyCashSpent = sum(pettyCash)
-  const doctorFeesPaid = bySource('doctor_settlement')
-  const commissionsPaid = bySource('referral_commission')
-  const legacyLedgerExpenses = bySource('expense')
+  const doctorFeesPaid = (fees ?? []).reduce(
+    (total: number, row: any) =>
+      total + (row.settlement_amount != null ? num(row.settlement_amount) : num(row.total_amount)),
+    0,
+  )
+  const commissionsPaid = sum(commissions ?? [], 'referral_commission_amount')
+  const labMedicine = await labMedicineExpense(db, range)
+  const legacyLedgerExpenses = sum(ledgerExpenses)
 
   return {
     general_expenses: generalExpenses,
@@ -169,6 +234,7 @@ export async function moneyOut(db: Db, range: MonthRange): Promise<MoneyOut> {
     salary,
     doctor_fees_paid: doctorFeesPaid,
     referral_commissions_paid: commissionsPaid,
+    lab_medicine: labMedicine.total,
     legacy_ledger_expenses: legacyLedgerExpenses,
     total:
       generalExpenses +
@@ -176,6 +242,7 @@ export async function moneyOut(db: Db, range: MonthRange): Promise<MoneyOut> {
       salary +
       doctorFeesPaid +
       commissionsPaid +
+      labMedicine.total +
       legacyLedgerExpenses,
   }
 }

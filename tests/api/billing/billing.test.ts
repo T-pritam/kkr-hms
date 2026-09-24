@@ -389,7 +389,13 @@ describe('PATCH /api/patients/[id]/billing — changing a commission', () => {
    * settled row as locked, and its admin branch refuses a locked row too. An
    * admin now corrects it in one action and the debit follows.
    */
-  it('lets an admin correct a settled commission, and restates its ledger entry', async () => {
+  /**
+   * Correcting a settled commission is now one write, on one row. It used to be
+   * two — the bill and the ledger debit it had written — and the pair could
+   * disagree. A payout writes no ledger entry at all (client revision,
+   * 2026-09-24), so there is nothing left to keep in step.
+   */
+  it('lets an admin correct a settled commission in place', async () => {
     await signInAs('ADMIN', { userId: 'u-admin' })
     aPatient({ id: 'p1', patient_id: '12/26', name: 'Ramesh' })
     aBilling({ id: 'b1', patient_id: 'p1', referral_commission_amount: 2000 })
@@ -400,8 +406,7 @@ describe('PATCH /api/patients/[id]/billing — changing a commission', () => {
       referral_settlement_payment_method: 'cash',
     })
 
-    const debit = db.rows('daily_ledger_transactions')[0]
-    expect(Number(debit.amount)).toBe(2000)
+    expect(db.count('daily_ledger_transactions')).toBe(0)
 
     const { status } = await update('p1', { billing_id: 'b1', referral_commission_amount: 1500 })
 
@@ -410,7 +415,9 @@ describe('PATCH /api/patients/[id]/billing — changing a commission', () => {
       referral_commission_amount: 1500,
       // Still settled: an amendment, not a reopen.
       referral_settled: true,
+      // …and the name beside the amount is whoever last changed it.
+      referral_commission_set_by: 'u-admin',
     })
-    expect(Number(db.find('daily_ledger_transactions', (r) => r.id === debit.id)!.amount)).toBe(1500)
+    expect(db.count('daily_ledger_transactions')).toBe(0)
   })
 })

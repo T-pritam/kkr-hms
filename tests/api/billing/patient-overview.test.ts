@@ -1,14 +1,15 @@
 /**
  * GET /api/patients/[id]/overview — the patient Overview tab (PRD v2 CR-16).
  *
- * The money model the client settled on 2026-09-22/23:
+ * The money model, as the client revised it on 2026-09-24:
  *   total bill      = every payment on the stay
- *   passed on       = payments labelled Lab or Medicine (collected for the lab
- *                     or pharmacy, so not the hospital's)
- *   hospital income = total bill − passed on
- *   expenses        = doctor fees + referral commission, counted once priced
+ *   hospital income = the total bill — nothing is "passed on" any more, because
+ *                     an amount the patient paid the lab directly is not
+ *                     recorded at all (Q-82, reversed)
+ *   expenses        = doctor fees + referral commission + **included lab and
+ *                     medicine**, all counted once priced, paid or not (Q-83,
+ *                     reversed: an included amount used to be income)
  *   net             = hospital income − expenses, admin only
- * An *included* lab/medicine amount is income, not an expense.
  */
 
 import { describe, it, expect } from 'vitest'
@@ -45,10 +46,8 @@ function aStay() {
   aCharge({ patient_billing_id: 'b1', patient_id: 'p1', charge_item_id: 'room', amount: 20000, qty: 1 })
   aCharge({ patient_billing_id: 'b1', patient_id: 'p1', charge_item_id: 'proc', amount: 9900, qty: 1 })
   aCharge({ patient_billing_id: 'b1', patient_id: 'p1', charge_item_id: 'reg', amount: 100, qty: 1 })
-  aCharge({
-    patient_billing_id: 'b1', patient_id: 'p1', charge_item_id: 'med', charge_type: 'Medication',
-    amount: 9000, qty: 1, lab_medicine_status: 'collected', collected_installment_id: 'i4',
-  })
+  // The ₹9,000 of medicine in the PRD's example is now paid straight to the
+  // pharmacy, so there is no charge and no payment for it at all.
   aCharge({
     patient_billing_id: 'b1', patient_id: 'p1', charge_item_id: 'lab', charge_type: 'Lab Test',
     amount: 3000, qty: 1, lab_medicine_status: 'included',
@@ -57,7 +56,6 @@ function aStay() {
   anInstallment({ id: 'i1', patient_billing_id: 'b1', installment_number: 1, amount: 100, kind: 'registration' })
   anInstallment({ id: 'i2', patient_billing_id: 'b1', installment_number: 2, amount: 10000, kind: 'advance' })
   anInstallment({ id: 'i3', patient_billing_id: 'b1', installment_number: 3, amount: 15000, kind: 'regular' })
-  anInstallment({ id: 'i4', patient_billing_id: 'b1', installment_number: 4, amount: 9000, kind: 'medicine' })
   anInstallment({ id: 'i5', patient_billing_id: 'b1', installment_number: 5, amount: 5000, kind: 'discharge', payment_date: TODAY })
 
   aDoctor({ id: 'd1', name: 'Dr Rao' })
@@ -87,18 +85,16 @@ describe('patient overview — money', () => {
     const { status, body } = await get()
 
     expect(status).toBe(200)
-    expect(body.money.total_bill).toBe(39100)
+    expect(body.money.total_bill).toBe(30100)
     expect(body.money.by_label).toMatchObject({
       registration: 100,
       advance: 10000,
       regular: 15000,
-      medicine: 9000,
       discharge: 5000,
-      lab: 0,
       misc: 0,
     })
-    // Collected at the desk for the pharmacy, so not the hospital's.
-    expect(body.money.passed_on).toBe(9000)
+    // Every payment is the hospital's now: there is nothing to pass on.
+    expect(body.money.passed_on).toBeUndefined()
     expect(body.money.hospital_income).toBe(30100)
   })
 
@@ -110,18 +106,26 @@ describe('patient overview — money', () => {
 
     expect(body.money.expenses.doctor_fees).toEqual({ total: 6000, paid: 0, pending: 6000 })
     expect(body.money.expenses.referral_commission).toEqual({ amount: 2000, paid: 0, pending: 2000 })
-    expect(body.money.expenses.total).toBe(8000)
+    // 6,000 + 2,000 + the 3,000 lab charge marked Included.
+    expect(body.money.expenses.total).toBe(11000)
   })
 
-  it('leaves an included lab/medicine amount out of the expenses — it is income', async () => {
+  /**
+   * The reversal, stated as a number. An Included lab amount used to be counted
+   * as income and left out of expenses; it is now the hospital's to pay, because
+   * the patient's payments covered it and the lab bills us. The worked example's
+   * net moves from ₹22,100 to ₹19,100.
+   */
+  it("counts an included lab/medicine amount as the hospital's expense", async () => {
     await signInAs('ADMIN')
     aStay()
 
     const { body } = await get()
 
     expect(body.lab_medicine.included).toBe(3000)
-    expect(body.money.expenses.total).toBe(8000) // not 11,000
-    expect(body.money.net).toBe(22100)
+    expect(body.money.expenses.lab_medicine).toBe(3000)
+    expect(body.money.expenses.total).toBe(11000)
+    expect(body.money.net).toBe(19100) // 30,100 − 11,000
   })
 
   it('splits a settled doctor fee into paid', async () => {
@@ -141,18 +145,21 @@ describe('patient overview — money', () => {
     const { body } = await get()
 
     expect(body.money.net).toBeNull()
-    expect(body.money.total_bill).toBe(39100)
-    expect(body.money.expenses.total).toBe(8000)
+    expect(body.money.total_bill).toBe(30100)
+    expect(body.money.expenses.total).toBe(11000)
   })
 })
 
 describe('patient overview — the rest of the stay', () => {
-  it('groups lab and medicine by what was decided', async () => {
+  // Two states left: the hospital carries it, or nobody has said yet. An
+  // undecided charge is deliberately no expense — it is shown so a person
+  // resolves it, not so the total quietly grows.
+  it('splits lab and medicine into what the hospital carries and what is undecided', async () => {
     await signInAs('ADMIN')
     aStay()
     aCharge({
       patient_billing_id: 'b1', patient_id: 'p1', charge_item_id: 'lab', charge_type: 'Lab Test',
-      amount: 500, qty: 1, lab_medicine_status: 'to_collect',
+      amount: 500, qty: 1, lab_medicine_status: null,
     })
     aCharge({
       patient_billing_id: 'b1', patient_id: 'p1', charge_item_id: 'med', charge_type: 'Medication',
@@ -161,13 +168,9 @@ describe('patient overview — the rest of the stay', () => {
 
     const { body } = await get()
 
-    expect(body.lab_medicine).toMatchObject({
-      included: 3000,
-      collected: 9000,
-      to_collect: 500,
-      undecided: 250,
-    })
-    expect(body.lab_medicine.rows).toHaveLength(4)
+    expect(body.lab_medicine).toMatchObject({ included: 3000, undecided: 750 })
+    expect(body.money.expenses.lab_medicine).toBe(3000)
+    expect(body.lab_medicine.rows).toHaveLength(3)
     expect(body.lab_medicine.rows.every((r: any) => ['lab', 'medicine'].includes(r.kind))).toBe(true)
   })
 
@@ -177,7 +180,7 @@ describe('patient overview — the rest of the stay', () => {
 
     const { body } = await get()
 
-    expect(body.services_used.total).toBe(42000)
+    expect(body.services_used.total).toBe(33000)
     expect(body.services_used.by_category.find((c: any) => c.category === 'room')).toMatchObject({ total: 20000, count: 1 })
     expect(body.services_used.by_category.find((c: any) => c.category === 'registration')).toMatchObject({ total: 100 })
   })
@@ -208,7 +211,7 @@ describe('patient overview — the rest of the stay', () => {
 
     const { body } = await get()
 
-    expect(body.activity).toMatchObject({ charges: 5, payments: 5, visits: 0, lab_orders: 0, pharmacy_bills: 0 })
+    expect(body.activity).toMatchObject({ charges: 4, payments: 4, visits: 0, lab_orders: 0, pharmacy_bills: 0 })
     expect(body.activity.last_payment_date).toBe(TODAY)
   })
 })

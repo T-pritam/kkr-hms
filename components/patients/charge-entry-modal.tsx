@@ -15,24 +15,25 @@ import { MAX_CHARGE_DAYS, MAX_HOURS_PER_DAY, isRangeBillingMode } from '@/lib/bi
 import { istToday } from '@/lib/dates/ist'
 
 /**
- * Lab and medicine charges ask one more thing when saved (PRD v2 CR-15): is it
- * collected from the patient separately now — the default, "excluded" — or
- * already included in their regular payments? Collected separately, it becomes
- * its own payment tagged Lab or Medicine and shows in the Ledger.
+ * Lab and medicine charges ask one more thing when saved (PRD v2 CR-15, revised
+ * 2026-09-24): is the amount already included in the patient's payments, or did
+ * the patient pay the lab directly?
+ *
+ * Included, the hospital owes the lab, so the charge is saved and the amount
+ * becomes an expense in Finances. Paid directly, the hospital never touched that
+ * money, so **nothing is saved at all** — which the dialog says in as many
+ * words, because a charge that disappears on Save is otherwise baffling.
+ *
+ * The old middle answer, "excluded — collect later", and the separate Lab and
+ * Medicine payments it led to are gone.
  */
 const LAB_MEDICINE_LABEL: Record<string, string> = { lab: 'Lab', pharmacy: 'Medicine' }
 
 interface LabMedicineAnswer {
-  choice: 'collect' | 'later' | 'included'
-  payment_method: string
-  transaction_reference: string
+  choice: 'included' | 'direct'
 }
 
-const DEFAULT_ANSWER: LabMedicineAnswer = {
-  choice: 'collect',
-  payment_method: 'cash',
-  transaction_reference: '',
-}
+const DEFAULT_ANSWER: LabMedicineAnswer = { choice: 'included' }
 
 /**
  * Placing a charge on a patient, and correcting one.
@@ -313,16 +314,7 @@ export function ChargeEntryModal({
           payload.charge_date = form.charge_date
         }
 
-        if (labMedicine && labAnswer) {
-          payload.lab_medicine =
-            labAnswer.choice === 'collect'
-              ? {
-                  choice: 'collect',
-                  payment_method: labAnswer.payment_method,
-                  transaction_reference: labAnswer.transaction_reference || null,
-                }
-              : { choice: labAnswer.choice }
-        }
+        if (labMedicine && labAnswer) payload.lab_medicine = { choice: labAnswer.choice }
       } else {
         payload.charge_date = form.charge_date
         if (!form.charge_item_id) payload.charge_type = form.charge_type
@@ -360,12 +352,8 @@ export function ChargeEntryModal({
     : Boolean(form.charge_date)
   // A day holds at most 24 hours, and billing zero of them bills nothing at all.
   const hoursReady = !isHourly || (hours >= 1 && hours <= MAX_HOURS_PER_DAY)
-  // Collecting by UPI needs its reference, as every UPI payment does.
-  const labAnswerReady =
-    !labAnswer ||
-    labAnswer.choice === 'included' ||
-    labAnswer.payment_method !== 'upi' ||
-    labAnswer.transaction_reference.trim() !== ''
+  // Both answers are always complete: there is no payment to fill in any more.
+  const labAnswerReady = true
   const canSave =
     named &&
     Number(form.amount) > 0 &&
@@ -377,9 +365,7 @@ export function ChargeEntryModal({
   const submitLabel = () => {
     if (mode === 'edit') return 'Save changes'
     if (labMedicine && labAnswer) {
-      if (labAnswer.choice === 'collect') return `Save & collect ${money(preview.total)}`
-      if (labAnswer.choice === 'later') return 'Save (collect later)'
-      return 'Save (included)'
+      return labAnswer.choice === 'included' ? 'Save (included)' : 'Record nothing'
     }
     if (isRange && days > 1) return `Add ${days} lines`
     return 'Add charge'
@@ -414,74 +400,38 @@ export function ChargeEntryModal({
         {labMedicine && labAnswer && (
           <div className="rounded-lg border border-warning/40 bg-warning-subtle p-4 space-y-3" role="alert">
             <p className="text-sm font-medium text-foreground">
-              {labMedicine} {money(preview.total)} — how is it paid?
+              {labMedicine} {money(preview.total)} — who paid for it?
             </p>
             <label className="flex items-start gap-2 text-sm text-foreground">
               <input
                 type="radio"
                 name="lab-medicine-choice"
-                checked={labAnswer.choice === 'collect'}
-                onChange={() => setLabAnswer({ ...labAnswer, choice: 'collect' })}
-                className="mt-1"
-              />
-              <span>
-                <strong>Collect separately now</strong> (excluded)
-                <span className="block text-xs text-muted">
-                  Adds a payment tagged {labMedicine} for this patient, shown in the Ledger.
-                </span>
-              </span>
-            </label>
-            {labAnswer.choice === 'collect' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pl-6">
-                <select
-                  aria-label="Payment mode"
-                  value={labAnswer.payment_method}
-                  onChange={e => setLabAnswer({ ...labAnswer, payment_method: e.target.value })}
-                  className="w-full bg-surface-inset text-foreground rounded-lg px-3 py-2 border border-border"
-                >
-                  {['cash', 'upi', 'card', 'bank_transfer', 'cheque'].map(m => (
-                    <option key={m} value={m}>
-                      {m.replace('_', ' ').toUpperCase()}
-                    </option>
-                  ))}
-                </select>
-                {labAnswer.payment_method === 'upi' && (
-                  <Input
-                    aria-label="UPI reference"
-                    placeholder="UPI reference *"
-                    value={labAnswer.transaction_reference}
-                    onChange={e => setLabAnswer({ ...labAnswer, transaction_reference: e.target.value })}
-                  />
-                )}
-              </div>
-            )}
-            <label className="flex items-start gap-2 text-sm text-foreground">
-              <input
-                type="radio"
-                name="lab-medicine-choice"
-                checked={labAnswer.choice === 'later'}
-                onChange={() => setLabAnswer({ ...labAnswer, choice: 'later' })}
-                className="mt-1"
-              />
-              <span>
-                <strong>Excluded — collect later</strong>
-                <span className="block text-xs text-muted">
-                  The charge reads &quot;collect {money(preview.total)} from the patient&quot; until someone
-                  presses Collect now on the Charges tab.
-                </span>
-              </span>
-            </label>
-            <label className="flex items-start gap-2 text-sm text-foreground">
-              <input
-                type="radio"
-                name="lab-medicine-choice"
                 checked={labAnswer.choice === 'included'}
-                onChange={() => setLabAnswer({ ...labAnswer, choice: 'included' })}
+                onChange={() => setLabAnswer({ choice: 'included' })}
                 className="mt-1"
               />
               <span>
                 <strong>Included in the patient&apos;s payments</strong>
-                <span className="block text-xs text-muted">Nothing is collected separately.</span>
+                <span className="block text-xs text-muted">
+                  Nothing extra is collected. The hospital owes the {labMedicine.toLowerCase()}{' '}
+                  {money(preview.total)}, so it is added to Expenses in Finances.
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 text-sm text-foreground">
+              <input
+                type="radio"
+                name="lab-medicine-choice"
+                checked={labAnswer.choice === 'direct'}
+                onChange={() => setLabAnswer({ choice: 'direct' })}
+                className="mt-1"
+              />
+              <span>
+                <strong>Paid directly to the {labMedicine.toLowerCase()}</strong>
+                <span className="block text-xs text-muted">
+                  The hospital never handled this money, so <strong>nothing is saved</strong> — no
+                  charge, no payment. Press Record nothing and the charge is discarded.
+                </span>
               </span>
             </label>
           </div>
