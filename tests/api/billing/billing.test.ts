@@ -153,7 +153,7 @@ describe('POST /api/patients/[id]/billing', () => {
     expect(db.find('patients', (r) => r.id === 'p1')!.referred_by).toBe('r1')
   })
 
-  it('returns 500 when the insert fails', async () => {
+  it('returns 500 when the database fails', async () => {
     await signInAs('RECEPTIONIST')
     aPatient({ id: 'p1' })
     db.failNext('patient_billing')
@@ -162,18 +162,19 @@ describe('POST /api/patients/[id]/billing', () => {
   })
 
   /**
-   * Known defect — see BUGS.md #22. Nothing stops a second billing record being opened
-   * for the same patient. The UI guards with an in-flight flag, which does not survive a
-   * double submit from two tabs. Totals and payments then split across two records.
+   * Was BUGS.md #22: nothing stopped a second bill being opened for the same
+   * patient, and every screen reads only one. Refused with 409 now, and a
+   * unique index (20260925000005) closes the race the check alone cannot.
    */
-  it.fails('should refuse to open a second billing record for the same patient', async () => {
+  it('refuses to open a second bill for the same patient', async () => {
     await signInAs('RECEPTIONIST')
     aPatient({ id: 'p1' })
     aBilling({ id: 'b1', patient_id: 'p1' })
 
-    const { status } = await create('p1', {})
+    const { status, body } = await create('p1', {})
 
-    expect(status).toBeGreaterThanOrEqual(400)
+    expect(status).toBe(409)
+    expect(body).toMatchObject({ code: 'BILL_EXISTS', billing_id: 'b1' })
     expect(db.count('patient_billing')).toBe(1)
   })
 })

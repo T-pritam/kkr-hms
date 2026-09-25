@@ -195,6 +195,34 @@ export async function PATCH(
   }
 }
 
+/** Every table that holds a patient's records, as the delete dialog names them. */
+const PATIENT_REFERENCES = [
+  // Payments hang off the bill, so the bill's count covers them.
+  { table: 'patient_billing', label: 'bill(s)' },
+  { table: 'patient_charges', label: 'charge(s)' },
+  { table: 'patient_consultations', label: 'doctor visit(s)' },
+  { table: 'doctor_visit_settlements', label: 'doctor fee(s)' },
+  { table: 'patient_case_sheets', label: 'case sheet(s)' },
+  { table: 'lab_orders', label: 'lab order(s)' },
+  { table: 'pharmacy_bills', label: 'pharmacy bill(s)' },
+  { table: 'daily_ledger_transactions', label: 'ledger entr(ies)' },
+  { table: 'charge_sheets', label: 'charge sheet(s)' },
+]
+
+async function countPatientReferences(supabase: any, patientId: string) {
+  const found: { label: string; count: number }[] = []
+  for (const ref of PATIENT_REFERENCES) {
+    const { count, error } = await supabase
+      .from(ref.table)
+      .select('id', { count: 'exact', head: true })
+      .eq('patient_id', patientId)
+    // A failed count must not read as "nothing here" and let the delete through.
+    if (error) throw error
+    if ((count ?? 0) > 0) found.push({ label: ref.label, count: count as number })
+  }
+  return found
+}
+
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -209,6 +237,39 @@ export async function DELETE(
     if (auth.response) return auth.response
 
     const supabase = await createClient()
+
+    const { data: patient } = await supabase
+      .from('patients')
+      .select('id, patient_id, name')
+      .eq('id', id)
+      .maybeSingle()
+    if (!patient) {
+      return NextResponse.json({ error: 'Patient not found' }, { status: 404 })
+    }
+
+    /**
+     * Nothing may still point at them (BUGS #9). The database's own rules
+     * differ by table: the bill refuses the delete (a bare 500), but case
+     * sheets, charges, visits, fees and pharmacy bills would be deleted along
+     * with the patient, and lab orders and ledger rows left pointing at
+     * nobody. So the route counts first and refuses with the counts — the
+     * doctor registry's rule. A patient registered in error is marked
+     * Cancelled instead, which keeps every record intact.
+     */
+    const references = await countPatientReferences(supabase, id)
+    if (references.length > 0) {
+      return NextResponse.json(
+        {
+          error:
+            `${patient.patient_id} ${patient.name} still has ` +
+            references.map(r => `${r.count} ${r.label}`).join(', ') +
+            '. Mark the patient Cancelled instead — their records stay intact.',
+          code: 'PATIENT_IN_USE',
+          references,
+        },
+        { status: 409 }
+      )
+    }
 
     const { error } = await supabase.from('patients').delete().eq('id', id)
 

@@ -291,11 +291,8 @@ describe('POST /api/employees/import — CSV', () => {
     expect(body.imported).toBe(2)
   })
 
-  /**
-   * Known defect — see BUGS.md #54. The parser splits on commas with no quote handling, so
-   * a quoted name containing a comma is torn in half and its salary column shifts.
-   */
-  it.fails('should handle a quoted field containing a comma', async () => {
+  /** Was BUGS.md #54: a quoted name containing a comma was torn in half. */
+    it('keeps a quoted field containing a comma whole', async () => {
     await signInAs('ADMIN')
 
     await csvUpload(`${header}\n"Kumar, Ramesh",27000,Nurse`)
@@ -311,14 +308,64 @@ describe('POST /api/employees/import — CSV', () => {
     expect(db.rows('employees')[0].designation).toBe('Nurse')
   })
 
-  /** Known defect — see BUGS.md #54. Re-uploading the same file silently duplicates everyone. */
-  it.fails('should not create a duplicate for an employee who already exists', async () => {
+  /** Was BUGS.md #54: re-uploading the same file silently duplicated everyone. */
+  it('does not create a duplicate for an employee who already exists', async () => {
     await signInAs('ADMIN')
     anEmployee({ name: 'Ramesh' })
 
     await csvUpload(`${header}\nRamesh,27000,Nurse`)
 
     expect(db.count('employees')).toBe(1)
+  })
+
+  it('says which rows it skipped, and imports the rest', async () => {
+    await signInAs('ADMIN')
+    anEmployee({ name: 'Ramesh', designation: 'Nurse' })
+
+    const { status, body } = await csvUpload(`${header}\n ramesh ,27000,nurse\nSita,25000,Nurse`)
+
+    expect(status).toBe(200)
+    expect(body.imported).toBe(1)
+    expect(body.skipped).toEqual(['Row 2: ramesh (nurse) is already on the register'])
+    expect(db.rows('employees').map((e) => e.name).sort()).toEqual(['Ramesh', 'Sita'])
+  })
+
+  // Two staff can share a name; the file says nothing else about them but the role.
+  it('imports a namesake in a different role', async () => {
+    await signInAs('ADMIN')
+    anEmployee({ name: 'Ramesh', designation: 'Nurse' })
+
+    await csvUpload(`${header}\nRamesh,30000,Ward Boy`)
+
+    expect(db.count('employees')).toBe(2)
+  })
+
+  it('does not import the same person twice from one file', async () => {
+    await signInAs('ADMIN')
+
+    const { body } = await csvUpload(`${header}\nSita,25000,Nurse\nSita,25000,Nurse`)
+
+    expect(body.imported).toBe(1)
+    expect(db.count('employees')).toBe(1)
+  })
+
+  it('refuses a file in which everyone is already on the register', async () => {
+    await signInAs('ADMIN')
+    anEmployee({ name: 'Ramesh', designation: 'Nurse' })
+
+    expect((await csvUpload(`${header}\nRamesh,27000,Nurse`)).status).toBe(400)
+  })
+
+  // The bulk insert used to write no code at all — the column has no default.
+  it('gives every imported employee a code, and records who imported them', async () => {
+    await signInAs('ADMIN', { userId: 'u-admin' })
+
+    await csvUpload(`${header}\nSita,25000,Nurse\nGita,26000,Nurse`)
+
+    const codes = db.rows('employees').map((e) => e.employee_code)
+    expect(codes.every((c) => /^EMP\/\d{2}\/\d{3}$/.test(String(c)))).toBe(true)
+    expect(new Set(codes).size).toBe(2)
+    expect(db.rows('employees')[0]).toMatchObject({ created_by: 'u-admin' })
   })
 })
 

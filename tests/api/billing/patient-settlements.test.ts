@@ -56,7 +56,7 @@ describe('patient settlements — authentication and roles', () => {
    */
   it.each(['DOCTOR', 'NURSE', 'LAB_TECHNICIAN'] as const)('refuses %s on settle', async (role) => {
     await signInAs(role)
-    aSettlement({ id: 's1', settled: false })
+    aSettlement({ id: 's1', patient_id: 'p1', settled: false })
 
     const settled = await settle('p1', { settlement_id: 's1', settlement_amount: 1000, payment_method: 'cash' })
     expect(settled.status).toBe(403)
@@ -66,7 +66,7 @@ describe('patient settlements — authentication and roles', () => {
 
   it('lets reception pay a fee out (Q-19)', async () => {
     await signInAs('RECEPTIONIST', { userId: 'u-recep' })
-    aSettlement({ id: 's1', settled: false })
+    aSettlement({ id: 's1', patient_id: 'p1', settled: false })
 
     const settled = await settle('p1', { settlement_id: 's1', settlement_amount: 1000, payment_method: 'cash' })
 
@@ -147,7 +147,7 @@ describe('GET /api/patients/[id]/settlements', () => {
 
   it('does not return another billing cycle’s settlements', async () => {
     await signInAs('ADMIN')
-    aSettlement({ id: 's1', patient_billing_id: 'b1' })
+    aSettlement({ id: 's1', patient_id: 'p1', patient_billing_id: 'b1' })
     aSettlement({ id: 's2', patient_billing_id: 'b2' })
 
     expect((await list('p1', { billing_id: 'b1' })).body.map((s: any) => s.id)).toEqual(['s1'])
@@ -160,7 +160,7 @@ describe('GET /api/patients/[id]/settlements', () => {
    */
   it('excludes soft-deleted settlements', async () => {
     await signInAs('ADMIN')
-    aSettlement({ id: 's1', patient_billing_id: 'b1' })
+    aSettlement({ id: 's1', patient_id: 'p1', patient_billing_id: 'b1' })
     aSettlement({ id: 's2', patient_billing_id: 'b1', deleted_at: '2026-03-01T00:00:00.000Z' })
 
     expect((await list('p1', { billing_id: 'b1' })).body.map((s: any) => s.id)).toEqual(['s1'])
@@ -229,7 +229,7 @@ describe('POST /api/patients/[id]/settlements', () => {
 describe('PATCH /api/patients/[id]/settlements — mark settled', () => {
   it('marks the settlement paid with the supplied details', async () => {
     await signInAs('ADMIN', { userId: 'u-admin' })
-    aSettlement({ id: 's1', settled: false })
+    aSettlement({ id: 's1', patient_id: 'p1', settled: false })
 
     const { status } = await settle('p1', {
       settlement_id: 's1',
@@ -260,7 +260,7 @@ describe('PATCH /api/patients/[id]/settlements — mark settled', () => {
 
   it('records someone else as having handed the money over', async () => {
     await signInAs('ADMIN', { userId: 'u-admin' })
-    aSettlement({ id: 's1', settled: false })
+    aSettlement({ id: 's1', patient_id: 'p1', settled: false })
 
     await settle('p1', {
       settlement_id: 's1',
@@ -278,7 +278,7 @@ describe('PATCH /api/patients/[id]/settlements — mark settled', () => {
 
   it('dates the payout to now', async () => {
     await signInAs('ADMIN')
-    aSettlement({ id: 's1', settled: false })
+    aSettlement({ id: 's1', patient_id: 'p1', settled: false })
 
     await settle('p1', { settlement_id: 's1', settlement_amount: 1000, payment_method: 'cash' })
 
@@ -287,7 +287,7 @@ describe('PATCH /api/patients/[id]/settlements — mark settled', () => {
 
   it('refuses a payout with no payment mode', async () => {
     await signInAs('ADMIN')
-    aSettlement({ id: 's1', settled: false })
+    aSettlement({ id: 's1', patient_id: 'p1', settled: false })
 
     const { status } = await settle('p1', { settlement_id: 's1', settlement_amount: 1000 })
 
@@ -303,7 +303,7 @@ describe('PATCH /api/patients/[id]/settlements — mark settled', () => {
 
   it('refuses to pay a fee that is already paid', async () => {
     await signInAs('ADMIN')
-    aSettlement({ id: 's1', settled: true })
+    aSettlement({ id: 's1', patient_id: 'p1', settled: true })
 
     const { status, body } = await settle('p1', {
       settlement_id: 's1',
@@ -315,13 +315,14 @@ describe('PATCH /api/patients/[id]/settlements — mark settled', () => {
     expect(body.code).toBe('ALREADY_PAID')
   })
 
-  /** Known defect — see BUGS.md #27. Nothing checks that the settlement belongs to this patient. */
-  it.fails('should refuse to settle another patient\u2019s settlement', async () => {
+  /** Was BUGS.md #27: any fee's id was payable from any patient's address. */
+  it('refuses to settle another patient\u2019s fee', async () => {
     await signInAs('ADMIN')
     aSettlement({ id: 's-other', patient_id: 'p2', settled: false })
 
-    await settle('p1', { settlement_id: 's-other', settlement_amount: 1000, payment_method: 'cash' })
+    const { status } = await settle('p1', { settlement_id: 's-other', settlement_amount: 1000, payment_method: 'cash' })
 
+    expect(status).toBe(404)
     expect(settlementRow('s-other').settled).toBe(false)
   })
 
@@ -329,7 +330,7 @@ describe('PATCH /api/patients/[id]/settlements — mark settled', () => {
   // all. `payDoctorFee` refuses an amount of zero, so this now holds.
   it('refuses to pay a fee that is priced at nothing', async () => {
     await signInAs('ADMIN')
-    aSettlement({ id: 's1', settled: false, total_amount: 0 })
+    aSettlement({ id: 's1', patient_id: 'p1', settled: false, total_amount: 0 })
 
     const { status } = await settle('p1', { settlement_id: 's1', payment_method: 'cash' })
     expect(status).toBe(400)

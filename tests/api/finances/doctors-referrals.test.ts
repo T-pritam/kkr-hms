@@ -279,10 +279,20 @@ describe('GET /api/doctors/all', () => {
   it('adds one named doctor back regardless of status', async () => {
     await signInAs('NURSE')
     aDoctor({ id: 'd1', name: 'Dr. Active' })
+    aDoctor({ id: '7c9e6679-7425-40de-944b-e07fc1f90ae7', name: 'Dr. Retired', is_active: false })
+
+    const { body } = await all({ includeId: '7c9e6679-7425-40de-944b-e07fc1f90ae7' })
+    expect(body.map((d: any) => d.id).sort()).toEqual(['7c9e6679-7425-40de-944b-e07fc1f90ae7', 'd1'])
+  })
+
+  // The id is spliced into an or() filter; anything else would add its own term
+  // — `x,is_active.eq.false` listed every retired doctor.
+  it('refuses an includeId that is not an id', async () => {
+    await signInAs('NURSE')
     aDoctor({ id: 'd2', name: 'Dr. Retired', is_active: false })
 
-    const { body } = await all({ includeId: 'd2' })
-    expect(body.map((d: any) => d.id).sort()).toEqual(['d1', 'd2'])
+    const { status } = await all({ includeId: 'x,is_active.eq.false' })
+    expect(status).toBe(400)
   })
 
   it('carries the fields the pickers actually read', async () => {

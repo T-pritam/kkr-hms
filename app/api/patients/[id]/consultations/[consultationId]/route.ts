@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { canModify, isAdmin } from '@/lib/authz/ownership';
 import { requireBilling } from '@/lib/billing/authz';
+import { istFields } from '@/lib/consultations/ist';
 
 export async function PATCH(
   request: NextRequest,
@@ -93,6 +94,25 @@ export async function PATCH(
     // Convert consultation_date to UTC if provided
     if (body.consultation_date !== undefined) {
       const localDate = new Date(body.consultation_date);
+      if (Number.isNaN(localDate.getTime())) {
+        return NextResponse.json({ error: 'Enter a valid visit date' }, { status: 400 });
+      }
+
+      // The same rule as recording a visit: not before the patient joined,
+      // compared as IST calendar days. Only creating checked it, so an edit
+      // could move a visit to before the admission (BUGS #14).
+      const { data: patient } = await supabase
+        .from('patients')
+        .select('date_of_join')
+        .eq('id', patientId)
+        .maybeSingle();
+      if (patient?.date_of_join && istFields(localDate).date < String(patient.date_of_join).slice(0, 10)) {
+        return NextResponse.json(
+          { error: 'Consultation date cannot be before patient join date' },
+          { status: 400 }
+        );
+      }
+
       updateData.consultation_date = localDate.toISOString();
     } else {
       updateData.consultation_date = consultation.consultation_date;

@@ -127,6 +127,27 @@ export async function POST(
       .eq('id', patientId)
       .single();
 
+    /**
+     * One bill per patient. A returning patient is registered again (Q-74,
+     * CR-17 dropped), and every screen reads the one bill — so a second, from a
+     * double submit or two tabs, split the payments and charges across two
+     * records while the screens showed only one (BUGS #22). A unique index
+     * (`20260925000005`) closes the race this check alone cannot.
+     */
+    const { data: existing, error: existingError } = await supabase
+      .from('patient_billing')
+      .select('id')
+      .eq('patient_id', patientId)
+      .limit(1);
+    // A failed read must not look like "no bill yet".
+    if (existingError) throw existingError;
+    if ((existing ?? []).length > 0) {
+      return NextResponse.json(
+        { error: 'This patient already has a bill', code: 'BILL_EXISTS', billing_id: existing![0].id },
+        { status: 409 }
+      );
+    }
+
     const joinDate = patient?.date_of_join || istToday();
     const monthYear = String(joinDate).slice(0, 7);
 
@@ -146,6 +167,13 @@ export async function POST(
       .select()
       .single();
 
+    // Two requests racing past the check above meet the unique index here.
+    if (error?.code === '23505') {
+      return NextResponse.json(
+        { error: 'This patient already has a bill', code: 'BILL_EXISTS' },
+        { status: 409 }
+      );
+    }
     if (error) throw error;
 
     // Update patient's referred_by if referral_id is provided

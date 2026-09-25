@@ -657,8 +657,8 @@ describe('POST /api/doctor-settlements/merge', () => {
 
   it('honours explicit overrides for the merged row', async () => {
     await signInAs('ADMIN')
-    aSettlement({ id: 's1', patient_id: 'p1', visit_count: 2, total_amount: 3000 })
-    aSettlement({ id: 's2', patient_id: 'p1', visit_count: 1, total_amount: 1500 })
+    aSettlement({ id: 's1', patient_id: 'p1', doctor_id: 'd1', visit_count: 2, total_amount: 3000 })
+    aSettlement({ id: 's2', patient_id: 'p1', doctor_id: 'd1', visit_count: 1, total_amount: 1500 })
 
     const { body } = await merge({
       settlement_ids: ['s1', 's2'],
@@ -674,13 +674,13 @@ describe('POST /api/doctor-settlements/merge', () => {
   })
 
   /**
-   * Known defect — see BUGS.md #44. Merging rows that all have zero visits — the normal
-   * state straight after sync — divides by zero and stores NaN as the rate.
+   * Was BUGS.md #44: merging rows that all have zero visits — the normal state
+   * straight after sync — divided by zero and stored NaN as the rate.
    */
-  it.fails('should not produce a NaN rate when every merged settlement has zero visits', async () => {
+  it('does not produce a NaN rate when every merged settlement has zero visits', async () => {
     await signInAs('ADMIN')
-    aSettlement({ id: 's1', patient_id: 'p1', visit_count: 0, total_amount: 0 })
-    aSettlement({ id: 's2', patient_id: 'p1', visit_count: 0, total_amount: 0 })
+    aSettlement({ id: 's1', patient_id: 'p1', doctor_id: 'd1', visit_count: 0, total_amount: 0 })
+    aSettlement({ id: 's2', patient_id: 'p1', doctor_id: 'd1', visit_count: 0, total_amount: 0 })
 
     const { body } = await merge({ settlement_ids: ['s1', 's2'] })
 
@@ -688,17 +688,41 @@ describe('POST /api/doctor-settlements/merge', () => {
   })
 
   /**
-   * Known defect — see BUGS.md #45. Merge validates that all rows share a patient but
-   * never that they share a doctor, so two doctors' visits silently collapse onto the
-   * first doctor and the second doctor's fee disappears.
+   * Was BUGS.md #45: merge checked the patient but never the doctor, so two
+   * doctors' visits collapsed onto the first and the second doctor's fee
+   * disappeared.
    */
-  it.fails('should refuse to merge settlements for different doctors', async () => {
+  it('refuses to merge settlements for different doctors', async () => {
     await signInAs('ADMIN')
     aSettlement({ id: 's1', patient_id: 'p1', doctor_id: 'd1', visit_count: 2, total_amount: 3000 })
     aSettlement({ id: 's2', patient_id: 'p1', doctor_id: 'd2', visit_count: 1, total_amount: 1500 })
 
     const { status } = await merge({ settlement_ids: ['s1', 's2'] })
     expect(status).toBe(400)
+  })
+})
+
+describe('POST /api/doctor-settlements/merge — what it will not merge', () => {
+  // A paid fee records that money left. Merging it into a new unpaid row and
+  // retiring the original would erase the payout from money out.
+  it('refuses a paid fee', async () => {
+    await signInAs('ADMIN')
+    aSettlement({ id: 's1', patient_id: 'p1', doctor_id: 'd1', visit_count: 1, total_amount: 500, settled: true })
+    aSettlement({ id: 's2', patient_id: 'p1', doctor_id: 'd1', visit_count: 1, total_amount: 500 })
+
+    const { status } = await merge({ settlement_ids: ['s1', 's2'] })
+
+    expect(status).toBe(409)
+    expect(db.count('doctor_visit_settlements')).toBe(2)
+    expect(db.find('doctor_visit_settlements', (r) => r.id === 's1')!.deleted_at ?? null).toBeNull()
+  })
+
+  it('refuses a deleted fee', async () => {
+    await signInAs('ADMIN')
+    aSettlement({ id: 's1', patient_id: 'p1', doctor_id: 'd1', deleted_at: '2026-03-01T00:00:00.000Z' })
+    aSettlement({ id: 's2', patient_id: 'p1', doctor_id: 'd1' })
+
+    expect((await merge({ settlement_ids: ['s1', 's2'] })).status).toBe(409)
   })
 })
 

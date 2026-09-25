@@ -204,7 +204,7 @@ describe('/api/charge-items — list and filter', () => {
   it('offers only active entries to the pickers', async () => {
     await signInAs('RECEPTIONIST')
     aChargeItem({ name: 'Live' })
-    const retired = aChargeItem({ name: 'Retired', is_active: false })
+    const retired = aChargeItem({ id: '7c9e6679-7425-40de-944b-e07fc1f90ae7', name: 'Retired', is_active: false })
 
     const { body } = await all()
 
@@ -213,6 +213,15 @@ describe('/api/charge-items — list and filter', () => {
 
     // ...unless the form is editing a charge that names the retired one.
     expect((await all({ includeId: retired.id })).body).toHaveLength(2)
+  })
+
+  // The id is spliced into an or() filter; anything else would add its own term.
+  it('refuses an includeId that is not an id', async () => {
+    await signInAs('RECEPTIONIST')
+    aChargeItem({ name: 'Retired', is_active: false })
+
+    const { status } = await all({ includeId: 'x,is_active.eq.false' })
+    expect(status).toBe(400)
   })
 })
 

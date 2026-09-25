@@ -65,3 +65,14 @@ export function pageMeta(count: number | null, paging: Paging) {
     totalPages: Math.ceil(total / paging.pageSize),
   }
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * Is this a row id? For ids that go *into* a PostgREST `or()` filter, where an
+ * unchecked value is part of the filter grammar: `includeId=x,is_active.eq.false`
+ * used to add its own OR term and pull in every retired row.
+ */
+export function isUuid(value: string | null | undefined): value is string {
+  return typeof value === 'string' && UUID_RE.test(value)
+}

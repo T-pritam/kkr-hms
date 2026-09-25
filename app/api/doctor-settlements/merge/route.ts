@@ -51,16 +51,42 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // …and the same doctor. The merged row takes the first row's doctor, so
+    // merging two doctors' fees silently moved every visit to the first and
+    // the second doctor's fee disappeared (BUGS #45).
+    if (new Set(settlements.map((s) => s.doctor_id)).size > 1) {
+      return NextResponse.json(
+        { error: 'Cannot merge fees for different doctors' },
+        { status: 400 }
+      );
+    }
+
+    // A paid fee is a record that money left: merging it into a new, unpaid row
+    // and retiring the original would erase the payout from money out. And a
+    // deleted row is not there to merge.
+    if (settlements.some((s) => s.settled === true)) {
+      return NextResponse.json(
+        { error: 'A paid fee cannot be merged. Un-pay it first, or merge only unpaid fees.' },
+        { status: 409 }
+      );
+    }
+    if (settlements.some((s) => s.deleted_at)) {
+      return NextResponse.json({ error: 'A deleted fee cannot be merged' }, { status: 409 });
+    }
+
     // Calculate merged totals
     const totalVisits = settlements.reduce((sum, s) => sum + (s.visit_count || 0), 0);
-    const totalAmount = settlements.reduce((sum, s) => sum + (s.total_amount || 0), 0);
+    const totalAmount = settlements.reduce((sum, s) => sum + (Number(s.total_amount) || 0), 0);
+    // Rows straight out of sync have no visits yet; dividing by that wrote NaN
+    // into the rate (BUGS #44). Zero visits counts as one, as `payDoctorFee` does.
+    const ratePer = totalAmount / Math.max(totalVisits, 1);
 
     const mergedSettlementData = {
       patient_id: settlements[0].patient_id,
       patient_billing_id: body.merged_settlement?.patient_billing_id || settlements[0].patient_billing_id,
       doctor_id: settlements[0].doctor_id,
       visit_count: body.merged_settlement?.visit_count || totalVisits,
-      amount_per_visit: body.merged_settlement?.amount_per_visit || (totalAmount / totalVisits),
+      amount_per_visit: body.merged_settlement?.amount_per_visit || ratePer,
       total_amount: body.merged_settlement?.total_amount || totalAmount,
       settlement_type: body.merged_settlement?.settlement_type || 'regular',
       settlement_notes: body.merged_settlement?.notes || `Merged from ${settlements.length} settlements`,

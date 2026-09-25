@@ -90,3 +90,57 @@ export function csvFilename(...parts: (string | null | undefined)[]): string {
 
   return `${safe || 'export'}.csv`
 }
+
+/**
+ * Read CSV text into rows of fields — the reader to `toCsv`'s writer, RFC 4180.
+ *
+ * A quoted field may contain commas, line breaks and doubled quotes (`""` is one
+ * `"`). Rows end at LF or CRLF. Fields are returned exactly as written, apart
+ * from the quoting; blank lines are dropped.
+ *
+ * The employee importer used to `split(',')`, so `"Kumar, Ramesh"` tore in half
+ * and every column after it shifted (BUGS #54).
+ */
+export function parseCsv(text: string): string[][] {
+  const rows: string[][] = []
+  let row: string[] = []
+  let field = ''
+  let quoted = false
+
+  const endField = () => {
+    row.push(field)
+    field = ''
+  }
+  const endRow = () => {
+    endField()
+    if (row.some((value) => value.trim() !== '')) rows.push(row)
+    row = []
+  }
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i]
+
+    if (quoted) {
+      if (char === '"' && text[i + 1] === '"') {
+        field += '"'
+        i++
+      } else if (char === '"') {
+        quoted = false
+      } else {
+        field += char
+      }
+      continue
+    }
+
+    if (char === '"' && field === '') quoted = true
+    else if (char === ',') endField()
+    else if (char === '\n') endRow()
+    else if (char === '\r' && text[i + 1] === '\n') {
+      endRow()
+      i++
+    } else field += char
+  }
+
+  if (field !== '' || row.length > 0) endRow()
+  return rows
+}

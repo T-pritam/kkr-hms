@@ -1,14 +1,15 @@
 /**
- * lib/export/csv — the CSV writer behind the advance log export.
+ * lib/export/csv — the CSV writer behind the exports, and the reader behind the
+ * employee import.
  *
- * The quoting is the whole point. The app's CSV *importer* splits on `,` with
- * no quote handling, so a remark reading "Advance, festival" shifts every
- * column after it — a known defect, marked `it.fails` in the employee tests.
- * Nothing this app *exports* should be capable of doing that.
+ * The quoting is the whole point. The importer used to split on `,` with no
+ * quote handling, so "Kumar, Ramesh" tore in half and shifted every column
+ * after it (BUGS #54). The reader and the writer now agree, so anything this
+ * app exports reads back exactly.
  */
 
 import { describe, it, expect } from 'vitest'
-import { csvFilename, toCsv, type CsvColumn } from '@/lib/export/csv'
+import { csvFilename, parseCsv, toCsv, type CsvColumn } from '@/lib/export/csv'
 
 interface Row {
   name: string
@@ -110,5 +111,36 @@ describe('csvFilename', () => {
 
   it('falls back to a usable name when nothing survives', () => {
     expect(csvFilename('///')).toBe('export.csv')
+  })
+})
+
+describe('parseCsv', () => {
+  it('reads plain rows', () => {
+    expect(parseCsv('a,b\n1,2')).toEqual([['a', 'b'], ['1', '2']])
+  })
+
+  it('keeps a comma inside quotes', () => {
+    expect(parseCsv('"Kumar, Ramesh",27000')).toEqual([['Kumar, Ramesh', '27000']])
+  })
+
+  it('reads a doubled quote as one quote', () => {
+    expect(parseCsv('"He said ""hi""",x')).toEqual([['He said "hi"', 'x']])
+  })
+
+  it('keeps a line break inside quotes', () => {
+    expect(parseCsv('"line one\nline two",x\ny,z')).toEqual([['line one\nline two', 'x'], ['y', 'z']])
+  })
+
+  it('handles CRLF and drops blank lines', () => {
+    expect(parseCsv('a,b\r\n\r\n1,2\r\n')).toEqual([['a', 'b'], ['1', '2']])
+  })
+
+  it('keeps an empty field', () => {
+    expect(parseCsv('a,,c')).toEqual([['a', '', 'c']])
+  })
+
+  it('reads back exactly what toCsv writes', () => {
+    const rows: Row[] = [{ name: 'Kumar, "Ramu"', amount: 12.5, remarks: 'two\nlines' }]
+    expect(parseCsv(toCsv(rows, COLUMNS))[1]).toEqual(['Kumar, "Ramu"', '12.50', 'two\nlines'])
   })
 })

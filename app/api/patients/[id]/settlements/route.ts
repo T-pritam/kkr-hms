@@ -144,10 +144,14 @@ export async function PATCH(
      * what was actually paid. Nothing in the app calls it, but it answers, so it
      * goes through the one payout path like the other three (CR-13).
      */
+    // Scoped to the patient in the URL: any fee's id used to be payable from any
+    // patient's address (BUGS #27).
+    const { id: patientId } = await params;
     const { data: settlement } = await supabase
       .from('doctor_visit_settlements')
       .select('*')
       .eq('id', body.settlement_id)
+      .eq('patient_id', patientId)
       .is('deleted_at', null)
       .maybeSingle();
 

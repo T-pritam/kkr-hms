@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isUuid } from '@/lib/api/query'
 import { createClient } from '@/lib/supabase/server'
 import { requireLab } from '@/lib/lab/authz'
 
@@ -17,6 +18,10 @@ export async function GET(request: NextRequest) {
     if (auth.response) return auth.response
 
     const testId = request.nextUrl.searchParams.get('test_id')
+    // It goes into an or() filter, so it must be an id and nothing else.
+    if (testId && !isUuid(testId)) {
+      return NextResponse.json({ error: 'Not a valid id' }, { status: 400 })
+    }
     const supabase = await createClient()
 
     let query = supabase

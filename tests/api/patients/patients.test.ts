@@ -21,7 +21,7 @@ import { GET as activePatients } from '@/app/api/patients/active/route'
 import { call } from '../../helpers/request'
 import { signInAs, signOut, expiredToken } from '../../helpers/auth'
 import { db } from '../../helpers/fake-supabase'
-import { aPatient, aBilling } from '../../helpers/seed'
+import { aPatient, aBilling, aConsultation } from '../../helpers/seed'
 import { TODAY } from '../../setup'
 
 /** The four fields registration requires. */
@@ -728,19 +728,34 @@ describe('DELETE /api/patients/[id]', () => {
   )
 
   /**
-   * Still a known defect — the remaining half of BUGS.md #9. Nothing checks for
-   * dependent billing, charges or consultations first. In the real database the
-   * foreign keys would reject this; the fake has no such constraint, so this
-   * documents that the route itself offers no protection.
+   * Was the remaining half of BUGS.md #9: nothing checked what still pointed at
+   * the patient. In the database the bill refuses the delete, but case sheets,
+   * charges, visits, fees and pharmacy bills cascade away with the patient. The
+   * route now counts first and refuses with the counts.
    */
-  it.fails('should refuse to delete a patient that still has billing records', async () => {
+  it('refuses to delete a patient that still has records, and says which', async () => {
     await signInAs('ADMIN')
-    aPatient({ id: 'p1' })
+    aPatient({ id: 'p1', patient_id: '12/26', name: 'Ramesh Kumar' })
     aBilling({ id: 'b1', patient_id: 'p1' })
+    aConsultation({ patient_id: 'p1' })
 
-    const { status } = await call(deletePatient, 'DELETE', '/api/patients/p1', { params: { id: 'p1' } })
+    const { status, body } = await call(deletePatient, 'DELETE', '/api/patients/p1', { params: { id: 'p1' } })
 
-    expect(status).toBeGreaterThanOrEqual(400)
+    expect(status).toBe(409)
+    expect(body.code).toBe('PATIENT_IN_USE')
+    expect(body.references).toEqual(
+      expect.arrayContaining([
+        { label: 'bill(s)', count: 1 },
+        { label: 'doctor visit(s)', count: 1 },
+      ]),
+    )
+    expect(body.error).toContain('Mark the patient Cancelled')
+    expect(db.count('patients')).toBe(1)
+  })
+
+  it('404s for a patient that is not there', async () => {
+    await signInAs('ADMIN')
+    expect((await call(deletePatient, 'DELETE', '/api/patients/nobody', { params: { id: 'nobody' } })).status).toBe(404)
   })
 })
 

@@ -385,11 +385,10 @@ describe('PATCH /api/patients/[id]/consultations/[consultationId]', () => {
   })
 
   /**
-   * Known defect — see BUGS.md #14. The create endpoint refuses a consultation dated
-   * before the patient joined; the edit endpoint applies no such check, so the same
-   * invalid state can be reached in two steps.
+   * Was BUGS.md #14: creating refused a visit dated before the patient joined;
+   * editing applied no such check, so the same state was reachable in two steps.
    */
-  it.fails('should reject an edit that moves the date before the join date', async () => {
+  it('rejects an edit that moves the date before the join date', async () => {
     await signInAs('ADMIN', { seedUser: true })
     aPatient({ id: 'p1', date_of_join: '2026-03-10' })
     aConsultation({ id: 'c1', patient_id: 'p1' })

@@ -154,7 +154,9 @@ so the two verbs enforce different rules.
 
 ---
 
-### 🔴 #9 — Any signed-in user can hard-delete a patient
+### ✅ #9 — RESOLVED — a patient with records cannot be deleted
+**Resolved 2026-09-25.** Admin-only since the patient rebuild; now the route also counts every table that holds the patient's records (bill, charges, visits, fees, case sheets, lab orders, pharmacy bills, ledger rows, charge sheets) and refuses with 409 `PATIENT_IN_USE` and the counts, pointing to Cancelled instead. The database's own rules differed by table: the bill refused, but case sheets, charges, visits, fees and pharmacy bills would have been deleted with the patient.
+
 **Where:** `app/api/patients/[id]/route.ts:194` — and no role check anywhere in the file
 **Test:** `tests/api/patients/patients.test.ts`
 
@@ -204,7 +206,9 @@ payment modal) lists everyone, discharged or not.
 
 ---
 
-### 🟡 #14 — The join-date rule is enforced on create but not on edit
+### ✅ #14 — RESOLVED — an edited visit may not predate joining
+**Resolved 2026-09-25.** PATCH applies the create route's rule, compared as IST days; an invalid date is a 400.
+
 **Where:** `app/api/patients/[id]/consultations/[consultationId]/route.ts:61`
 
 Creating a consultation before the patient's join date is rejected; editing one to that
@@ -345,7 +349,9 @@ credit on its own (409 `LEDGER_ENTRY_IS_PAYMENT`).
 
 ---
 
-### 🟡 #22 — A patient can end up with two billing records
+### ✅ #22 — RESOLVED — one bill per patient
+**Resolved 2026-09-25.** `POST …/billing` refuses with 409 `BILL_EXISTS` (and the existing bill's id), and the unique index `patient_billing_one_per_patient` (`20260925000005`, applied) closes the race. Drop that index if CR-17 (a bill per stay) is ever built.
+
 **Where:** `app/api/patients/[id]/billing/route.ts:99`
 **Test:** `tests/api/billing/billing.test.ts`
 
@@ -381,7 +387,9 @@ contributing nothing to the totals beside them.
 
 ---
 
-### 🟠 #27 — Settling a doctor fee has no guard rails
+### ✅ #27 — RESOLVED — paying a fee checks it is this patient's
+**Resolved 2026-09-25.** `PATCH /api/patients/[id]/settlements` scopes the lookup to the patient in the URL (404 otherwise). The other half — a fee payable for nothing — was fixed when the route moved onto `payDoctorFee` (#66).
+
 **Where:** `app/api/patients/[id]/settlements/route.ts` (PATCH)
 **Tests:** `tests/api/billing/patient-settlements.test.ts` (2 cases)
 
@@ -451,7 +459,9 @@ than blocking the close"). **Do not reopen this without changing that decision f
 
 ## Section 5 — Doctors, Settlements, Referrals, Finances
 
-### 🟠 #44 — Division by zero in the merge maths
+### ✅ #44 — RESOLVED — merging zero-visit rows no longer writes NaN
+**Resolved 2026-09-25.** Zero visits counts as one, as `payDoctorFee` does.
+
 **Where:** `app/api/doctor-settlements/merge/route.ts:71`
 **Test:** `tests/api/finances/doctor-settlements.test.ts` — "should not produce a NaN rate
 when every merged settlement has zero visits"
@@ -462,7 +472,9 @@ writing `NaN` into `amount_per_visit`.
 **Fix:** treat a zero count as one, the way `payDoctorFee` in `lib/billing/payouts.ts`
 already does — that is what closed the same defect (#43) on the settle path.
 
-### 🟠 #45 — Merge does not check the doctor
+### ✅ #45 — RESOLVED — merge refuses different doctors
+**Resolved 2026-09-25.** It also now refuses a **paid** fee (merging one into a new unpaid row would erase the payout from money out) and a deleted one.
+
 **Where:** `app/api/doctor-settlements/merge/route.ts:52-60`
 
 Merge validates that all settlements share a patient but never that they share a doctor.
@@ -518,7 +530,9 @@ test now cites Q-06.
 
 ---
 
-### 🟡 #54 — The CSV importer is naive
+### ✅ #54 — RESOLVED — the CSV import reads CSV, skips duplicates and issues codes
+**Resolved 2026-09-25.** An RFC 4180 reader (`parseCsv` in `lib/export/csv.ts`, beside the writer) keeps "Kumar, Ramesh" whole. A row is skipped when an active employee has the same name *and* role (case- and space-insensitive), and every skip is reported by row. Imported employees now get an `EMP/YY/NNN` code and `created_by` — the bulk insert used to write neither.
+
 **Where:** `app/api/employees/import/route.ts:36-66`
 **Tests:** `tests/api/employees/employees.test.ts` (2 cases)
 
@@ -676,6 +690,14 @@ desk with 409 `ENTRY_LOCKED`; the admin may still correct it.
 ---
 
 ## Section 10 — Found on 2026-09-25, open
+
+### ✅ #74 — RESOLVED — three id filters were spliced into the query
+**Where:** `app/api/doctors/all`, `app/api/charge-items/all` (`includeId`), `app/api/lab/interpretation-templates` (`test_id`)
+**Resolved 2026-09-25.** The same shape as #5, found while fixing it: an id went raw into
+an `or()` filter, so `includeId=x,is_active.eq.false` listed every retired doctor or
+catalogue item. Each is now checked with `isUuid` (`lib/api/query.ts`) and refused with 400
+otherwise. Low impact — the rows exposed were readable to the caller anyway — but the
+filter grammar is not user input.
 
 ### 🔴 #68 — The database is readable and writable with the browser's key
 **Where:** Supabase project `bmbbifxkjqmdqriootdw` (all public tables), `lib/supabase/client.ts`, `lib/supabase/server.ts`

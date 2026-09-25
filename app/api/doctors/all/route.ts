@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isUuid } from '@/lib/api/query'
 import { createClient } from '@/lib/supabase/server'
 import { requireDoctor } from '@/lib/doctors/authz'
 
@@ -22,6 +23,11 @@ export async function GET(request: NextRequest) {
     if (auth.response) return auth.response
 
     const includeId = request.nextUrl.searchParams.get('includeId')
+    // It goes into an or() filter, so it must be an id and nothing else: a crafted
+    // `x,is_active.eq.false` used to add its own term and list every retired row.
+    if (includeId && !isUuid(includeId)) {
+      return NextResponse.json({ error: 'Not a valid id' }, { status: 400 })
+    }
 
     const supabase = await createClient()
 

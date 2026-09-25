@@ -132,6 +132,9 @@ const UNIQUE_INDEXES: Record<string, UniqueIndex[]> = {
   patients: [['patient_id']],
   employees: [['employee_code']],
 
+  // 20260925000005 — one bill per patient (BUGS #22).
+  patient_billing: [['patient_id']],
+
   // 20260808000001 — the catalogue rejects a duplicate service rather than
   // check-then-insert, so the 409 branch needs the constraint modelled here.
   // Both are lower(...) indexes in the database; looseEquals is case-sensitive,
