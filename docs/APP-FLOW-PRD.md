@@ -764,11 +764,12 @@ If you knew the app before September 2026, these are the rules that moved. Each 
 
 ## 11. Known gaps and risks
 
-Ordered by how much they matter.
+Ordered by how much they matter. The full, verified pre-release list — 18 open items in fix order — is the "Start here" checklist in [`BUGS.md`](../BUGS.md).
 
 | # | Gap | Effect | Status |
 |:-:|---|---|---|
 | 1 | 🔴 **The database is open to anyone holding the browser's key.** Row-level security is off on all 52 tables, the anon role may read, insert, update and delete 50 of them — including `users` (password hashes), patients, payments and salaries — and that key is in the browser (the live-refresh feature uses it). | Anyone with the key can bypass every rule in §6 by calling the database directly. None of the app's tests can protect against this. | Known since before v2 (old release note #8). Fixing it means moving the server to the service-role key, revoking the anon grants, and giving live refresh its own narrow access. **Needs a decision and its own piece of work.** |
+| 1a | 🔴 **A retired edge function is still deployed.** `upload-case-sheet` is no longer called by the app, but it still mints upload URLs for the case-sheet bucket for anyone holding the public key (BUGS #69). | Anyone with the key can upload files into the bucket. | Delete the function; nothing depends on it. |
 | 2 | 🟠 **Visit purposes have no screen.** Q-72 decided they would be managed "now", and the API allows it (admin, reception), but no page can add, rename or retire one. | The list is stuck at what was seeded; a new kind of visit needs a database change. | Gap against a decided requirement. |
 | 3 | 🟠 **14 open defects**, each pinned by an expected-failure test (BUGS.md): among them a refresh token accepted as an access token (#1), sessions surviving a password change (#3), user-admin search and update weaknesses (#5, #6), a patient deletable with billing attached (#9), a visit edit that can predate joining (#14), a second bill openable for one patient (#22), a settlement payable against another patient's id (#27), merge maths (#44, #45), the CSV importer (#54). | Varies; the security ones (#1, #3–#6) matter most. | Documented and tested; not fixed. |
 | 4 | 🟡 The **Dashboard** is a placeholder (every tile reads 0), and only the Admin ever sees it. | Nobody gets a useful landing page. | — |
