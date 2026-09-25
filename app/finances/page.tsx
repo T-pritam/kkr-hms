@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
@@ -12,19 +12,14 @@ import {
   DollarSign,
   Receipt,
   Users,
-  Calendar,
-  CreditCard,
   AlertCircle,
   ArrowUpCircle,
   ArrowDownCircle,
   RefreshCw,
-  FileText,
   Trash2,
   Edit2,
   Plus,
   ChevronRight,
-  X,
-  Filter,
   Download,
 } from 'lucide-react'
 import { SettleDoctorFeesModal } from '@/components/finances/settle-doctor-fees-modal'
@@ -98,8 +93,6 @@ export default function FinancesPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'settlements' | 'expenses'>(
     'overview'
   )
-  // Surfaced on the tab label so the backlog is visible without opening the panel.
-  const [openDayCount, setOpenDayCount] = useState(0)
   const [doctorFeesModalOpen, setDoctorFeesModalOpen] = useState(false)
   // The Lab & medicine line opens the charges behind it, for the month shown.
   const [labMedicineOpen, setLabMedicineOpen] = useState(false)
@@ -110,17 +103,6 @@ export default function FinancesPage() {
   const [expensesLoading, setExpensesLoading] = useState(false)
   const [editingExpense, setEditingExpense] = useState<any | null>(null)
 
-  // Transactions tab state
-  const [transactionsSubTab, setTransactionsSubTab] = useState<'all' | 'credit' | 'debit'>('all')
-  const [transactionUserFilter, setTransactionUserFilter] = useState('')
-  const [transactionSourceFilter, setTransactionSourceFilter] = useState('')
-  const [transactionStatusFilter, setTransactionStatusFilter] = useState('')
-  const [transactionStartDate, setTransactionStartDate] = useState('')
-  const [transactionEndDate, setTransactionEndDate] = useState('')
-  const [transactions, setTransactions] = useState<any[]>([])
-  const [transactionsLoading, setTransactionsLoading] = useState(false)
-  const [users, setUsers] = useState<{ id: string; username: string }[]>([])
-  const usersFetchedRef = useRef(false)
 
   useEffect(() => {
     fetchSummary()
@@ -183,54 +165,6 @@ export default function FinancesPage() {
       console.error('Error fetching expenses:', error)
     } finally {
       setExpensesLoading(false)
-    }
-  }
-
-  const fetchTransactions = async () => {
-    try {
-      setTransactionsLoading(true)
-      const [year, month] = selectedMonth.split('-').map(Number)
-      const lastDay = new Date(year, month, 0).getDate()
-
-      // The selected month is the default window. An explicit date range overrides it,
-      // so an admin chasing one unclosed day is not forced to think in whole months.
-      const startDate = transactionStartDate || `${selectedMonth}-01`
-      const endDate = transactionEndDate || `${selectedMonth}-${String(lastDay).padStart(2, '0')}`
-
-      const params = new URLSearchParams({
-        start_date: startDate,
-        end_date: endDate,
-      })
-      if (transactionsSubTab !== 'all') params.set('transaction_type', transactionsSubTab)
-      if (transactionUserFilter) params.set('created_by', transactionUserFilter)
-      if (transactionSourceFilter) params.set('source', transactionSourceFilter)
-      if (transactionStatusFilter) params.set('status', transactionStatusFilter)
-
-      const response = await fetch(`/api/ledger/transactions?${params.toString()}`, {
-        credentials: 'include',
-      })
-      const result = await response.json()
-      if (result.success) {
-        setTransactions(result.data || [])
-      } else {
-        setTransactions([])
-      }
-    } catch (error) {
-      console.error('Error fetching transactions:', error)
-    } finally {
-      setTransactionsLoading(false)
-    }
-  }
-
-  const fetchUsers = async () => {
-    try {
-      const response = await fetch('/api/admin/users?pageSize=100', { credentials: 'include' })
-      const result = await response.json()
-      if (result.users) {
-        setUsers(result.users.map((u: any) => ({ id: u.id, username: u.username })))
-      }
-    } catch {
-      // non-admin — silently skip
     }
   }
 
@@ -332,7 +266,7 @@ export default function FinancesPage() {
               <button
                 onClick={async () => {
                   try { await generateMonthlyFinancePDF(selectedMonth, summary) }
-                  catch (e) { alert('Failed to generate PDF') }
+                  catch { alert('Failed to generate PDF') }
                 }}
                 className="px-4 py-2 bg-info hover:bg-info-hover text-foreground rounded-lg flex items-center justify-center gap-2 transition-colors"
                 title="Download Monthly Finance Report"
@@ -461,7 +395,7 @@ export default function FinancesPage() {
                     <button
                       onClick={async () => {
                         try { await generateIncomePDF(selectedMonth, summary) }
-                        catch (e) { alert('Failed to generate PDF') }
+                        catch { alert('Failed to generate PDF') }
                       }}
                       className="p-1.5 rounded-lg hover:bg-surface-hover transition-colors"
                       title="Download Income Report"
@@ -503,7 +437,7 @@ export default function FinancesPage() {
                     <button
                       onClick={async () => {
                         try { await generateExpenseBreakdownPDF(selectedMonth, summary) }
-                        catch (e) { alert('Failed to generate PDF') }
+                        catch { alert('Failed to generate PDF') }
                       }}
                       className="p-1.5 rounded-lg hover:bg-surface-hover transition-colors"
                       title="Download Expense Breakdown PDF"

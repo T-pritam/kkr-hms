@@ -26,7 +26,8 @@ export function MonthlySalaryCreditModal({ isOpen, onClose, onSuccess, initialMo
   const [loading, setLoading] = useState(false)
   const [employees, setEmployees] = useState<Employee[]>([])
   const [monthYear, setMonthYear] = useState('')
-  const [totalWorkingDays, setTotalWorkingDays] = useState(27)
+  // Fixed by the payroll rule: 27 working days (see /api/employees/salary/monthly).
+  const totalWorkingDays = 27
   
   // Employee attendance data
   const [attendance, setAttendance] = useState<{ [key: string]: { days_present: number, ot_days: number } }>({})
@@ -237,7 +238,7 @@ export function MonthlySalaryCreditModal({ isOpen, onClose, onSuccess, initialMo
                 </tr>
               </thead>
               <tbody>
-                {employees.map((employee, index) => {
+                {employees.map((employee) => {
                   const att = attendance[employee.id] || { days_present: 27, ot_days: 0 }
                   const calcSalary = calculateSalary(employee.base_salary, att.days_present, att.ot_days)
                   const hasRecord = !!employee.salary_record

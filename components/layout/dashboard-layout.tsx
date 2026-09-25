@@ -35,7 +35,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           router.replace('/patients')
           return
         }
-      } catch (error) {
+      } catch {
         router.push('/login')
       } finally {
         setLoading(false)

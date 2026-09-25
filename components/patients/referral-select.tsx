@@ -40,8 +40,7 @@ export function ReferralSelect({ value, onChange, disabled }: ReferralSelectProp
   // Sync input value when parent value changes
   useEffect(() => {
     if (!isSearching) {
-      const selectedReferral = referrals.find((r) => r.id === value)
-      setInputValue(selectedReferral?.name || '')
+          setInputValue(selectedReferral?.name || '')
     }
   }, [value, referrals, isSearching])
 

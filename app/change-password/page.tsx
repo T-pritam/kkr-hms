@@ -54,7 +54,7 @@ function ChangePasswordContent() {
         // Don't proceed if validation passed - let user submit the form
         setIsTokenValid(true)
       }
-    } catch (err: any) {
+    } catch {
       setIsTokenValid(false)
       setError('Failed to validate token')
     }

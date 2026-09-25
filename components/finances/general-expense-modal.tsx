@@ -1,11 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X, Plus, Edit2, Trash2, Search } from 'lucide-react'
+import { X, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   EXPENSE_DETAIL_MAX,
   EXPENSE_TYPES,
@@ -32,7 +29,6 @@ interface GeneralExpenseModalProps {
 }
 
 export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense }: GeneralExpenseModalProps) {
-  const [expenses, setExpenses] = useState<Expense[]>([])
   const [loading, setLoading] = useState(false)
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -50,7 +46,6 @@ export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense
 
   useEffect(() => {
     if (isOpen) {
-      fetchExpenses()
       if (initialExpense) {
         setFormData({
           expense_type: initialExpense.expense_type,
@@ -69,23 +64,6 @@ export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense
   useEffect(() => {
     setFormData(prev => ({ ...prev, month_year: monthYear }))
   }, [monthYear])
-
-  const fetchExpenses = async () => {
-    try {
-      setLoading(true)
-      const response = await fetch(`/api/finances/expenses?month_year=${monthYear}`)
-      const result = await response.json()
-
-      if (result.success) {
-        setExpenses(result.data)
-      }
-    } catch (error) {
-      console.error('Error fetching expenses:', error)
-      alert('Failed to fetch expenses')
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -136,7 +114,7 @@ export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense
       const result = await response.json()
 
       if (result.success) {
-        await fetchExpenses()
+        // The Expenses tab refetches when this closes; the dialog shows no list.
         handleCancel()
         onClose()
       } else {
@@ -147,45 +125,6 @@ export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense
       alert('Failed to save expense')
     } finally {
       setLoading(false)
-    }
-  }
-
-  const handleEdit = (expense: Expense) => {
-    setFormData({
-      expense_type: expense.expense_type,
-      amount: expense.amount.toString(),
-      expense_date: expense.expense_date,
-      month_year: expense.month_year,
-      remarks: expense.remarks || '',
-      payment_mode: (expense as any).payment_mode || 'cash',
-      expense_type_detail: expense.expense_type_detail || '',
-    })
-    setEditingId(expense.id)
-    setShowAddForm(true)
-  }
-
-  const handleDelete = async (id: number) => {
-    if (confirm('Are you sure you want to delete this expense?')) {
-      try {
-        setLoading(true)
-        const response = await fetch(`/api/finances/expenses?id=${id}`, {
-          method: 'DELETE',
-          credentials: 'include',
-        })
-
-        const result = await response.json()
-
-        if (result.success) {
-          await fetchExpenses()
-        } else {
-          alert(result.error || 'Failed to delete expense')
-        }
-      } catch (error) {
-        console.error('Error deleting expense:', error)
-        alert('Failed to delete expense')
-      } finally {
-        setLoading(false)
-      }
     }
   }
 
@@ -206,33 +145,10 @@ export function GeneralExpenseModal({ isOpen, onClose, monthYear, initialExpense
     onClose()
   }
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0,
-    }).format(amount)
-  }
-
   const filteredExpenseTypes = EXPENSE_TYPES.filter(type =>
     type.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
-  const totalExpenses = expenses.reduce((sum, exp) => sum + exp.amount, 0)
-
-  const getMonthYearOptions = () => {
-    const options = []
-    const today = new Date()
-    for (let i = 0; i < 12; i++) {
-      const date = new Date(today.getFullYear(), today.getMonth() - i, 1)
-      const year = date.getFullYear()
-      const month = String(date.getMonth() + 1).padStart(2, '0')
-      const value = `${year}-${month}`
-      const label = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-      options.push({ value, label })
-    }
-    return options
-  }
 
   if (!isOpen) return null
 

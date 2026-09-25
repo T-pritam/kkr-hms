@@ -518,3 +518,48 @@ describe('password reset default — cross-check with login', () => {
     return call(resetToDefault, 'POST', `/api/admin/users/${id}/reset-password`, { params: { id } })
   }
 })
+
+/**
+ * BUGS #72: the panel could not give an account the Lab technician role,
+ * though every lab capability names it — and the API refused only 'ADMIN',
+ * storing any other string as a role that no screen or capability recognised.
+ */
+describe('/api/admin/users — the roles and statuses an account may have', () => {
+  const create = (body: unknown) => call(createUser, 'POST', '/api/admin/users', { body })
+  const put = (id: string, body: unknown) =>
+    call(updateUser, 'PUT', `/api/admin/users/${id}`, { body, params: { id } })
+  const patch = (id: string, body: unknown) =>
+    call(patchUser, 'PATCH', `/api/admin/users/${id}`, { body, params: { id } })
+  const base = { username: 'labtech', email: 'lab@hms.test', password: 'Password@123' }
+
+  it('creates a lab technician', async () => {
+    await signInAs('ADMIN')
+
+    const { status } = await create({ ...base, role: 'LAB_TECHNICIAN' })
+
+    expect(status).toBe(200)
+    expect(db.rows('users')[0].role).toBe('LAB_TECHNICIAN')
+  })
+
+  it.each(['SUPERUSER', 'admin', 'Receptionist', ''])('refuses the role %j', async (role) => {
+    await signInAs('ADMIN')
+
+    expect((await create({ ...base, role: role || 'x' })).status).toBe(400)
+    expect(db.count('users')).toBe(0)
+  })
+
+  it('refuses a status other than ACTIVE or INACTIVE', async () => {
+    await signInAs('ADMIN')
+
+    expect((await create({ ...base, role: 'NURSE', status: 'DELETED' })).status).toBe(400)
+  })
+
+  it('refuses an unknown role on an edit, by either verb', async () => {
+    await signInAs('ADMIN')
+    aUser({ id: 'u1', role: 'NURSE' })
+
+    expect((await put('u1', { username: 'n', email: 'n@hms.test', role: 'BOSS', status: 'ACTIVE' })).status).toBe(400)
+    expect((await patch('u1', { role: 'BOSS' })).status).toBe(400)
+    expect(db.find('users', (r) => r.id === 'u1')!.role).toBe('NURSE')
+  })
+})

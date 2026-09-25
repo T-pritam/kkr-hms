@@ -23,8 +23,6 @@ import { Badge } from '@/components/ui/badge'
 import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch'
 import { useUser } from '@/hooks/use-user'
 import {
-  ArrowDownCircle,
-  ArrowUpCircle,
   ChevronLeft,
   ChevronRight,
   Edit,

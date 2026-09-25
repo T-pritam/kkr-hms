@@ -431,7 +431,7 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={(e) => {
+                            onClick={() => {
                               handleEdit(installment);
                             }}
                           >
@@ -440,7 +440,7 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
                           <Button
                             size="sm"
                             variant="destructive"
-                            onClick={(e) => {
+                            onClick={() => {
                               handleDelete(installment.id);
                             }}
                           >

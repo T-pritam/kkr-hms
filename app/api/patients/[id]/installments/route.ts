@@ -3,10 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { requireBilling } from '@/lib/billing/authz';
 import { isDeskPaymentKind, recordPayment, validatePayment, type PaymentKind } from '@/lib/billing/payments';
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function GET(request: NextRequest) {
   try {
     const auth = await requireBilling(request, 'charge:read');
     if (auth.response) return auth.response;

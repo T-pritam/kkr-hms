@@ -36,7 +36,7 @@ export interface SalaryData {
  */
 export function validateSalaryAdvance(
   salaryData: SalaryData,
-  proposedAmount?: number
+  _proposedAmount?: number
 ): AdvanceValidationResult {
   const baseSalary = salaryData.baseSalary || 0
   const currentAdvances = salaryData.currentAdvances || []

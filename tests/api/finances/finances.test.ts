@@ -33,7 +33,6 @@ import {
   aDoctor,
   aPatient,
   aReferral,
-  aClosure,
   aPettyCashEntry,
 } from '../../helpers/seed'
 import { THIS_MONTH, TODAY } from '../../setup'

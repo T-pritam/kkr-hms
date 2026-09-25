@@ -53,7 +53,7 @@ async function identity(userId: string, email: string, role: string) {
  * expired-but-still-valid session repairs itself here instead of needing a
  * hard reload to win the timing race against middleware's own refresh.
  */
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     const accessToken = await getAccessToken()
     const verified = accessToken ? await verifyToken(accessToken) : null

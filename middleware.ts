@@ -15,7 +15,7 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   
   // Update Supabase session
-  const { supabaseResponse, user } = await updateSession(request)
+  const { supabaseResponse } = await updateSession(request)
 
   // Check if path is public
   const isPublicPath = publicPaths.some(path => pathname.startsWith(path))
@@ -24,7 +24,7 @@ export async function middleware(request: NextRequest) {
   const accessTokenCookie = request.cookies.get('accessToken')
   const refreshTokenCookie = request.cookies.get('refreshToken')
 
-  let accessToken = accessTokenCookie?.value
+  const accessToken = accessTokenCookie?.value
   let isAuthenticated = false
   let userRole = null
 

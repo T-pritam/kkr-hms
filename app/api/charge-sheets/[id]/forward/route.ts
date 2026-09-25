@@ -26,7 +26,6 @@ import { requireBilling } from '@/lib/billing/authz'
 import { recalculatePatientBilling } from '@/lib/recalculate-billing'
 import { copyBillToCharge } from '@/lib/pharmacy/store'
 import { istToday } from '@/lib/dates/ist'
-import { labMedicineKind } from '@/lib/billing/lab-medicine'
 
 export async function POST(
   request: NextRequest,

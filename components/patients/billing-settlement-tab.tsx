@@ -38,15 +38,12 @@ export default function BillingSettlementTab({
   billing,
   onCreateBilling,
   onBillingUpdate,
-  onSettlementUpdate,
 }: BillingSettlementTabProps) {
   const { user } = useUser();
   const [settlements, setSettlements] = useState<any[]>([]);
-  const [doctors, setDoctors] = useState<any[]>([]);
   const [showSetCharges, setShowSetCharges] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showSettleModal, setShowSettleModal] = useState(false);
-  const [referrals, setReferrals] = useState<any[]>([]);
   const [settleData, setSettleData] = useState({
     settlement_id: '',
     settlement_amount: 0,
@@ -177,36 +174,12 @@ export default function BillingSettlementTab({
   };
 
   useEffect(() => {
-    fetchDoctors();
-    fetchReferrals();
     if (billing) {
       fetchSettlements();
     }
   }, [billing]);
 
-  const fetchReferrals = async () => {
-    try {
-      const response = await fetch('/api/referrals');
-      if (response.ok) {
-        const data = await response.json();
-        setReferrals(Array.isArray(data) ? data : []);
-      }
-    } catch (error) {
-      console.error('Error fetching referrals:', error);
-    }
-  };
 
-  const fetchDoctors = async () => {
-    try {
-      const response = await fetch('/api/doctors/all');
-      if (response.ok) {
-        const data = await response.json();
-        setDoctors(Array.isArray(data) ? data : []);
-      }
-    } catch (error) {
-      console.error('Error fetching doctors:', error);
-    }
-  };
 
   const fetchSettlements = async () => {
     try {
@@ -232,7 +205,6 @@ export default function BillingSettlementTab({
       });
 
       if (response.ok) {
-        const data = await response.json();
         await fetchSettlements();
         onBillingUpdate();
       } else {

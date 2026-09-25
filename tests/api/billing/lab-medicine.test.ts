@@ -20,10 +20,7 @@ import { POST as createCharge } from '@/app/api/patients/[id]/charges/route'
 import { PATCH as editCharge, DELETE as removeCharge } from '@/app/api/patients/[id]/charges/[chargeId]/route'
 import { POST as decide } from '@/app/api/patients/[id]/charges/[chargeId]/lab-medicine/route'
 import { POST as createPayment } from '@/app/api/patients/[id]/installments/route'
-import {
-  PATCH as editPayment,
-  DELETE as removePayment,
-} from '@/app/api/patients/[id]/installments/[installmentId]/route'
+import { PATCH as editPayment } from '@/app/api/patients/[id]/installments/[installmentId]/route'
 import { POST as forwardSheet } from '@/app/api/charge-sheets/[id]/forward/route'
 import { call } from '../../helpers/request'
 import { signInAs } from '../../helpers/auth'
@@ -55,11 +52,6 @@ const patchPayment = (installmentId: string, body: unknown) =>
     body,
     params: { id: 'p1', installmentId },
   })
-const deletePayment = (installmentId: string) =>
-  call(removePayment, 'DELETE', `/api/patients/p1/installments/${installmentId}`, {
-    params: { id: 'p1', installmentId },
-  })
-
 const charge = (id: string) => db.find('patient_charges', (r) => r.id === id)!
 const onlyCharge = () => db.rows('patient_charges')[0]
 

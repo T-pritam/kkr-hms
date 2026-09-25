@@ -243,7 +243,6 @@ export async function DELETE(request: NextRequest) {
   try {
     const auth = await requireBilling(request, 'expense:write')
     if (auth.response) return auth.response
-    const { user } = auth
 
     const searchParams = request.nextUrl.searchParams
     const id = searchParams.get('id')

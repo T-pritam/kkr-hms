@@ -4,10 +4,7 @@ import { payDoctorFee, validatePayout } from '@/lib/billing/payouts';
 import { verifyAuth } from '@/lib/auth/verify';
 import { requireBilling } from '@/lib/billing/authz';
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function GET(request: NextRequest) {
   try {
     const authResult = await verifyAuth(request);
     if (!authResult.isValid || !authResult.user) {

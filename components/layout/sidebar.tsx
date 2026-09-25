@@ -20,7 +20,7 @@ import {
   Wallet,
   HandCoins,
 } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
 import { useUser } from '@/hooks/use-user'
 

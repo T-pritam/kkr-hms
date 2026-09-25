@@ -13,7 +13,7 @@ import { PUT as updateTransaction, DELETE as removeTransaction } from '@/app/api
 import { call } from '../../helpers/request'
 import { signInAs, signOut, signInWithRefreshTokenOnly } from '../../helpers/auth'
 import { db } from '../../helpers/fake-supabase'
-import { aTransaction, aPatient, aUser, anInstallment } from '../../helpers/seed'
+import { aTransaction, anInstallment } from '../../helpers/seed'
 import { NOW, TODAY } from '../../setup'
 
 const create = (body: unknown) => call(createTransaction, 'POST', '/api/ledger/transactions', { body })

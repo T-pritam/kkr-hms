@@ -18,6 +18,7 @@
  */
 
 import { describe, it, expect, afterEach } from 'vitest'
+import { createHash } from 'crypto'
 import { decodeJwt } from 'jose'
 import { middleware } from '@/middleware'
 import { verifyAuth } from '@/lib/auth/verify'
@@ -145,7 +146,7 @@ describe('sessions — what moves the version', () => {
     aUser({ id: 'u1', token_version: 0 })
     db.seed('password_reset_tokens', {
       user_id: 'u1',
-      token_hash: require('crypto').createHash('sha256').update('reset-me').digest('hex'),
+      token_hash: createHash('sha256').update('reset-me').digest('hex'),
       expires_at: new Date(Date.now() + 3600_000).toISOString(),
       is_used: false,
     })

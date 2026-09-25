@@ -11,7 +11,7 @@ import {
 import { call } from '../../helpers/request'
 import { signInAs, signOut } from '../../helpers/auth'
 import { db } from '../../helpers/fake-supabase'
-import { aBilling, aPatient, anInstallment, aTransaction, aClosure, aUser } from '../../helpers/seed'
+import { aBilling, aPatient, anInstallment, aTransaction, aUser } from '../../helpers/seed'
 import { TODAY } from '../../setup'
 
 const list = (patientId: string, query = {}) =>

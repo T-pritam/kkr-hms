@@ -105,7 +105,7 @@ Robert Brown,32000,Lab Technician`
             <div className="flex-1">
               <h3 className="text-info font-semibold mb-2">CSV Format Requirements</h3>
               <p className="text-info text-sm mb-3">
-                👉 Click "Download Template" button below to get the CSV format
+                👉 Click &ldquo;Download Template&rdquo; button below to get the CSV format
               </p>
               
               <div className="space-y-2 text-sm">
@@ -118,7 +118,7 @@ Robert Brown,32000,Lab Technician`
                     <span className="text-foreground font-medium">Salary</span> - Monthly salary as number (required, minimum ₹1000)
                   </li>
                   <li>
-                    <span className="text-foreground font-medium">Role</span> - Employee designation (optional, defaults to "Nurse")
+                    <span className="text-foreground font-medium">Role</span> - Employee designation (optional, defaults to &ldquo;Nurse&rdquo;)
                   </li>
                 </ul>
               </div>

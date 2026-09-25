@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireBilling } from '@/lib/billing/authz'
 import { payDoctorFee, validatePayout } from '@/lib/billing/payouts'
-import { istToday } from '@/lib/dates/ist'
 
 /**
  * GET /api/finances/doctor-settlements

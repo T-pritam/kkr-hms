@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { accountFieldsError } from '@/lib/auth/assignable'
 import { parsePaging } from '@/lib/api/query'
 import { createClient } from '@/lib/supabase/server'
 import { verifyToken, getAccessToken } from '@/lib/auth/jwt'
@@ -93,6 +94,11 @@ export async function POST(request: NextRequest) {
         { error: 'Admin users can only be created by super admin' },
         { status: 403 }
       )
+    }
+
+    const fieldError = accountFieldsError({ role, status })
+    if (fieldError) {
+      return NextResponse.json({ error: fieldError }, { status: 400 })
     }
 
     const supabase = await createClient()

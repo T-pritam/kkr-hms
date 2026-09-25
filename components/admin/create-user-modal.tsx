@@ -154,6 +154,7 @@ export function CreateUserModal({ isOpen, onClose, onSuccess }: CreateUserModalP
               <option value="RECEPTIONIST">Receptionist</option>
               <option value="NURSE">Nurse</option>
               <option value="DOCTOR">Doctor</option>
+              <option value="LAB_TECHNICIAN">Lab technician</option>
             </select>
             <p className="text-xs text-muted">
               Note: Admin role can only be assigned by super admin

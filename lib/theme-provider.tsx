@@ -25,12 +25,19 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const stored = localStorage.getItem('kkr-theme') as Theme | null
     if (stored) {
+      // Read after mount on purpose: the server has no localStorage, so reading
+      // it during render would make the first client render differ from the
+      // server's (a hydration mismatch). One extra render, once.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setThemeState(stored)
     }
   }, [])
 
   useEffect(() => {
     const resolved = theme === 'system' ? getSystemTheme() : theme
+    // `system` depends on a media query only the browser can answer, so the
+    // resolved theme is settled here, beside the DOM class it drives.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setResolvedTheme(resolved)
 
     const root = document.documentElement

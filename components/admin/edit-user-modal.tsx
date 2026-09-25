@@ -125,6 +125,7 @@ export function EditUserModal({ isOpen, onClose, onSuccess, user }: EditUserModa
               <option value="RECEPTIONIST">Receptionist</option>
               <option value="NURSE">Nurse</option>
               <option value="DOCTOR">Doctor</option>
+              <option value="LAB_TECHNICIAN">Lab technician</option>
             </select>
             <p className="text-xs text-muted">
               Note: Admin role cannot be modified

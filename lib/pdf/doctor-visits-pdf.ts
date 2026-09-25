@@ -12,7 +12,7 @@
 
 import type { jsPDF } from 'jspdf'
 import { C, M, fmt, mkDoc, hdr, boxRow, sec, thead, trow, ttotal, footers } from './base'
-import type { Col, Cell, H } from './base'
+import type { Col, H } from './base'
 import { parseStoredInstant } from '@/lib/consultations/ist'
 
 export interface DoctorVisitRow {

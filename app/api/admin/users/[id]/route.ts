@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { accountFieldsError } from '@/lib/auth/assignable'
 import { createClient } from '@/lib/supabase/server'
 import { verifyToken, getAccessToken } from '@/lib/auth/jwt'
 
@@ -42,6 +43,11 @@ export async function PUT(
         { error: 'Cannot change role to admin' },
         { status: 403 }
       )
+    }
+
+    const fieldError = accountFieldsError({ role, status })
+    if (fieldError) {
+      return NextResponse.json({ error: fieldError }, { status: 400 })
     }
 
     const { data: updatedUser, error } = await supabase
@@ -120,6 +126,11 @@ export async function PATCH(
     }
     if (Object.keys(changes).length === 0) {
       return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
+    }
+
+    const fieldError = accountFieldsError(changes)
+    if (fieldError) {
+      return NextResponse.json({ error: fieldError }, { status: 400 })
     }
 
     const { data: updatedUser, error } = await supabase

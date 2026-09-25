@@ -732,14 +732,18 @@ anyone holding that key can mint presigned upload URLs for the case-sheet bucket
 `?pageSize=100000` returns every account. Admin-only, so low risk; the patients and doctors
 lists already cap theirs.
 
-### 🟡 #71 — On a phone, the advance log shows "Given by: —" for new advances
+### ✅ #71 — RESOLVED — the advance log names who gave every advance
+**Resolved 2026-09-25.** Screen (desktop and phone), CSV and PDF fall back to the signed-in user who recorded it (Q-15 = A) when there is no older free-text value.
+
 **Where:** `app/employees/advances/page.tsx` (mobile card)
 
 Since Q-15 = A "given by" is the signed-in user (`created_by`); the desktop table shows it as
 "Recorded by …", but the mobile card reads only the old free-text `given_by`, which new
 advances leave empty.
 
-### 🟡 #72 — A lab technician account cannot be created
+### ✅ #72 — RESOLVED — lab technician accounts can be created
+**Resolved 2026-09-25.** Both Admin-panel dialogs offer the role, and the API now accepts only the four assignable roles and ACTIVE/INACTIVE (`lib/auth/assignable.ts`) — it used to store any string except 'ADMIN'.
+
 **Where:** `components/admin/create-user-modal.tsx`, `edit-user-modal.tsx`
 
 The role list offers Receptionist, Nurse and Doctor only.

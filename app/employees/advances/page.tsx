@@ -199,7 +199,7 @@ export default function AdvanceLogPage() {
         { header: 'Employee',    value: r => r.employee?.name ?? '' },
         { header: 'Designation', value: r => r.employee?.designation ?? '' },
         { header: 'Month',       value: () => month },
-        { header: 'Given By',    value: r => r.given_by ?? '' },
+        { header: 'Given By',    value: r => r.given_by || r.created_by_user?.username || '' },
         { header: 'Recorded By', value: r => r.created_by_user?.username ?? '' },
         { header: 'Remarks',     value: r => r.remarks ?? '' },
         { header: 'Amount',      value: r => Number(r.amount ?? 0).toFixed(2) },
@@ -451,7 +451,7 @@ export default function AdvanceLogPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <div className="text-foreground">{row.given_by || '—'}</div>
+                          <div className="text-foreground">{row.given_by || row.created_by_user?.username || '—'}</div>
                           <UpdatedStamp
                             by={row.created_by_user?.username}
                             at={row.created_at}
@@ -489,7 +489,7 @@ export default function AdvanceLogPage() {
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div>
                         <div className="text-muted">Given by</div>
-                        <div className="text-foreground">{row.given_by || '—'}</div>
+                        <div className="text-foreground">{row.given_by || row.created_by_user?.username || '—'}</div>
                       </div>
                       <div>
                         <div className="text-muted">Designation</div>

@@ -126,17 +126,6 @@ export default function AdminPage() {
     }
   }
 
-  // Pagination handlers
-  const handlePageChange = (page: number) => {
-    setCurrentPage(page)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
-
-  const handlePageSizeChange = (size: number) => {
-    setPageSize(size)
-    setCurrentPage(1)
-  }
-
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -174,7 +163,7 @@ export default function AdminPage() {
               <div className="text-center py-12 text-muted">Loading...</div>
             ) : users.length === 0 ? (
               <div className="text-center py-12 text-muted">
-                No users found. Click "Create User" to add a new user.
+                No users found. Click &ldquo;Create User&rdquo; to add a new user.
               </div>
             ) : (
               <>

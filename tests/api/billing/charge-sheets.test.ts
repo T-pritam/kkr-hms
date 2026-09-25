@@ -19,7 +19,6 @@ import { signInAs, signOut } from '../../helpers/auth'
 import { db } from '../../helpers/fake-supabase'
 import {
   aBilling,
-  aChargeItem,
   aChargeSheet,
   aChargeSheetItem,
   aPatient,

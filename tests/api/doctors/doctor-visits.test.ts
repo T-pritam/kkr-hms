@@ -13,7 +13,6 @@ import { describe, it, expect } from 'vitest'
 import { GET as doctorVisits } from '@/app/api/doctors/[id]/visits/route'
 import { call } from '../../helpers/request'
 import { signInAs, signOut } from '../../helpers/auth'
-import { db } from '../../helpers/fake-supabase'
 import {
   aConsultation,
   aDoctor,

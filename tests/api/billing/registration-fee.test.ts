@@ -15,7 +15,7 @@ import { PATCH as patchItem, DELETE as deleteItem } from '@/app/api/charge-items
 import { call } from '../../helpers/request'
 import { signInAs, signOut } from '../../helpers/auth'
 import { db } from '../../helpers/fake-supabase'
-import { aBilling, aCharge, aChargeItem, aClosure, aPatient } from '../../helpers/seed'
+import { aBilling, aCharge, aChargeItem, aPatient } from '../../helpers/seed'
 import { TODAY, THIS_MONTH } from '../../setup'
 
 const VALID = { name: 'Ramesh Kumar', gender: 'Male', phone: '9876543210' }

@@ -128,6 +128,9 @@ export function ReportPreviewModal({ isOpen, orderId, onClose, onChanged }: Repo
 
           {/* ── The report itself — mirrors the real letterhead PDF ─────────── */}
           <div id="lab-report-print" className="bg-white text-black rounded-lg overflow-hidden border border-slate-200">
+            {/* A plain <img> on purpose: the letterhead is an inline data URI, which next/image
+                cannot optimise, and this block is what gets printed. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={KKR_LETTERHEAD_HEADER_DATA_URI} alt="KKR Diagnostic Centre" className="w-full block" />
 
             <div className="p-6 sm:p-10 pt-4 sm:pt-6">

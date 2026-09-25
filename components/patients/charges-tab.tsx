@@ -12,7 +12,6 @@ import { PharmacyBillViewModal } from '@/components/patients/pharmacy-bill-view-
 import { PatientChargesDownloadModal } from '@/components/patients/patient-charges-download-modal';
 import { CHARGE_CATEGORY_LABELS } from '@/lib/billing/constants';
 import { hasBillingCapability } from '@/lib/billing/authz';
-import { Modal } from '@/components/ui/modal';
 import { groupByCharge, groupByDate } from '@/lib/billing/group-charges';
 import {
   printPatientCharges, type PatientChargesPatient,

@@ -183,7 +183,8 @@ function detailSection(h: H, data: AdvanceLogData): void {
       { text: clip(emp.employee_code, 14),                   x: COL.code },
       { text: clip(emp.name, 28),                            x: COL.name },
       { text: clip(emp.designation, 20),                     x: COL.role },
-      { text: clip(row.given_by, 20),                        x: COL.givenBy },
+      // Given by is the signed-in user since Q-15 = A; free text only on older rows.
+      { text: clip(row.given_by || row.created_by_user?.username, 20), x: COL.givenBy },
       { text: clip(row.created_by_user?.username, 16),       x: COL.recordedBy },
       { text: clip(row.remarks, 28),                         x: COL.remarks },
       { text: fmt(num(row.amount)),                          x: COL.amount, align: 'right' },
