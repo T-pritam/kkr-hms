@@ -11,26 +11,60 @@ Status legend: 🔴 security · 🟠 correctness · 🟡 consistency
 
 ---
 
-## Start here
+## Start here — what is open before the client release (verified 2026-09-25)
 
-14 failing-by-design tests cover the open defects below (as of the 2026-09-25 audit, which retired three that encoded rules the client had decided against and fixed the defect behind a fourth). If you fix nothing else, fix this one:
+Every entry below was re-checked against the code on 2026-09-25. Fourteen older entries
+turned out to have been fixed by later rebuilds and are now marked resolved; what remains
+is **18 open items**. 14 of them are pinned by an expected-failure test that will flip to a
+failure the day the defect is fixed.
 
-| # | What breaks | Where |
+**🔴 Security — fix before release**
+
+| # | What breaks | Test |
 |---|---|---|
-| **#1** | `verifyAuth` accepts a refresh token as an access token. | `lib/auth/verify.ts` |
+| **#68** | The whole database is readable and writable with the key the browser carries (RLS off; anon has full CRUD on 50 of 52 tables, incl. `users`) | — (database-level) |
+| **#69** | A retired edge function still mints case-sheet upload URLs for anyone with that key | — |
+| #1 | A 7-day refresh token is accepted wherever a 10-minute access token is expected | ✔ |
+| #3 | Changing or resetting a password leaves every old session valid | ✔ |
+| #4 | The reset-link check can set a user's password to a dummy value | ✔ |
+| #5 | Admin user search is spliced into the database filter | ✔ |
+| #6 | Admin user PATCH writes the body as-is: can promote to ADMIN or set `password_hash` | ✔ ✔ |
 
-**#16 and #23 were already stale and have been corrected below** — both
-`*_included_in_package` columns exist (added by
-`supabase/migrations/20260805000001_patient_billing_package_flags.sql`) and were verified
-against the live database. The billing subsystem rebuild
-(`docs/BILLING_CHARGES_MODULE.md`) then resolved **#17, #18, #24, #25, #26, #28, #29, #30
-and #52**; those entries are marked resolved rather than deleted, because the tests that
-document them are now ordinary passing tests worth keeping.
+**🟠 Correctness**
+
+| # | What breaks | Test |
+|---|---|---|
+| #9 | Deleting a patient checks nothing that depends on them (admin-only; the database refuses, with a bare 500) | ✔ |
+| #14 | Editing a visit can move it before the patient's joining date | ✔ |
+| #22 | A second bill can be opened for one patient | ✔ |
+| #27 | Paying a fee through `/api/patients/[id]/settlements` does not check the fee is that patient's | ✔ |
+| #44 | Merging fee rows with zero visits writes a NaN rate (API only, no screen) | ✔ |
+| #45 | Merging fee rows does not check they are the same doctor (API only, no screen) | ✔ |
+| #54 | The employee CSV import tears quoted commas and duplicates on re-upload | ✔ ✔ |
+
+**🟡 Polish**
+
+| # | What |
+|---|---|
+| #70 | The admin users list has no page-size cap |
+| #71 | The advance log on a phone shows "Given by: —" for new advances |
+| #72 | A lab technician account cannot be created from the Admin panel |
+| #73 | The Dashboard is a placeholder |
+
+**Not bugs, but open:** a screen to manage visit purposes (decided in Q-72, not built) ·
+11 baseline API routes with no tests (lab templates and ranges, pharmacy bills, one case-sheet
+download, the next employee code) · doctor access (Q-98, deferred: doctors have no logins).
+
+**Lint:** 795 errors, none of them a bug. 780 are `no-explicit-any` (style); 15 are trivial
+(unescaped quotes, empty interfaces, one `prefer-const`, one `@ts-nocheck`); the 9
+`exhaustive-deps` warnings were each checked and every dependency list already covers what
+its fetch reads. The build does not run lint.
 
 The class of bug #16 and #23 belonged to — **the code and the live schema disagreeing** —
 is what `tests/helpers/schema.ts` exists to catch. It is a dump of the real column list,
 and the fake client validates every query against it, so a route referencing a column the
-database does not have fails loudly instead of silently.
+database does not have fails loudly instead of silently. (#64 slipped through because its
+route had no test at all.)
 
 ---
 
@@ -121,7 +155,8 @@ offers no protection of its own and no useful error.
 
 ---
 
-### 🟡 #10 — `pageSize` is unbounded
+### ✅ #10 — RESOLVED for patients — `pageSize` is capped
+**Verified resolved 2026-09-25** (checked against the code; the entry predates the rebuild that fixed it). `app/api/patients/route.ts` caps it (test: "caps pageSize"), as do doctors. The admin users list is still uncapped — see #70.
 **Where:** `app/api/patients/route.ts:21`
 **Test:** `tests/api/patients/patients.test.ts`
 
@@ -130,7 +165,8 @@ at 100; this one does not.
 
 ---
 
-### 🟡 #11 — Creating a patient does not return the patient
+### ✅ #11 — RESOLVED — creating a patient returns the patient
+**Verified resolved 2026-09-25** (checked against the code; the entry predates the rebuild that fixed it). `POST /api/patients` answers 201 with `{ patient, registration_fee }`.
 **Where:** `app/api/patients/route.ts:160`
 **Test:** `tests/api/patients/patients.test.ts`
 
@@ -139,7 +175,8 @@ re-query the list.
 
 ---
 
-### 🟠 #12 — Editing a patient silently re-admits them
+### ✅ #12 — RESOLVED — editing a patient no longer re-admits them
+**Verified resolved 2026-09-25** (checked against the code; the entry predates the rebuild that fixed it). Test: "does not resurrect a discharged patient when status is omitted".
 **Where:** `app/api/patients/[id]/route.ts:124`
 
 `status: status || 'Active'` means any PUT that omits `status` — which the edit form does
@@ -147,7 +184,8 @@ re-query the list.
 
 ---
 
-### 🟠 #13 — Discharged patients are never filtered out
+### ✅ #13 — RESOLVED — discharged patients are filtered out
+**Verified resolved 2026-09-25** (checked against the code; the entry predates the rebuild that fixed it). `/api/patients/active` filters on `status = 'Active'` (test: "excludes anyone who is not currently under care").
 **Where:** `app/api/patients/active/route.ts:24`
 
 The filter is `.neq('status', 'discharge')` but the value written elsewhere is
@@ -164,7 +202,8 @@ same date is not.
 
 ---
 
-### 🟠 #15 — One settled fee blocks deleting every visit with that doctor
+### ✅ #15 — RESOLVED — a settled fee blocks only its own visits
+**Verified resolved 2026-09-25** (checked against the code; the entry predates the rebuild that fixed it). Test: "only blocks the consultation actually covered by the settled settlement".
 **Where:** `app/api/patients/[id]/consultations/[consultationId]/route.ts:138-157`
 
 The settled-fee guard matches on doctor + patient rather than on the consultation's own
@@ -422,7 +461,8 @@ and the second doctor's fee disappears.
 
 ---
 
-### 🟠 #47 / #48 — The doctor registry has no role checks and hard-deletes
+### ✅ #47 / #48 — RESOLVED — the doctor registry has role checks and refuses unsafe deletes
+**Verified resolved 2026-09-25** (checked against the code; the entry predates the rebuild that fixed it). `lib/doctors/authz.ts` gates every route; delete is admin-only and 409s while anything references the doctor, with deactivation offered instead.
 **Where:** `app/api/doctors/route.ts`, `app/api/doctors/[id]/route.ts`
 
 Any signed-in user, including a receptionist, can create, edit and delete doctors. Delete
@@ -431,7 +471,8 @@ consultations and settlements still reference the doctor.
 
 ---
 
-### 🟡 #51 — The finance summary computes a breakdown it never returns
+### ✅ #51 — RESOLVED — the finance summary was rewritten
+**Verified resolved 2026-09-25** (checked against the code; the entry predates the rebuild that fixed it). The cash-basis summary (CR-10) no longer computes `paymentModeBreakdown` or `billingCount`.
 **Where:** `app/api/finances/summary/route.ts:231-243`
 
 `paymentModeBreakdown` is calculated and then omitted from the response, while
@@ -491,7 +532,8 @@ for a ledger debit was replaced (2026-09-25) by one asserting there is none.
 
 ## Section 7 — Lab
 
-### 🔴 #57 — The lab module has no role checks at all
+### ✅ #57 — RESOLVED — the lab module has role checks
+**Verified resolved 2026-09-25** (checked against the code; the entry predates the rebuild that fixed it). Every lab route goes through `lib/lab/authz.ts` (`catalogue:*`, `order:*`, `result:write`, `interpretation:write`, `authorise`); the `test-results` routes named below no longer exist.
 **Where:** every route under `app/api/lab-tests/**`, `app/api/test-parameters/**`, `app/api/test-results/**`
 
 Authentication only. Any signed-in user — a receptionist included — can rewrite the price
@@ -499,7 +541,8 @@ list, change reference ranges, enter results and delete them.
 
 ---
 
-### 🟠 #58 — Lab tests are hard-deleted with results attached
+### ✅ #58 — RESOLVED — a lab test in use is deactivated, not deleted
+**Verified resolved 2026-09-25** (checked against the code; the entry predates the rebuild that fixed it). `DELETE /api/lab-tests/[id]` checks `lab_order_items` and sets `is_active = false` when the test has orders.
 **Where:** `app/api/lab-tests/[id]/route.ts` (DELETE)
 
 No soft delete and no dependency check, despite `is_active` existing for exactly this
@@ -507,7 +550,8 @@ purpose.
 
 ---
 
-### 🟠 #59 — Parameter updates skip the reference-range invariants
+### ✅ #59 — RESOLVED — parameter updates are validated
+**Verified resolved 2026-09-25** (checked against the code; the entry predates the rebuild that fixed it). `PUT /api/test-parameters/[id]` validates the merged payload with `validateParameterPayload`.
 **Where:** `app/api/test-parameters/[id]/route.ts` (PUT)
 
 Create requires all four values when `gender_specific` is set; update enforces nothing, so
@@ -516,7 +560,8 @@ against it then falls back to the general range without anyone noticing.
 
 ---
 
-### 🟠 #60 — The "critical" rule is wrong for ranges near zero
+### ✅ #60 — RESOLVED — criticality uses explicit bounds
+**Verified resolved 2026-09-25** (checked against the code; the entry predates the rebuild that fixed it). `lib/lab/ranges.ts` reads per-range `critical_low` / `critical_high`; the ×0.5 / ×1.5 rule is gone.
 **Where:** `app/api/test-results/[id]/values/route.ts:106-108` (mirrored in `values/[valueId]/route.ts`)
 **Tests:** `tests/api/lab/test-results.test.ts` (2 cases)
 
@@ -533,7 +578,8 @@ is escalated to critical. This is a clinical-reporting error, not a cosmetic one
 
 ---
 
-### 🟡 #61 — Deleting a value reports success even when nothing matched
+### ✅ #61 — RESOLVED (moot) — the route no longer exists
+**Verified resolved 2026-09-25** (checked against the code; the entry predates the rebuild that fixed it). Results moved to `app/api/lab/order-items/[id]/results`.
 **Where:** `app/api/test-results/[id]/values/[valueId]/route.ts` (DELETE)
 
 Correctly scoped by result, but returns 200 whether or not a row was found.
@@ -542,7 +588,8 @@ Correctly scoped by result, but returns 200 whether or not a row was found.
 
 ## Section 8 — Case sheets
 
-### 🟡 #62 — The filename returned is not the filename stored
+### ✅ #62 — RESOLVED (moot) — the upload route no longer exists
+**Verified resolved 2026-09-25** (checked against the code; the entry predates the rebuild that fixed it). Attachments upload straight to R2 through `…/case-sheets/[caseSheetId]/attachments` — but see #69: the old edge function is still deployed.
 **Where:** `app/api/patients/[id]/case-sheets/upload/route.ts:34`
 
 The route builds `${Date.now()}_${file.name}` and returns it, while the edge function
@@ -551,7 +598,8 @@ handed back never matches the real R2 key.
 
 ---
 
-### 🟡 #63 — Case sheet fields cannot be cleared
+### ✅ #63 — RESOLVED — case sheet fields can be cleared
+**Verified resolved 2026-09-25** (checked against the code; the entry predates the rebuild that fixed it). The PATCH no longer merges with `||`.
 **Where:** `app/api/patients/[id]/case-sheets/[caseSheetId]/route.ts` (PATCH)
 
 Fields are merged with `||`, so an empty string falls back to the existing value and a
@@ -559,7 +607,8 @@ discharge note can never be removed once set.
 
 ---
 
-### 🔴 Not covered by a test: the upload edge function does not verify its caller
+### ➜ Superseded by #69
+The app no longer calls this function, but it is still deployed — see #69.
 **Where:** `supabase/functions/upload-case-sheet/index.ts`
 
 The function checks only that an `Authorization` header is *present* — it never validates
@@ -613,6 +662,56 @@ PRD v2 §3.2 row 6: a doctor visit locks for reception once its fee is paid. DEL
 it; PATCH checked only ownership, so reception could move a paid visit to another doctor or
 purpose, leaving the fee row describing visits that no longer matched. PATCH now refuses the
 desk with 409 `ENTRY_LOCKED`; the admin may still correct it.
+
+---
+
+## Section 10 — Found on 2026-09-25, open
+
+### 🔴 #68 — The database is readable and writable with the browser's key
+**Where:** Supabase project `bmbbifxkjqmdqriootdw` (all public tables), `lib/supabase/client.ts`, `lib/supabase/server.ts`
+
+Row-level security is off on all 52 public tables, and the `anon` role holds SELECT,
+INSERT, UPDATE and DELETE on 50 of them — including `users` (password hashes), `patients`,
+`patient_billing_installments` and `salary_payments`. The anon key ships to the browser
+(`NEXT_PUBLIC_SUPABASE_ANON_KEY`, used by the live-refresh hook), so anyone holding it can
+bypass every rule the API enforces by calling PostgREST directly. No test can catch this:
+the suite exercises the API, not the database's own access rules.
+
+**Fix:** the server also runs on the anon key today, so: move server routes to the
+service-role key (server-only, never `NEXT_PUBLIC_`), revoke the anon/authenticated table
+grants, and give live refresh a narrow alternative (RLS policies scoped to realtime, or
+server-sent refetch signals).
+
+### 🔴 #69 — A retired edge function still mints upload URLs for anyone with the anon key
+**Where:** Supabase edge function `upload-case-sheet` (deployed, ACTIVE, version 8)
+
+The app stopped calling it (attachments go straight to R2 from the API), but it is still
+deployed. It relies on the gateway's `verify_jwt`, which the public anon key satisfies, so
+anyone holding that key can mint presigned upload URLs for the case-sheet bucket.
+**Fix:** delete the function — nothing in the code calls it.
+
+### 🟡 #70 — The admin users list has no page-size cap
+**Where:** `app/api/admin/users/route.ts:21`
+
+`?pageSize=100000` returns every account. Admin-only, so low risk; the patients and doctors
+lists already cap theirs.
+
+### 🟡 #71 — On a phone, the advance log shows "Given by: —" for new advances
+**Where:** `app/employees/advances/page.tsx` (mobile card)
+
+Since Q-15 = A "given by" is the signed-in user (`created_by`); the desktop table shows it as
+"Recorded by …", but the mobile card reads only the old free-text `given_by`, which new
+advances leave empty.
+
+### 🟡 #72 — A lab technician account cannot be created
+**Where:** `components/admin/create-user-modal.tsx`, `edit-user-modal.tsx`
+
+The role list offers Receptionist, Nurse and Doctor only.
+
+### 🟡 #73 — The Dashboard is a placeholder
+**Where:** `app/dashboard/page.tsx`
+
+Every tile is a hard-coded 0. Only the admin lands on it.
 
 ---
 
