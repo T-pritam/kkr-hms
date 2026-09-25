@@ -11,54 +11,30 @@ Status legend: 🔴 security · 🟠 correctness · 🟡 consistency
 
 ---
 
-## Start here — what is open before the client release (verified 2026-09-25)
+## Start here — what is open before the client release (updated 2026-09-25)
 
-Every entry below was re-checked against the code on 2026-09-25. Fourteen older entries
-turned out to have been fixed by later rebuilds and are now marked resolved; what remains
-is **18 open items**. 14 of them are pinned by an expected-failure test that will flip to a
-failure the day the defect is fixed.
+Every entry was re-checked against the code on 2026-09-25, and the fixes that followed the
+same day closed **every defect that had a pinned test** — the suite now has **no expected
+failures**. What is open:
 
-**🔴 Security — fix before release**
-
-| # | What breaks | Test |
+| # | What | Status |
 |---|---|---|
-| **#68** | The whole database is readable and writable with the key the browser carries (RLS off; anon has full CRUD on 50 of 52 tables, incl. `users`) | — (database-level) |
-| **#69** | A retired edge function still mints case-sheet upload URLs for anyone with that key | — |
-| #1 | A 7-day refresh token is accepted wherever a 10-minute access token is expected | ✔ |
-| #3 | Changing or resetting a password leaves every old session valid | ✔ |
-| #4 | The reset-link check can set a user's password to a dummy value | ✔ |
-| #5 | Admin user search is spliced into the database filter | ✔ |
-| #6 | Admin user PATCH writes the body as-is: can promote to ADMIN or set `password_hash` | ✔ ✔ |
+| 🔴 **#68** | The database is readable and writable with the key the browser carries | **Held for a decision** — plan and a one-day workaround in [`docs/SECURITY-DB-ACCESS.md`](docs/SECURITY-DB-ACCESS.md) |
+| 🟡 #73 | The Dashboard is a placeholder | Question Q-99 (remove it, or build it) |
+| 🟡 #75 | Live refresh never fires on 11 screens (lab worklist, charge sheets, petty cash…) | Fixed by step 3 of the #68 plan |
 
-**🟠 Correctness**
-
-| # | What breaks | Test |
-|---|---|---|
-| #9 | Deleting a patient checks nothing that depends on them (admin-only; the database refuses, with a bare 500) | ✔ |
-| #14 | Editing a visit can move it before the patient's joining date | ✔ |
-| #22 | A second bill can be opened for one patient | ✔ |
-| #27 | Paying a fee through `/api/patients/[id]/settlements` does not check the fee is that patient's | ✔ |
-| #44 | Merging fee rows with zero visits writes a NaN rate (API only, no screen) | ✔ |
-| #45 | Merging fee rows does not check they are the same doctor (API only, no screen) | ✔ |
-| #54 | The employee CSV import tears quoted commas and duplicates on re-upload | ✔ ✔ |
-
-**🟡 Polish**
-
-| # | What |
-|---|---|
-| #70 | The admin users list has no page-size cap |
-| #71 | The advance log on a phone shows "Given by: —" for new advances |
-| #72 | A lab technician account cannot be created from the Admin panel |
-| #73 | The Dashboard is a placeholder |
+**Fixed on 2026-09-25:** security #1, #3, #4, #5, #6, #69, #70, #74 · correctness #9, #14,
+#22, #26, #27, #44, #45, #54, #64, #65, #66, #67 · polish #71, #72 · and 14 older entries
+found already fixed by earlier rebuilds (#10–#13, #15, #47/#48, #51, #57–#63).
 
 **Not bugs, but open:** a screen to manage visit purposes (decided in Q-72, not built) ·
-11 baseline API routes with no tests (lab templates and ranges, pharmacy bills, one case-sheet
-download, the next employee code) · doctor access (Q-98, deferred: doctors have no logins).
+11 baseline API routes with no tests (lab templates and ranges, pharmacy bills, one
+case-sheet download, the next employee code) · doctor access (Q-98, deferred).
 
-**Lint:** 795 errors, none of them a bug. 780 are `no-explicit-any` (style); 15 are trivial
-(unescaped quotes, empty interfaces, one `prefer-const`, one `@ts-nocheck`); the 9
-`exhaustive-deps` warnings were each checked and every dependency list already covers what
-its fetch reads. The build does not run lint.
+**Lint:** `npm run lint` passes — 0 errors. 773 warnings remain by decision: 764 are
+`no-explicit-any` (a warning since 2026-09-25, reason in `eslint.config.mjs`), and 9 are
+hook-dependency warnings, each checked: every dependency list already covers what its fetch
+reads.
 
 The class of bug #16 and #23 belonged to — **the code and the live schema disagreeing** —
 is what `tests/helpers/schema.ts` exists to catch. It is a dump of the real column list,
@@ -698,6 +674,16 @@ an `or()` filter, so `includeId=x,is_active.eq.false` listed every retired docto
 catalogue item. Each is now checked with `isUuid` (`lib/api/query.ts`) and refused with 400
 otherwise. Low impact — the rows exposed were readable to the caller anyway — but the
 filter grammar is not user input.
+
+### 🟡 #75 — Live refresh never fires on 11 screens
+**Where:** `hooks/use-realtime-refetch.ts` callers; the `supabase_realtime` publication
+
+The lab worklist and patient lab history, charge sheets, the petty cash log, the charge
+catalogue, the test catalogue's ranges, and a case sheet's doctors, medicines and scans all
+subscribe to tables that were never added to the realtime publication — so they have never
+updated when a colleague saved; only after the viewer's own action or a reload. Not fixed on
+its own: adding those tables to today's stream would widen #68's exposure. Step 3 of
+`docs/SECURITY-DB-ACCESS.md` (a data-free signal table) fixes both together.
 
 ### 🔴 #68 — The database is readable and writable with the browser's key
 **Where:** Supabase project `bmbbifxkjqmdqriootdw` (all public tables), `lib/supabase/client.ts`, `lib/supabase/server.ts`

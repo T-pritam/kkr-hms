@@ -4,10 +4,10 @@
 | | |
 |---|---|
 | **Doc type** | Current-state flow specification. It describes what the app **does now**, end to end, for every role. |
-| **As of** | 2026-09-25 · `main` @ `1aaae04` plus the audit fixes on `feature/v2-flow-prd-test-audit` (§12) |
+| **As of** | 2026-09-25 · `main` @ `969ccec` (live) plus the pre-release fixes on `feature/v2-release-fixes`, not yet merged (§12) |
 | **Live at** | `https://admin.kkrhospitals.in` (Vercel, auto-deploys from `main`) · database: Supabase project `bmbbifxkjqmdqriootdw` |
 | **Relationship to other docs** | [`PRD-v2.md`](PRD-v2.md) is the **change log and decision record**: why each rule exists, the client's words, every question and answer (Q-01 … Q-96). **This** document is the **map**: how the pieces fit together today. Where they differ, this one describes the app as built; the decision IDs in brackets point back to PRD-v2 for the reasoning. The older module docs (`PATIENT_DOCTOR_MODULE.md`, `LAB_MODULE.md`, `CASE_SHEET_MODULE.md`, `EMPLOYEE_MODULE.md`, `BILLING_CHARGES_MODULE.md`, `ROLES_AND_FEATURES.md`) predate the v2 money changes; their clinical sections still hold, their money sections do not. |
-| **Scale** | 20 screens · 105 API routes · 52 database tables · 1,814 automated tests |
+| **Scale** | 20 screens · 104 API routes · 51 database tables · 1,843 automated tests |
 
 ---
 
@@ -213,6 +213,7 @@ This is the path most of the app exists to serve. Each step names who does it, w
 - **Forgot password** (`/reset-password`): always answers "if the address exists, a link was sent", so it cannot be used to discover accounts. The link carries a one-time token (stored only as a hash, valid one hour).
 - **Admin reset** (Admin panel): sets the configured default password and forces a change at next sign-in. No email is sent; the new password is passed on in person.
 - **Idle sessions** [CR-19]: after 10 minutes the access token expires; the next click renews it from the 7-day refresh token *in the same request*. An API call from a truly dead session answers `401 SESSION_EXPIRED`, and the browser goes to the login page, remembering the screen it was on.
+- **When a session ends early** (BUGS #3): every renewal re-reads the account. A **password change or an admin reset** ends every other session within ten minutes — the browser that made the change keeps its session — and **deactivating an account** ends its sessions the same way. Only a 10-minute access token opens a request; a refresh token presented in its place is refused (BUGS #1).
 
 ### 4.2 Registering a patient, and the registration fee
 
@@ -231,7 +232,9 @@ This is the path most of the app exists to serve. Each step names who does it, w
 
 **Status of a patient:** *Active* (under care) → *Discharged* (set only by finalising a discharge summary) · *Cancelled* (registered in error). Editing a discharged patient's phone number does not re-admit them.
 
-**Readmission:** a returning patient is registered again as a new patient for now [Q-74]; a second bill per patient is not supported.
+**Readmission:** a returning patient is registered again as a new patient for now [Q-74]. **One bill per patient** is enforced: opening a second is refused (409), and a unique index backs it (BUGS #22).
+
+**Deleting a patient** (admin only) is refused while anything still holds their records — bill, charges, visits, fees, case sheets, lab orders, pharmacy bills, ledger rows or charge sheets — with the counts; a patient registered in error is marked **Cancelled** instead (BUGS #9).
 
 ### 4.3 The patient record, and the Overview tab
 
@@ -252,7 +255,7 @@ Reception sees everything except **Net** [Q-66]. The lab & medicine block is rec
 ### 4.4 Doctor visits
 
 **Who:** A D N R record; the creator or an admin edits/deletes.
-**Flow:** Patient ▸ Doctor visits ▸ Add visit: doctor (active doctors only), **visit purpose** (consultation, ward round…, required), date and time (IST), notes. A new visit cannot be dated before the patient joined (an *edit* can still move it earlier — an open defect, BUGS #14).
+**Flow:** Patient ▸ Doctor visits ▸ Add visit: doctor (active doctors only), **visit purpose** (consultation, ward round…, required), date and time (IST), notes. A visit cannot be dated — or edited to a date — before the patient joined.
 
 - Visits are numbered per doctor for the patient (visit 1, 2, 3 with Dr Rao).
 - **A visit locks for the desk once its doctor fee is paid** [§3.2 row 6]: reception cannot edit or delete it after the money has gone. The admin may still correct it, but can delete it only after un-paying the fee.
@@ -429,7 +432,7 @@ The patient's **total bill** is the sum of these payments.
 
 **Who:** A D (payroll) [Q-06]; the register page is **A** only. Reception has no access.
 
-- **Register:** employee code `EMP/26/007` (auto, editable), name, designation, base salary, contact and bank details, status. Deactivate rather than delete, so salary history stays. CSV import for bulk entry.
+- **Register:** employee code `EMP/26/007` (auto, editable), name, designation, base salary, contact and bank details, status. Deactivate rather than delete, so salary history stays. **CSV import** for bulk entry (Name, Salary, Role): real CSV, so a quoted "Kumar, Ramesh" stays one name; a row whose name *and* role match an active employee is skipped and reported by row; each imported employee gets a code.
 - **Monthly salary** (the salary grid): enter **days present (0–27)** and **OT days (0–3)** per employee.
 
 ```
@@ -523,7 +526,8 @@ The patient's **total bill** is the sum of these payments.
 
 - List, search and page through users; create, edit, activate/deactivate, delete; reset a password to the default (forces a change at next sign-in).
 - An **Admin account cannot be created, edited or deleted** here, and nobody can delete their own account.
-- The role list offers Receptionist, Nurse and Doctor (Lab technician is missing, §11).
+- Roles offered: Receptionist, Nurse, Doctor and Lab technician; statuses: Active or Inactive. The API accepts nothing else.
+- Deactivating an account, or resetting its password, ends that user's sessions within ten minutes (§4.1).
 
 ---
 
@@ -768,37 +772,27 @@ Ordered by how much they matter. The full, verified pre-release list — 18 open
 
 | # | Gap | Effect | Status |
 |:-:|---|---|---|
-| 1 | 🔴 **The database is open to anyone holding the browser's key.** Row-level security is off on all 52 tables, the anon role may read, insert, update and delete 50 of them — including `users` (password hashes), patients, payments and salaries — and that key is in the browser (the live-refresh feature uses it). | Anyone with the key can bypass every rule in §6 by calling the database directly. None of the app's tests can protect against this. | Known since before v2 (old release note #8). Fixing it means moving the server to the service-role key, revoking the anon grants, and giving live refresh its own narrow access. **Needs a decision and its own piece of work.** |
-| 1a | 🔴 **A retired edge function is still deployed.** `upload-case-sheet` is no longer called by the app, but it still mints upload URLs for the case-sheet bucket for anyone holding the public key (BUGS #69). | Anyone with the key can upload files into the bucket. | Delete the function; nothing depends on it. |
+| 1 | 🔴 **The database is open to anyone holding the browser's key.** Row-level security is off on all 52 tables, the anon role may read, insert, update and delete 50 of them — including `users` (password hashes), patients, payments and salaries — and that key is in the browser. The same key also receives live-refresh changes in full, can call 12 database functions, and can trigger the database backup (BUGS #68). | Anyone with the key can bypass every rule in §6. None of the app's tests can protect against this. | **Held for a decision.** Four-step plan, with a one-day workaround (steps 1–2) that closes writes, deletes, passwords, payroll and backups: [`SECURITY-DB-ACCESS.md`](SECURITY-DB-ACCESS.md). |
 | 2 | 🟠 **Visit purposes have no screen.** Q-72 decided they would be managed "now", and the API allows it (admin, reception), but no page can add, rename or retire one. | The list is stuck at what was seeded; a new kind of visit needs a database change. | Gap against a decided requirement. |
-| 3 | 🟠 **14 open defects**, each pinned by an expected-failure test (BUGS.md): among them a refresh token accepted as an access token (#1), sessions surviving a password change (#3), user-admin search and update weaknesses (#5, #6), a patient deletable with billing attached (#9), a visit edit that can predate joining (#14), a second bill openable for one patient (#22), a settlement payable against another patient's id (#27), merge maths (#44, #45), the CSV importer (#54). | Varies; the security ones (#1, #3–#6) matter most. | Documented and tested; not fixed. |
-| 4 | 🟡 The **Dashboard** is a placeholder (every tile reads 0), and only the Admin ever sees it. | Nobody gets a useful landing page. | — |
+| 3 | 🟡 **Live refresh never fires on 11 screens** — the lab worklist, charge sheets, petty cash, the charge catalogue, parts of the case sheet — because their tables were never added to the live-refresh stream (BUGS #75). | Those screens update only after your own action or a reload. | Fixed by step 3 of the #68 plan. |
+| 4 | 🟡 The **Dashboard** is a placeholder (every tile reads 0), and only the Admin ever sees it (BUGS #73). | Nobody gets a useful landing page. | Question **Q-99**: remove it, or build it. |
 | 5 | ⚪ The sidebar offers **Doctor** the Dashboard, Finances and Admin Panel, and each page sends them away. | None today: **no doctor has a login** [Q-98]. | **Deferred by the client:** doctor access will be designed when doctors are given logins; existing credentials are to be scrapped before the client release. |
-| 6 | 🟡 **Lab technician accounts cannot be created** in the Admin panel (the role is missing from the list). | Lab logins need a database insert. | — |
-| 7 | 🟡 **Manual fee rows and merging fee rows** exist only in the API [Q-72: "later"]. | — | Decided as later. |
-| 8 | 🟡 On a phone, the advance log's "Given by" shows "—" for new advances; the desktop view shows the name as "Recorded by". | The person who gave the advance isn't visible on mobile. | Small screen fix. |
-| 9 | ⚪ Lab prices reach no bill [Q-51]; discharge raises no final bill [Q-52]; salary is not in the ledger [§3.3]; no refunds or receipts [Q-73]; a returning patient is registered again [Q-74]. | — | **Decided**, not defects. |
+| 6 | 🟡 **Manual fee rows and merging fee rows** exist only in the API [Q-72: "later"]. | — | Decided as later. |
+| 7 | ⚪ Lab prices reach no bill [Q-51]; discharge raises no final bill [Q-52]; salary is not in the ledger [§3.3]; no refunds or receipts [Q-73]; a returning patient is registered again [Q-74]. | — | **Decided**, not defects. |
 
 ---
 
 ## 12. Test and verification status
 
-As of 2026-09-25, on `feature/v2-flow-prd-test-audit`:
+As of 2026-09-25, on `feature/v2-release-fixes`:
 
 | Check | Result |
 |---|---|
-| Automated tests | **61 files · 1,814 tests · 1,800 pass · 14 expected failures** (the open defects in §11 #3) · **0 unexpected failures**, stable across two full runs |
-| Line coverage (API, `lib/`, middleware) | **82%** overall · billing 94% · finances 95% · ledger 91% · petty cash 96% · auth & middleware 97–98% · lowest: pharmacy integration 0–17%, lab API 64%, charge-sheet pharmacy routes 64% |
+| Automated tests | **62 files · 1,843 tests · all pass · 0 expected failures** — every defect that had a pinned test is fixed |
+| Line coverage (API, `lib/`, middleware) | about **82%** · billing 94% · finances 95% · ledger 91% · petty cash 96% · auth & middleware 97–98% · lowest: pharmacy integration 0–17%, lab API 64%, charge-sheet pharmacy routes 64% |
 | Type check (`tsc`) | clean |
 | Production build (`next build`) | passes |
-| Lint (`eslint`) | 795 errors repo-wide, **all pre-existing** — 98% are `no-explicit-any`; the build does not run lint. This round added none. |
-| API routes with **no** test | 11, all in the baseline lab, pharmacy and case-sheet modules (no v2 rule depends on them): lab interpretation templates and reference-range edits, pharmacy-bill attach and preview, charge-sheet pharmacy bills, the patient lab-orders list, a case-sheet attachment download, the next employee code |
+| Lint (`npm run lint`) | **passes — 0 errors.** 773 warnings by decision: 764 `no-explicit-any` (reason in `eslint.config.mjs`) and 9 hook-dependency warnings, each checked and harmless |
+| API routes with **no** test | 11, all in the baseline lab, pharmacy and case-sheet modules (no v2 rule depends on them) |
 
-**What the audit on 2026-09-25 changed.** Every test was checked against the decided rules. Three expected-failure tests demanded behaviour the client had decided against (an "outstanding balance" check, payroll in the ledger, refusing the doctor's payroll list) and were replaced by tests of the decided rule. Writing the missing tests for the v2 requirements then exposed six defects, all fixed and each now pinned by a test that fails without the fix:
-
-- the **Given-by picker was empty in production** (it read a column the users table does not have);
-- a **paid fee or commission was still partly editable by reception**, including a paid fee's amount — against Q-88;
-- one payout route still **refused reception**, against Q-19;
-- a fee raised through that route **counted as ₹0** (no total);
-- the **monthly Finance PDF printed "undefined"** in one of its boxes;
-- a **paid doctor visit could still be edited by reception** (moved to another doctor or purpose), against §3.2 row 6 — only deleting it was refused.
+**What changed on 2026-09-25.** A test audit aligned every test with the decided rules and exposed six defects (the empty Given-by picker, Q-88 gaps on paid payouts, a payout route refusing reception, a ₹0 fee, an "undefined" in the monthly PDF, and editable paid visits). The pre-release pass then fixed every remaining pinned defect — sessions (#1, #3, #4), the admin user API (#5, #6, #70, #72), id filters (#74), patient delete (#9), visit dates (#14), one bill per patient (#22), fee payment and merging (#27, #44, #45), the CSV import (#54), the advance log (#71) — and neutralised the retired upload edge function (#69). The full list, with evidence, is in [`BUGS.md`](../BUGS.md).

@@ -4,13 +4,27 @@ Everything still waiting on an answer, in one place. The PRD is [`PRD-v2.md`](PR
 
 **How to answer:** reply by ID, e.g. `Q-90: A`, `Q-91: as proposed`, or free text. After your answers, the PRD is updated and the questions move to its answer log.
 
-_Last updated 2026-09-25 · **0 open** · every CR built_
+_Last updated 2026-09-25 · **1 open** (Q-99) · every CR built_
 
 **How the app works today, end to end:** [`APP-FLOW-PRD.md`](APP-FLOW-PRD.md). This file is only what is waiting on you.
 
 ---
 
-## Nothing is waiting on you
+## Waiting on you — round 7
+
+### Q-99 — What should the Dashboard be?
+
+Today it is a placeholder: four tiles that always read 0 and two empty panels (BUGS #73). Only the admin sees it — everyone else is sent to Patients after signing in.
+
+| | Answer |
+|---|---|
+| **A** *(recommended for the release)* | **Remove it.** The admin lands on Patients like everyone else. Nothing on screen says 0 when it isn't. |
+| **B** | **Build a small admin dashboard** from figures the app already has: today's collections by mode · rows waiting to be closed · petty cash balance · fees and commissions still to pay · active patients · lab orders not yet reported. Say which tiles you want. |
+| **C** | Leave it as it is. *(Not recommended: a screen of zeros reads as "nothing happened".)* |
+
+---
+
+### Answered — round 6
 
 Round 6 was answered on 2026-09-25 (logged in [`PRD-v2.md` §9.0a](PRD-v2.md#90a-round-6--from-the-test-audit-answered-2026-09-25)):
 
