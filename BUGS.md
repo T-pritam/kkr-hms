@@ -19,10 +19,9 @@ failures**. What is open:
 
 | # | What | Status |
 |---|---|---|
-| 🔴 **#68** | The database is readable and writable with the key the browser carries | **Held for a decision** — plan and a one-day workaround in [`docs/SECURITY-DB-ACCESS.md`](docs/SECURITY-DB-ACCESS.md) |
-| 🟡 #75 | Live refresh never fires on 11 screens (lab worklist, charge sheets, petty cash…) | Fixed by step 3 of the #68 plan |
+| 🟡 #68 | ~~The database is readable and writable with the key the browser carries~~ | **Closed in practice 2026-09-25** (steps 1–3 of [`docs/SECURITY-DB-ACCESS.md`](docs/SECURITY-DB-ACCESS.md)); step 4, row-level security as a second lock, not done |
 
-**Fixed on 2026-09-25:** the placeholder Dashboard removed (#73, Q-99 = A) · security #1, #3, #4, #5, #6, #69, #70, #74 · correctness #9, #14,
+**Fixed on 2026-09-25:** the browser's key closed (#68, steps 1–3) · live refresh on every screen (#75) · scheduled backups, failing since at least 24 Sep (#76) · the placeholder Dashboard removed (#73, Q-99 = A) · security #1, #3, #4, #5, #6, #69, #70, #74 · correctness #9, #14,
 #22, #26, #27, #44, #45, #54, #64, #65, #66, #67 · polish #71, #72 · and 14 older entries
 found already fixed by earlier rebuilds (#10–#13, #15, #47/#48, #51, #57–#63).
 
@@ -674,7 +673,9 @@ catalogue item. Each is now checked with `isUuid` (`lib/api/query.ts`) and refus
 otherwise. Low impact — the rows exposed were readable to the caller anyway — but the
 filter grammar is not user input.
 
-### 🟡 #75 — Live refresh never fires on 11 screens
+### ✅ #75 — RESOLVED — Live refresh never fires on 11 screens
+**Resolved 2026-09-25** by step 3 of #68: live refresh listens to `change_signals`, which every watched table feeds by trigger, so these screens refresh like the rest. `tests/unit/realtime-signals.test.ts` fails if a screen watches a table without a trigger.
+
 **Where:** `hooks/use-realtime-refetch.ts` callers; the `supabase_realtime` publication
 
 The lab worklist and patient lab history, charge sheets, the petty cash log, the charge
@@ -684,7 +685,13 @@ updated when a colleague saved; only after the viewer's own action or a reload. 
 its own: adding those tables to today's stream would widen #68's exposure. Step 3 of
 `docs/SECURITY-DB-ACCESS.md` (a data-free signal table) fixes both together.
 
-### 🔴 #68 — The database is readable and writable with the browser's key
+### 🟡 #68 — MITIGATED — The database is readable and writable with the browser's key
+**Steps 1–3 applied 2026-09-25** (`docs/SECURITY-DB-ACCESS.md` §0): the server uses the
+service-role key; `anon` and `authenticated` hold no rights at all except reading the data-free
+`change_signals`; the real tables left the live-refresh stream; the backup function needs a
+secret. Verified on production from both sides. **Left:** step 4, row-level security on every
+table, so that a future mistaken grant cannot reopen this.
+
 **Where:** Supabase project `bmbbifxkjqmdqriootdw` (all public tables), `lib/supabase/client.ts`, `lib/supabase/server.ts`
 
 Row-level security is off on all 52 public tables, and the `anon` role holds SELECT,
@@ -698,6 +705,19 @@ the suite exercises the API, not the database's own access rules.
 service-role key (server-only, never `NEXT_PUBLIC_`), revoke the anon/authenticated table
 grants, and give live refresh a narrow alternative (RLS policies scoped to realtime, or
 server-sent refetch signals).
+
+### ✅ #76 — RESOLVED — Scheduled database backups were all failing
+**Where:** Supabase edge function `backup-database`, cron job "DB Backup to R2"
+
+**Found and fixed 2026-09-25** while doing #68. Every run in the log window (four a day, from
+24 Sep 12:30 UTC) answered 500 *password authentication failed for user "postgres"*: the
+function connected with a hand-set `DATABASE_URL` holding an outdated password. The cron job
+reported "succeeded" because it only records that the request was sent. The function now
+prefers `SUPABASE_DB_URL`, which Supabase injects and keeps current; a run on 25 Sep 08:20 UTC
+wrote a backup (and, applying the function's 3-day retention for the first time in a while,
+removed 13 files older than that).
+
+**Worth doing:** check the backups now and then — nothing alerts when they fail.
 
 ### ✅ #69 — RESOLVED — the retired edge function refuses everything
 **Resolved 2026-09-25.** Redeployed as a stub (version 9) that answers 410 Gone to every request; verified with the anon key. Delete it from the Supabase dashboard (Edge Functions → upload-case-sheet → Delete) when convenient — nothing calls it.

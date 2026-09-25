@@ -7,33 +7,79 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const DAYS_TO_KEEP = 30;
+const DAYS_TO_KEEP = 3;
 const BACKUPS_DIR = 'database-backups';
+
+/**
+ * The platform's own connection string first: Supabase injects SUPABASE_DB_URL
+ * into every function and keeps it current. The hand-set DATABASE_URL held a
+ * stale password, so every scheduled backup failed with "password
+ * authentication failed" (found 2026-09-25); it stays only as a fallback.
+ */
+function databaseUrl(): string {
+  const dbUrl = Deno.env.get('SUPABASE_DB_URL') || Deno.env.get('DATABASE_URL');
+  if (!dbUrl) throw new Error('Neither SUPABASE_DB_URL nor DATABASE_URL is set');
+  return dbUrl;
+}
 
 /**
  * Optimized database dump
  */
 async function dumpDatabaseData(): Promise<Uint8Array> {
-  const dbUrl = Deno.env.get('DATABASE_URL');
-  if (!dbUrl) {
-    throw new Error('DATABASE_URL environment variable not set');
-  }
-
-  console.log('Starting optimized database backup...');
-
-  const client = new Client(dbUrl);
+  const client = new Client(databaseUrl());
   await client.connect();
 
   try {
     let sqlDump = '-- KKR-HMS Database Backup\n';
     sqlDump += `-- Generated: ${new Date().toISOString()}\n\n`;
 
-    // Get all tables
+    // ========== EXTENSIONS ==========
+    const extResult = await client.queryArray(
+      `SELECT extname FROM pg_extension
+       WHERE extname NOT IN ('plpgsql')
+       ORDER BY extname`
+    );
+    for (const [extName] of extResult.rows as [string][]) {
+      sqlDump += `CREATE EXTENSION IF NOT EXISTS "${extName}";\n`;
+    }
+    sqlDump += '\n';
+
+    // ========== SEQUENCES ==========
+    const seqResult = await client.queryArray(
+      `SELECT
+        s.relname AS seq_name,
+        p.start_value,
+        p.increment_by,
+        p.min_value,
+        p.max_value,
+        p.cache_size
+       FROM pg_class s
+       JOIN pg_namespace n ON n.oid = s.relnamespace
+       JOIN pg_sequences p ON p.sequencename = s.relname AND p.schemaname = n.nspname
+       WHERE s.relkind = 'S'
+         AND n.nspname = 'public'
+       ORDER BY s.relname`
+    );
+    for (const [seqName, startVal, incBy, minVal, maxVal, cache] of seqResult.rows as [string, string, string, string, string, string][]) {
+      sqlDump += `CREATE SEQUENCE IF NOT EXISTS "${seqName}"`;
+      sqlDump += ` START WITH ${startVal}`;
+      sqlDump += ` INCREMENT BY ${incBy}`;
+      sqlDump += ` MINVALUE ${minVal}`;
+      if (maxVal === '9223372036854775807') {
+        sqlDump += ` NO MAXVALUE`;
+      } else {
+        sqlDump += ` MAXVALUE ${maxVal}`;
+      }
+      sqlDump += ` CACHE ${cache};\n`;
+    }
+    sqlDump += '\n';
+
+    // ========== TABLES ==========
     const tables = await client.queryArray(
-      `SELECT table_name 
-       FROM information_schema.tables 
-       WHERE table_schema = 'public' 
-       AND table_type = 'BASE TABLE'
+      `SELECT table_name
+       FROM information_schema.tables
+       WHERE table_schema = 'public'
+         AND table_type = 'BASE TABLE'
        ORDER BY table_name`
     );
 
@@ -42,21 +88,20 @@ async function dumpDatabaseData(): Promise<Uint8Array> {
     for (const [tableName] of tables.rows as [string][]) {
       console.log(`Backing up: ${tableName}`);
 
-      // ========== SCHEMA: Get column definitions ==========
       const columnsResult = await client.queryArray(
-        `SELECT 
-          column_name, 
-          data_type, 
+        `SELECT
+          column_name,
+          data_type,
           character_maximum_length,
-          is_nullable, 
-          column_default
-         FROM information_schema.columns 
+          is_nullable,
+          column_default,
+          udt_name
+         FROM information_schema.columns
          WHERE table_schema = 'public' AND table_name = $1
          ORDER BY ordinal_position`,
         [tableName]
       );
 
-      // Build CREATE TABLE statement
       sqlDump += `\n-- =============================================\n`;
       sqlDump += `-- Table: ${tableName}\n`;
       sqlDump += `-- =============================================\n`;
@@ -64,30 +109,22 @@ async function dumpDatabaseData(): Promise<Uint8Array> {
       sqlDump += `CREATE TABLE "${tableName}" (\n`;
 
       const columnDefs: string[] = [];
-      for (const [colName, dataType, maxLength, nullable, defaultValue] of columnsResult.rows as [string, string, number | null, string, string | null][]) {
+      const columnTypes: Record<string, string> = {};
+
+      for (const [colName, dataType, maxLength, nullable, defaultValue] of columnsResult.rows as [string, string, number | null, string, string | null, string][]) {
+        columnTypes[colName] = dataType;
         let colDef = `  "${colName}" ${dataType.toUpperCase()}`;
-        
-        // Add length for varchar/char types
         if (maxLength && (dataType === 'character varying' || dataType === 'character')) {
           colDef += `(${maxLength})`;
         }
-        
-        // Add default value
-        if (defaultValue !== null) {
-          colDef += ` DEFAULT ${defaultValue}`;
-        }
-        
-        // Add NOT NULL constraint
-        if (nullable === 'NO') {
-          colDef += ' NOT NULL';
-        }
-        
+        if (defaultValue !== null) colDef += ` DEFAULT ${defaultValue}`;
+        if (nullable === 'NO') colDef += ' NOT NULL';
         columnDefs.push(colDef);
       }
 
       sqlDump += columnDefs.join(',\n') + '\n);\n';
 
-      // ========== PRIMARY KEY ==========
+      // Primary key
       const pkResult = await client.queryArray(
         `SELECT a.attname
          FROM pg_index i
@@ -95,16 +132,13 @@ async function dumpDatabaseData(): Promise<Uint8Array> {
          WHERE i.indrelid = $1::regclass AND i.indisprimary`,
         [tableName]
       );
-
       if (pkResult.rows.length > 0) {
         const pkColumns = pkResult.rows.map(row => `"${row[0]}"`).join(', ');
         sqlDump += `ALTER TABLE "${tableName}" ADD PRIMARY KEY (${pkColumns});\n`;
       }
 
-      // ========== DATA: Get row count ==========
-      const countResult = await client.queryObject(
-        `SELECT COUNT(*) as count FROM "${tableName}"`
-      );
+      // Data
+      const countResult = await client.queryObject(`SELECT COUNT(*) as count FROM "${tableName}"`);
       const rowCount = Number(countResult.rows[0].count);
 
       if (rowCount === 0) {
@@ -114,35 +148,37 @@ async function dumpDatabaseData(): Promise<Uint8Array> {
 
       console.log(`  └─ Schema created, ${rowCount} rows`);
 
-      // Get all data efficiently
       const data = await client.queryObject(`SELECT * FROM "${tableName}"`);
-      
-      if (data.rows.length > 0) {
-        const columnNames = Object.keys(data.rows[0]);
-        const quotedColumns = columnNames.map(col => `"${col}"`).join(', ');
-        
-        sqlDump += `\n-- Data for ${tableName}\n`;
-        
-        // Build multi-row INSERT
-        const batchSize = 100;
-        for (let i = 0; i < data.rows.length; i += batchSize) {
-          const batch = data.rows.slice(i, i + batchSize);
-          
-          const valueRows = batch.map(row => {
-            const values = columnNames.map(col => {
-              const val = row[col];
-              if (val === null) return 'NULL';
-              if (typeof val === 'string') return `'${val.replace(/'/g, "''")}'`;
-              if (typeof val === 'boolean') return val ? 'true' : 'false';
-              if (val instanceof Date) return `'${val.toISOString()}'`;
-              if (typeof val === 'object') return `'${JSON.stringify(val).replace(/'/g, "''")}'`;
-              return String(val);
-            }).join(', ');
-            return `(${values})`;
-          }).join(',\n  ');
-          
-          sqlDump += `INSERT INTO "${tableName}" (${quotedColumns}) VALUES\n  ${valueRows};\n`;
-        }
+      if (data.rows.length === 0) continue;
+
+      const columnNames = Object.keys(data.rows[0]);
+      const quotedColumns = columnNames.map(col => `"${col}"`).join(', ');
+      sqlDump += `\n-- Data for ${tableName}\n`;
+
+      const batchSize = 100;
+      for (let i = 0; i < data.rows.length; i += batchSize) {
+        const batch = data.rows.slice(i, i + batchSize);
+        const valueRows = batch.map(row => {
+          const values = columnNames.map(col => {
+            const val = row[col];
+            const colType = columnTypes[col] ?? '';
+            if (val === null) return 'NULL';
+            if (typeof val === 'boolean') return val ? 'true' : 'false';
+            if (typeof val === 'string') return `'${val.replace(/'/g, "''")}'`;
+            if (val instanceof Date) {
+              // DATE columns: only YYYY-MM-DD, no time component
+              if (colType === 'date') {
+                return `'${val.toISOString().split('T')[0]}'`;
+              }
+              // TIMESTAMP/TIMESTAMPTZ: full ISO string
+              return `'${val.toISOString()}'`;
+            }
+            if (typeof val === 'object') return `'${JSON.stringify(val).replace(/'/g, "''")}'`;
+            return String(val);
+          }).join(', ');
+          return `(${values})`;
+        }).join(',\n  ');
+        sqlDump += `INSERT INTO "${tableName}" (${quotedColumns}) VALUES\n  ${valueRows};\n`;
       }
     }
 
@@ -179,14 +215,8 @@ async function dumpDatabaseData(): Promise<Uint8Array> {
       sqlDump += `ALTER TABLE "${tableName}" ADD CONSTRAINT "${constraintName}" `;
       sqlDump += `FOREIGN KEY ("${columnName}") `;
       sqlDump += `REFERENCES "${foreignTable}" ("${foreignColumn}")`;
-      
-      if (deleteRule !== 'NO ACTION') {
-        sqlDump += ` ON DELETE ${deleteRule}`;
-      }
-      if (updateRule !== 'NO ACTION') {
-        sqlDump += ` ON UPDATE ${updateRule}`;
-      }
-      
+      if (deleteRule !== 'NO ACTION') sqlDump += ` ON DELETE ${deleteRule}`;
+      if (updateRule !== 'NO ACTION') sqlDump += ` ON UPDATE ${updateRule}`;
       sqlDump += `;\n`;
     }
 
@@ -209,6 +239,30 @@ async function dumpDatabaseData(): Promise<Uint8Array> {
 
     for (const [, , , indexDef] of indexResult.rows as [string, string, string, string][]) {
       sqlDump += `${indexDef};\n`;
+    }
+
+    // ========== RESET SEQUENCES ==========
+    // ========== RESET SEQUENCES ==========
+    sqlDump += `\n-- =============================================\n`;
+    sqlDump += `-- Reset sequences to max existing values\n`;
+    sqlDump += `-- =============================================\n`;
+
+    const seqSyncResult = await client.queryArray(
+      `SELECT
+        seq.relname AS seq_name,
+        col.attname AS col_name,
+        tbl.relname AS table_name
+      FROM pg_class seq
+      JOIN pg_namespace n ON n.oid = seq.relnamespace
+      JOIN pg_attrdef def ON def.adbin::text LIKE '%' || seq.relname || '%'
+      JOIN pg_attribute col ON col.attrelid = def.adrelid AND col.attnum = def.adnum
+      JOIN pg_class tbl ON tbl.oid = def.adrelid
+      WHERE seq.relkind = 'S'
+        AND n.nspname = 'public'`
+    );
+
+    for (const [seqName, colName, tableName] of seqSyncResult.rows as [string, string, string][]) {
+      sqlDump += `SELECT setval('${seqName}', COALESCE((SELECT MAX("${colName}") FROM "${tableName}"), 1));\n`;
     }
 
     console.log('Database dump completed successfully');
@@ -243,7 +297,7 @@ async function compressData(data: Uint8Array): Promise<Uint8Array> {
 
   const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
   const compressed = new Uint8Array(totalLength);
-  
+
   let offset = 0;
   for (const chunk of chunks) {
     compressed.set(chunk, offset);
@@ -277,7 +331,7 @@ function createS3Client() {
 }
 
 /**
- * Upload to R2 using presigned URL (same approach as PDF upload)
+ * Upload to R2 using presigned URL
  */
 async function uploadToR2(filename: string, fileBuffer: Uint8Array): Promise<string> {
   const R2_ACCOUNT_ID = Deno.env.get('R2_ACCOUNT_ID');
@@ -295,7 +349,6 @@ async function uploadToR2(filename: string, fileBuffer: Uint8Array): Promise<str
   try {
     const s3Client = createS3Client();
 
-    // Step 1: Generate presigned URL (just like PDF upload)
     const command = new PutObjectCommand({
       Bucket: bucketName,
       Key: key,
@@ -303,35 +356,28 @@ async function uploadToR2(filename: string, fileBuffer: Uint8Array): Promise<str
     });
 
     const uploadUrl = await getSignedUrl(s3Client, command, {
-      expiresIn: 60 * 60, // 1 hour
+      expiresIn: 60 * 60,
     });
 
     console.log('Generated presigned URL, uploading...');
 
-    // Step 2: Upload using the presigned URL with fetch
     const uploadResponse = await fetch(uploadUrl, {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/gzip',
-      },
+      headers: { 'Content-Type': 'application/gzip' },
       body: fileBuffer,
     });
 
     if (!uploadResponse.ok) {
       const errorText = await uploadResponse.text();
-      throw new Error(
-        `Upload failed: ${uploadResponse.status} ${uploadResponse.statusText} - ${errorText}`
-      );
+      throw new Error(`Upload failed: ${uploadResponse.status} ${uploadResponse.statusText} - ${errorText}`);
     }
 
     console.log('✓ Backup uploaded successfully');
-    
+
     const publicUrl = `https://pub-${R2_ACCOUNT_ID}.r2.dev/${key}`;
     return publicUrl;
   } catch (error) {
-    throw new Error(
-      `Failed to upload to R2: ${error instanceof Error ? error.message : String(error)}`
-    );
+    throw new Error(`Failed to upload to R2: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -444,11 +490,11 @@ async function performBackup(): Promise<{
 
   // Convert to IST (GMT+5:30)
   const now = new Date();
-  const istOffset = 5.5 * 60 * 60 * 1000; // 5 hours 30 minutes in milliseconds
+  const istOffset = 5.5 * 60 * 60 * 1000;
   const istDate = new Date(now.getTime() + istOffset);
-  
-  const dateStr = istDate.toISOString().split('T')[0]; // YYYY-MM-DD
-  const timeStr = istDate.toISOString().split('T')[1].substring(0, 5).replace(':', ''); // HHMM
+
+  const dateStr = istDate.toISOString().split('T')[0];
+  const timeStr = istDate.toISOString().split('T')[1].substring(0, 5).replace(':', '');
   const filename = `backup-${dateStr}-${timeStr}-${Date.now()}.sql.gz`;
 
   console.log(`\nUploading backup file...`);
@@ -471,6 +517,39 @@ async function performBackup(): Promise<{
 }
 
 /**
+ * Only the scheduled job may start a backup (BUGS #68).
+ *
+ * The platform's JWT check lets through anyone holding the public anon key,
+ * which every browser has. So the cron job also sends `x-backup-secret`, read
+ * from Supabase Vault (`backup_cron_secret`), and this compares it with the
+ * same Vault entry over the function's own database connection. No secret has
+ * to be copied into the function's settings, and rotating it is one SQL call.
+ */
+async function isScheduledCall(req: Request): Promise<boolean> {
+  const given = req.headers.get('x-backup-secret');
+  if (!given) return false;
+
+  const client = new Client(databaseUrl());
+  await client.connect();
+  try {
+    const result = await client.queryArray(
+      `SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'backup_cron_secret'`
+    );
+    const expected = result.rows[0]?.[0];
+    if (typeof expected !== 'string' || expected.length === 0) return false;
+
+    const a = new TextEncoder().encode(given);
+    const b = new TextEncoder().encode(expected);
+    if (a.length !== b.length) return false;
+    let diff = 0;
+    for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+    return diff === 0;
+  } finally {
+    await client.end();
+  }
+}
+
+/**
  * HTTP Handler
  */
 async function handleHttpRequest(req: Request): Promise<Response> {
@@ -487,7 +566,16 @@ async function handleHttpRequest(req: Request): Promise<Response> {
       );
     }
 
-    const result = await performBackup();
+    if (!(await isScheduledCall(req))) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // The file's link stays out of the response: a backup is the whole
+    // database, and the caller (the cron job) never reads it anyway.
+    const { uploadUrl: _uploadUrl, ...result } = await performBackup();
 
     return new Response(JSON.stringify(result), {
       status: 200,

@@ -2,9 +2,38 @@
 
 | | |
 |---|---|
-| **Status** | **Proposal — nothing here is applied yet.** Held on purpose: the full fix touches how every screen reaches the database. |
+| **Status** | **Steps 1, 2 and 3 applied to production on 2026-09-25** and verified (§0). Step 4 (row-level security) is not done. |
 | **Written** | 2026-09-25, from read-only checks on production (`bmbbifxkjqmdqriootdw`) and the code on `feature/v2-release-fixes` |
-| **Decision needed** | Which phases to run, and when (§6) |
+| **Decision needed** | Only whether to run step 4 (§4) |
+
+---
+
+## 0. What was done on 2026-09-25
+
+Applied in an order where the live app never depended on something not yet in place,
+checking production before each next step:
+
+| # | Change | How it was checked |
+|---|---|---|
+| 1 | Migration `20260925000006` (additive): the `change_signals` table, a statement-level trigger on each of the 28 watched tables, the table added to the live-refresh stream, an hourly prune job | A subscriber holding only the public key received a signal per table, filtered correctly, with no row data |
+| 2 | Code `521644e` deployed: the server uses `SUPABASE_SERVICE_ROLE_KEY` (`lib/supabase/server.ts`); the live-refresh hook listens to `change_signals` | Before deploy: the build run locally against production — 31 read endpoints, all 200. After deploy: Supabase's gateway log shows the live server calling as `service_role`. All 664 public-key requests in the log window came from the old server code; nothing else used the key |
+| 3 | Migration `20260925000007` (narrowing): every right of `anon` and `authenticated` revoked — tables, sequences, functions, and for future objects; the real tables removed from the live-refresh stream | As the public key: users, patients, salaries, payments, writes and the number functions all answer *permission denied*; only `change_signals` reads. As the server's role: every table readable and writable, every sequence and function usable, writes still fire the signals. The 31 endpoints re-run against the locked database: all 200. Live refresh re-tested after the lock: delivered |
+| 4 | Migration `20260925000008` + `backup-database` v23: the backup needs a secret the scheduled job reads from Vault; the response no longer carries the file's link | Public key without the secret, or with a wrong one: 401. The job's exact request: 200, backup written |
+
+**Found on the way — backups had been failing.** Every scheduled backup in the log window
+(24 Sep 12:30 UTC to 25 Sep 06:30 UTC) had failed with *password authentication failed for user
+"postgres"*: the function's hand-set `DATABASE_URL` held an outdated password. It now uses the
+connection string Supabase injects and keeps current (`SUPABASE_DB_URL`), and the first run
+succeeded. That run also applied the function's existing 3-day retention, which had not run
+while every backup failed: it removed 13 backup files older than 3 days.
+
+**Undo, if ever needed:** `supabase/rollback/20260925000007_reopen_anon_access.sql` restores
+exactly the rights the public key had before (snapshot taken first). It reopens the hole — an
+emergency switch only.
+
+**One visible difference:** a browser tab left open from *before* the deploy keeps the old
+live-refresh code until it is reloaded, so it will not refresh on its own until then. Every
+page load after the deploy uses the new code.
 
 ---
 
