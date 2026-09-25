@@ -146,33 +146,15 @@ export default function BillingSettlementTab({
   };
 
   /**
-   * Opens the settle-pricing step for a pending row. A brand-new row starts at
-   * amount_per_visit 0 (visit-entry no longer collects a fee), so before showing
-   * the form, suggest a rate from the doctor's fee schedule for this purpose —
-   * still fully editable, just not a bare zero to start from.
+   * Opens the settle-pricing step for a pending row. The desk types what this
+   * doctor is being paid for these visits. There is no rate card to suggest
+   * from: the same doctor charges differently for a consultation and for a
+   * surgery, and per procedure within each, so a fixed rate was dropped as
+   * misleading (Q-97, 2026-09-25).
    */
-  const openSettleModal = async (settlement: any) => {
-    let amountPerVisit = parseInt(settlement.amount_per_visit || 0);
-    let totalAmount = parseInt(settlement.total_amount || 0);
-
-    if (amountPerVisit === 0 && settlement.doctor_id && settlement.visit_purpose_id) {
-      try {
-        const res = await fetch(`/api/doctors/${settlement.doctor_id}/fee-schedule`);
-        if (res.ok) {
-          const json = await res.json();
-          const entry = (json.schedule || []).find(
-            (r: any) => r.visit_purpose_id === settlement.visit_purpose_id
-          );
-          const suggested = entry ? entry.fee ?? (entry.default_fee > 0 ? entry.default_fee : null) : null;
-          if (suggested !== null) {
-            amountPerVisit = suggested;
-            totalAmount = suggested * (settlement.visit_count || 0);
-          }
-        }
-      } catch (err) {
-        console.error('Failed to load the fee schedule:', err);
-      }
-    }
+  const openSettleModal = (settlement: any) => {
+    const amountPerVisit = parseInt(settlement.amount_per_visit || 0);
+    const totalAmount = parseInt(settlement.total_amount || 0);
 
     setSettlePricingData({
       pricing_mode: 'per_visit',

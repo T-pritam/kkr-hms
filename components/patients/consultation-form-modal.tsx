@@ -32,9 +32,7 @@ import { istFields, istNowFields, parseStoredInstant, toISTInstant } from '@/lib
  * **Purpose** was added with 20260808000005 and stays required: settlement groups on it,
  * so a visit without one falls into an unpriced bucket with every other purposeless
  * visit. A **fee** field briefly lived here too, but pricing has moved to settle time —
- * this form's job is to record what happened and who was involved, not what it costs. The
- * doctor's rate card (`GET /api/doctors/[id]/fee-schedule`) is still consulted, just from
- * the settle screen instead of here.
+ * this form's job is to record what happened and who was involved, not what it costs.
  */
 
 interface ConsultationFormModalProps {

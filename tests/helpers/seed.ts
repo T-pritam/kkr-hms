@@ -207,19 +207,6 @@ export function aVisitPurpose(overrides: Row = {}): Row {
   })[0]
 }
 
-export function aDoctorFee(overrides: Row = {}): Row {
-  return db.seed('doctor_fee_schedule', {
-    id: overrides.id ?? nextId('fee'),
-    doctor_id: overrides.doctor_id ?? nextId('doctor'),
-    visit_purpose_id: overrides.visit_purpose_id ?? nextId('purpose'),
-    fee: 300,
-    is_active: true,
-    created_by: null,
-    updated_by: null,
-    ...overrides,
-  })[0]
-}
-
 export function anInstallment(overrides: Row = {}): Row {
   // Note: this table has no patient_id column — installments hang off the billing row.
   return db.seed('patient_billing_installments', {

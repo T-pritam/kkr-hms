@@ -63,12 +63,6 @@ export const SCHEMA: Record<string, string[]> = {
     'id', 'entry_id', 'action', 'before', 'after', 'changed_at', 'changed_by',
   ],
 
-  doctor_fee_schedule: [
-    // 20260808000004 — per-doctor, per-purpose rate card
-    'id', 'doctor_id', 'visit_purpose_id', 'fee', 'is_active',
-    'created_at', 'created_by', 'updated_at', 'updated_by',
-  ],
-
   doctor_visit_settlements: [
     'id', 'patient_billing_id', 'patient_id', 'doctor_id', 'visit_count', 'amount_per_visit',
     'total_amount', 'settled', 'settlement_date', 'settlement_amount', 'settlement_notes',

@@ -6,7 +6,7 @@
 | **Doc type** | Change-set PRD: target behaviour + build tracker. The as-built description of today's app stays in [`PRD.md`](PRD.md) (the baseline). |
 | **Baseline code** | `main` @ `5f07acf` (2026-09-17) |
 | **Requirements source** | Client requirements 1–11 (2026-09-21) and requirement 12, patient money + patient dashboard (2026-09-22, clarified the same day). Each is quoted at the top of its CR. |
-| **Status** | Rounds 1 – 5 answered (2026-09-22 / 24); round 6 has **2 open** (Q-97, Q-98, in [`OPEN-QUESTIONS.md`](OPEN-QUESTIONS.md)). **Every CR is built and live** — CR-01 … CR-19, less CR-17 (dropped, Q-74). |
+| **Status** | Rounds 1 – 6 answered (2026-09-22 / 25). **Nothing is open** ([`OPEN-QUESTIONS.md`](OPEN-QUESTIONS.md)). **Every CR is built and live** — CR-01 … CR-19, less CR-17 (dropped, Q-74). |
 | **Built** | Everything is live on `main` with its migrations applied, including round 5 (2026-09-24). |
 | **How the app works now** | **[`APP-FLOW-PRD.md`](APP-FLOW-PRD.md)** — the current-state flow map, module by module. **This** document is the decision record: why each rule exists and what the client said. Rules the client reversed on 2026-09-24 are ~~struck through~~ here with what replaced them. |
 | **Last updated** | 2026-09-25 |
@@ -197,7 +197,7 @@ canModify(user, entry):
 | 11 | Petty cash debit (expense) | own | **never**: petty cash has no status (Q-12 = A) |
 | 12 | Employee advance | own | its salary month is settled (Q-17) |
 | 13 | Petty cash top-up | never (admin's) | — |
-| 14 | Doctor fee schedule rate | own | — |
+| 14 | ~~Doctor fee schedule rate~~ | — | **dropped 2026-09-25** (Q-97): the fee schedule no longer exists |
 | 15 | Doctor fee price on a patient | **any** unsettled fee, whoever entered it (Q-88) | it is **settled** — then admin only, and reception can do nothing at all |
 | 16 | Referral commission, and the referral person | **any** unsettled one, whoever entered it (Q-88) | it is **settled** — then admin only |
 | 17 | ~~Doctor fee / referral payout made by reception~~ | ~~own~~ | ~~Closed (Q-71)~~ → **retired 2026-09-24**: a payout writes no ledger row, so rows 15 and 16 govern it |
@@ -361,11 +361,11 @@ Each CR follows the same shape: client text → today → target → code touche
 **Today:** all of this is admin-only. That covers the fee schedule, Sync Visits, pricing, delete, the referral commission and paying out. Saving the fee schedule overwrites every rate's `created_by`. Manual fee rows, merging and visit purposes exist only in the API; no screen calls them.
 
 **Target**
-- [D] Reception can do everything in Q-19 a–h: the doctor fee schedule · Sync visits · price fee rows · manual rows, merge and delete · set the referral person and commission · **pay out doctor fees and referral commissions** · manage visit purposes.
+- [D] Reception can do everything in Q-19 a–h: ~~the doctor fee schedule~~ (dropped, Q-97) · Sync visits · price fee rows · manual rows, merge and delete · set the referral person and commission · **pay out doctor fees and referral commissions** · manage visit purposes.
 - [D] ~~The owner of a price is whoever last set it~~ — **replaced by Q-88 (2026-09-24):** while a fee or commission is unsettled anyone at the desk may change it, whoever entered it; once settled only an admin may, and an admin's change amends it in place rather than reopening it. `amount_set_by` / `referral_commission_set_by` are still written, as the record of who changed what.
 - [D] Keep Sync + pricing. The fee isn't captured at visit time (Q-21 = B).
 - [Q-71] What money reception pays doctors and referrers from. [Q-72] Whether to build the missing screens for manual rows, merge and visit purposes now.
-- [P] Store `amount_set_by` on fee rows and `referral_commission_set_by` on the bill. Save the fee schedule one rate at a time, so each rate keeps its owner. Payouts go through the single payout path (CR-13).
+- [P] Store `amount_set_by` on fee rows and `referral_commission_set_by` on the bill. ~~Save the fee schedule one rate at a time~~ (the fee schedule was dropped, Q-97). Payouts go through the single payout path (CR-13).
 
 **Acceptance criteria**
 - [x] AC-04.1 Reception sets a referral commission; `referral_commission_set_by` records it. ~~An admin-set one is read-only to them~~ → Q-88: any unsettled commission is the desk's.
@@ -1139,6 +1139,15 @@ Order matters: the new code writes columns that exist only after the migrations.
 
 This section keeps the **answer log**: round 4 (§9.0), round 3 (§9.1), round 2 (§9.2), the questions closed by your clarification (§9.3), and round 1 (§9.4).
 
+### 9.0a Round 6 — from the test audit, answered 2026-09-25
+
+| Q | Asked | Answer | Recorded in |
+|---|---|---|---|
+| Q-97 | Who may change a doctor's **fee schedule** rate — anyone at the desk, as built, or only its author (§3.2 row 14)? | *"It's of no use, so drop this completely — the same doctor charges differently for visits and surgery, as per the procedure."* → **The fee schedule is removed**: the ₹ button and dialog on the Doctors screen, the rate suggestion in the pricing dialog, the API and the table (`20260925000003`). A fee is typed at pricing time, every time | CR-04, §3.2 row 14, `APP-FLOW-PRD.md` §4.8 |
+| Q-98 | Should a **doctor** see Finances? (The menu offers it; the page refuses.) | *"Currently no doctor gets a login, and we will scrap all the existing credentials, so it's not a big issue. Later, when needed, we will implement it as per the requirements."* → **Deferred.** No change now; doctor access is designed when doctors get logins. The client will remove the existing credentials before the release | `APP-FLOW-PRD.md` §11 |
+
+*(Both answers arrived labelled "Q98" and "Q99"; they are recorded by their content, which is unambiguous: the first is about the fee schedule, the second about doctor logins.)*
+
 ### 9.0 Round 4 — from using the app, 2026-09-24
 
 Six things found in use rather than in the spec. Two were outright bugs.
@@ -1302,3 +1311,4 @@ The baseline `PRD.md` §10 questions were carried into round 1: Q1 → Q-37 · Q
 | 2026-09-24 | **Round 5** on `feature/v2-lab-medicine-expense`, reversing two shipped rules and building one proposal. (1) **Lab & medicine** stop involving payments: *Included* is now the hospital's **expense**, derived from the charges and never stored, shown as a clickable line in Finances → Expenses with the patients behind it and as an editable block on the patient's Overview (admin *and* reception, at any time); *paid directly to the lab* records **nothing at all** (Q-82, Q-83, Q-86, Q-87 reversed). (2) **Payouts leave the ledger** — *"they take money directly from the admin and handover to the concerned person directly so there is no ledger entry required"* — so money out reads the settlement rows instead, which also picks up the payouts the patient's Billing tab never booked (Q-37/CR-13 reversed). (3) **Given by** becomes a real user picker on both payouts, with the name against each of the amount, the status and who carried the cash. Migration `20260925000001` applied to production: 4 payout debits (₹16,000) removed, the 1 lab payment relabelled Regular and its charge marked Included, every settled fee made to agree with itself. `20260925000002` narrows the schema after deploy | Claude |
 | 2026-09-24 | **Round 5 deployed.** `feature/v2-lab-medicine-expense` merged to `main` (`9cb4334`) and live on Vercel at `admin.kkrhospitals.in`; verified by the two new routes answering 401 rather than 404. Migration `20260925000002` then applied, after the deploy and after re-checking all six preconditions: the payment labels narrowed to regular/advance/discharge/misc/registration, `lab_medicine_status` narrowed to included-or-NULL, `collected_installment_id` dropped, and three new CHECKs — a settled fee must carry its date and amount, a settled commission its date, and the ledger refuses a `doctor_settlement` or `referral_commission` debit outright, so no stray caller can reintroduce the disagreement this round removed. September money out now reads: doctor fees ₹8,000 · commissions ₹7,000 · lab & medicine ₹800 · legacy ledger ₹500 | Claude |
 | 2026-09-25 | **Test audit and the flow PRD.** Every test checked against the decided rules: three expected-failure tests encoded rules the client had decided against (an "outstanding balance" check, payroll in the ledger, refusing the doctor's payroll list) and were replaced; writing the missing tests for v2 routes exposed six defects, all fixed and pinned — the Given-by picker was empty in production (a missing column), a paid fee or commission was still partly editable by reception (Q-88), one payout route refused reception (Q-19), a fee raised through it counted as ₹0, the monthly Finance PDF printed "undefined", and reception could still edit a paid doctor visit (§3.2 row 6). 61 files, 1,800 passing, 14 expected failures (open defects). Two questions raised where the written rule and the build disagree: **Q-97** (who may change a fee-schedule rate) and **Q-98** (should a doctor see Finances). New: [`APP-FLOW-PRD.md`](APP-FLOW-PRD.md), the current-state flow map; this document now marks the 2026-09-24 reversals inline | Claude |
+| 2026-09-25 | **Round 6 answered.** Q-97: the doctor **fee schedule is dropped** — the same doctor charges differently per visit and procedure, so a rate card only suggested wrong numbers; its screen, API, pricing suggestion and table are removed (migration `20260925000003`, applied after deploy). Q-98: doctor access to Finances **deferred** — no doctor has a login, and existing credentials will be scrapped before release. The 2026-09-25 audit branch merged to `main` (`719fd08`) | Claude |

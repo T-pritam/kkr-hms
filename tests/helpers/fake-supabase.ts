@@ -90,12 +90,8 @@ const RELATIONSHIPS: Record<string, { localKey?: string; foreignKey?: string; ma
 
   // Charges. The `<singular>_id` fallback already covers the to-one directions
   // (charge_items -> charge_item_id, visit_purposes -> visit_purpose_id,
-  // charge_sheets -> charge_sheet_id), so only the to-many ones are listed —
-  // plus doctor_fee_schedule, whose name does not pluralise and so would derive
-  // the nonsense key `doctor_fee_schedule_id`.
+  // charge_sheets -> charge_sheet_id), so only the to-many ones are listed.
   'charge_sheets.charge_sheet_items': { foreignKey: 'charge_sheet_id', many: true },
-  'doctors.doctor_fee_schedule': { foreignKey: 'doctor_id', many: true },
-  'visit_purposes.doctor_fee_schedule': { foreignKey: 'visit_purpose_id', many: true },
 
   // 20260809000002 — which visits a settlement has billed. The plural table name
   // doesn't singularise to the conventional key (`doctor_visit_settlement_id`),
@@ -143,9 +139,6 @@ const UNIQUE_INDEXES: Record<string, UniqueIndex[]> = {
   charge_items: [['name'], ['code']],
   charge_sheets: [['sheet_no']],
   visit_purposes: [['code']],
-
-  // 20260808000004 — one rate per doctor per purpose.
-  doctor_fee_schedule: [['doctor_id', 'visit_purpose_id']],
 
   // 20260809000002 — one live *unsettled* settlement per cycle, doctor and
   // purpose (superseding the 20260808000005 version, which covered every live row

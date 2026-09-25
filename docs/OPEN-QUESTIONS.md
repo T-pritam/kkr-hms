@@ -4,38 +4,18 @@ Everything still waiting on an answer, in one place. The PRD is [`PRD-v2.md`](PR
 
 **How to answer:** reply by ID, e.g. `Q-90: A`, `Q-91: as proposed`, or free text. After your answers, the PRD is updated and the questions move to its answer log.
 
-_Last updated 2026-09-25 · **2 open** (Q-97, Q-98) · every CR built_
+_Last updated 2026-09-25 · **0 open** · every CR built_
 
 **How the app works today, end to end:** [`APP-FLOW-PRD.md`](APP-FLOW-PRD.md). This file is only what is waiting on you.
 
 ---
 
-## Waiting on you — round 6 (from the 2026-09-25 test audit)
+## Nothing is waiting on you
 
-The audit compared every rule in the code and the tests with the decisions in PRD-v2. These two are places where the written rule and the built behaviour disagree, and the decisions so far don't settle which is meant. Nothing is broken either way; I haven't changed either.
+Round 6 was answered on 2026-09-25 (logged in [`PRD-v2.md` §9.0a](PRD-v2.md#90a-round-6--from-the-test-audit-answered-2026-09-25)):
 
-### Q-97 — Who may change a doctor's fee schedule rate?
-
-The fee schedule (Doctors ▸ ₹) holds one rate per visit purpose.
-
-- **Today:** any receptionist may change any rate, including one an admin set. The app keeps who first set it and records who changed it last.
-- **PRD-v2 §3.2 row 14 says:** reception may change only its **own** rates.
-- **Why it's unclear:** Q-88 replaced the "whoever set it owns it" lock with an audit trail *for fees and commissions on a patient* — "we collect the data related to person edited/entered". It didn't mention the rate card.
-
-| | Answer |
-|---|---|
-| **A** *(recommended)* | Anyone at the desk may change any rate, as today — the same reasoning as Q-88, and a rate card is never "settled". |
-| **B** | Reception may change only rates it set; an admin's rate is read-only to reception. |
-
-### Q-98 — Should a doctor see Finances?
-
-- **Today:** the doctor's menu shows **Dashboard**, **Finances** and **Admin Panel**, but each page sends the doctor away (the Dashboard to Patients; Finances and the Admin Panel are admin-only). The Finances *data* is readable by a doctor.
-- **Why it's unclear:** Q-05 hid Finances from reception; Q-06 said the doctor "keeps payroll" but said nothing about Finances.
-
-| | Answer |
-|---|---|
-| **A** *(recommended)* | No. Remove Finances, the Admin Panel and the Dashboard from the doctor's menu, and close the Finances data to doctors too. |
-| **B** | Yes, read-only: a doctor opens Finances but cannot add expenses or pay out. The Admin Panel stays admin-only. |
+- **Q-97 — the doctor fee schedule is dropped.** *"The same doctor charges differently for visits and surgery, as per the procedure."* A doctor's fee is typed when it is priced, every time.
+- **Q-98 — doctor access to Finances is deferred.** No doctor has a login today; you'll scrap the existing credentials before release and design doctor access when it's needed.
 
 ---
 

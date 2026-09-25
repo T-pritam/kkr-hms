@@ -1,0 +1,22 @@
+-- Drop the doctor fee schedule (PRD v2 Q-97, answered 2026-09-25)
+--
+-- The fee schedule held one fixed rate per doctor per visit purpose, and the
+-- pricing dialog suggested it when a fee row was priced. The client, on being
+-- asked who may change a rate: *"It's of no use, so drop this completely — the
+-- same doctor charges differently for visits and surgery, as per the
+-- procedure."* A fixed rate only ever suggested the wrong number.
+--
+-- Apply **after** the code that stops reading it is deployed: the build before
+-- it still opens this table from the Doctors screen and the pricing dialog.
+--
+-- Nothing else depends on it (checked: no view, rule, function or foreign key
+-- points at it; its own updated_at trigger goes with it). Visit purposes stay —
+-- fee rows are still grouped by them — and so does `visit_purposes.default_fee`,
+-- which is 0 on both purposes and now read by nothing but the purposes API.
+--
+-- For the record, the table held two rates when it was dropped, both entered
+-- on 2026-09-25, apparently while trying the feature out:
+--   Dr. Amit Patel · Consultation        ₹300.00
+--   Dr. Amit Patel · Operation / Surgery ₹12,000.00
+
+DROP TABLE IF EXISTS public.doctor_fee_schedule;

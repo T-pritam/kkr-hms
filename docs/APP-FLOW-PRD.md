@@ -63,7 +63,7 @@ A hospital back office for one hospital. Staff register patients, record what ca
    └───────────────────────────────────────┘     └────────────────────────────────────────────────────┘
                                                              ▲
    Employees: register · monthly salary · advances ──────────┘
-   Doctors: registry · fee schedule · visit report         Lab: catalogue · orders · results · reports
+   Doctors: registry · visit report                        Lab: catalogue · orders · results · reports
    Admin panel: user accounts
 ```
 
@@ -341,7 +341,7 @@ The patient's **total bill** is the sum of these payments.
 ```
 
 1. **Sync visits** (Billing & settlement tab) creates or refreshes one row per doctor × purpose from the visits on the bill. Running it twice changes nothing. A settled row is left alone; visits recorded after it was paid go on a new row. Deleting a visit shrinks its unpaid row.
-2. **Price** it: per visit or as a total. The dialog suggests the doctor's rate for that purpose from their **fee schedule** (Doctors ▸ ₹), or else the purpose's default fee. The visit form collects no fee: what a visit costs is decided here, not when it is recorded.
+2. **Price** it: per visit or as a total, typed by the desk each time. There is no rate card: the same doctor charges differently for a consultation and a surgery, and per procedure, so the doctor fee schedule was dropped [Q-97, 2026-09-25]. The visit form collects no fee either — what a visit costs is decided here, not when it is recorded.
 3. **Pay** it — from the patient's Billing tab, or in bulk from **Finances ▸ Settlements** (each selected fee is paid at its own total; one explicit amount is only allowed for a single fee). Paying less than the price makes the amount paid the new total [Q-37 b].
 4. **Nothing is written to the ledger.** The admin hands the cash to the doctor directly, so the ledger never sees it [client revision 2026-09-24]. The fee row is the whole record, and Finances counts it as money out on the day it was paid.
 5. **Who may change it** [Q-88]:
@@ -354,7 +354,6 @@ The patient's **total bill** is the sum of these payments.
      Given by  Ravi     recorded by Asha
    ```
 7. **Un-paying** returns the fee to unpaid and clears who carried the cash; the status stamp records who reversed it. It can be refused if a newer unpaid row already exists for the same doctor and purpose.
-8. **Fee schedule** (Doctors ▸ ₹ on a doctor): one rate per visit purpose, saved one rate at a time so each keeps its author. A fee of 0 is a real rate; blanking it removes the rate.
 
 **Also in the API, without a screen yet:** manual fee rows, merging rows, and adding or retiring visit purposes (§11).
 
@@ -516,7 +515,6 @@ The patient's **total bill** is the sum of these payments.
 **Who:** A D N R add and edit; A hard-deletes. **Screen:** Doctors.
 
 - **Doctor record:** name, **department (required)**, qualification, registration number, contact [Q-96]. **Deactivate** rather than delete: it removes them from every picker and keeps their history. A hard delete is refused while anything still points at the doctor.
-- **Fee schedule** (₹ on the row): §4.8.
 - **Visit report** (`/doctors/[id]/visits`, A D R) [CR-18]: every visit with the patient, purpose, date and fee, and — from the fee row — whether it was paid, when, by whom, how and the reference. An unbilled visit says *not billed* rather than ₹0. Four totals (visits · fees paid · still to pay · not billed), a by-purpose panel, filters (date range, paid/unpaid, purpose) and **Excel + PDF** downloads.
 
 ### 4.18 Admin panel — user accounts
@@ -635,7 +633,6 @@ The rule is enforced by the server, not just hidden in the screens: every write 
 | edit · delete (until its ledger row is closed) | ✅* | own | own | own | — |
 | **Doctor fees** — sync visits · price · pay out (unpaid) | ✅ | — | — | ✅ | — |
 | change a paid fee · un-pay | ✅ | — | — | — | — |
-| doctor fee schedule (any rate) | ✅ | — | — | ✅² | — |
 | **Referral commission** — set · pay (unpaid) | ✅ | — | — | ✅ | — |
 | change a paid commission · un-pay | ✅ | — | — | — | — |
 | add a referral person | ✅ | ✅ | ✅ | ✅ | — |
@@ -664,8 +661,6 @@ The rule is enforced by the server, not just hidden in the screens: every write 
 | **Admin panel** (user accounts) | ✅ | — | — | — | — |
 
 \* An admin edits a Closed row only after reopening it.
-
-² Today reception may change **any** rate, including one an admin set; the original author is kept and the last changer is recorded. PRD-v2 §3.2 row 14 says reception may change only its **own** rates. Which is intended is open as **Q-97** ([`OPEN-QUESTIONS.md`](OPEN-QUESTIONS.md)).
 
 ---
 
@@ -744,7 +739,6 @@ daily_ledger_transactions ──► ledger_close_batches (closing)
 petty_cash_entries ──► petty_cash_entry_history · ──1:1── advances (desk-paid)
 employees ──1:N── salary_payments · advances
 expenses (general expenses)
-doctors ──1:N── doctor fee schedule rates (per visit purpose)
 
 frozen history, no screen: daily_ledger_closures · daily_ledger_shift_settlements
 ```
@@ -778,7 +772,7 @@ Ordered by how much they matter.
 | 2 | 🟠 **Visit purposes have no screen.** Q-72 decided they would be managed "now", and the API allows it (admin, reception), but no page can add, rename or retire one. | The list is stuck at what was seeded; a new kind of visit needs a database change. | Gap against a decided requirement. |
 | 3 | 🟠 **14 open defects**, each pinned by an expected-failure test (BUGS.md): among them a refresh token accepted as an access token (#1), sessions surviving a password change (#3), user-admin search and update weaknesses (#5, #6), a patient deletable with billing attached (#9), a visit edit that can predate joining (#14), a second bill openable for one patient (#22), a settlement payable against another patient's id (#27), merge maths (#44, #45), the CSV importer (#54). | Varies; the security ones (#1, #3–#6) matter most. | Documented and tested; not fixed. |
 | 4 | 🟡 The **Dashboard** is a placeholder (every tile reads 0), and only the Admin ever sees it. | Nobody gets a useful landing page. | — |
-| 5 | 🟡 The sidebar offers **Doctor** the Dashboard, Finances and Admin Panel, and each page sends them away (the Finances data itself is readable by a doctor). | Confusing for a doctor. | Whether a doctor should see Finances is open as **Q-98**. |
+| 5 | ⚪ The sidebar offers **Doctor** the Dashboard, Finances and Admin Panel, and each page sends them away. | None today: **no doctor has a login** [Q-98]. | **Deferred by the client:** doctor access will be designed when doctors are given logins; existing credentials are to be scrapped before the client release. |
 | 6 | 🟡 **Lab technician accounts cannot be created** in the Admin panel (the role is missing from the list). | Lab logins need a database insert. | — |
 | 7 | 🟡 **Manual fee rows and merging fee rows** exist only in the API [Q-72: "later"]. | — | Decided as later. |
 | 8 | 🟡 On a phone, the advance log's "Given by" shows "—" for new advances; the desktop view shows the name as "Recorded by". | The person who gave the advance isn't visible on mobile. | Small screen fix. |
