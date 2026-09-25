@@ -52,12 +52,14 @@ export async function POST(request: NextRequest) {
       userId: user.id,
       email: user.email,
       role: user.role,
+      tv: Number(user.token_version) || 0,
     })
 
     const refreshToken = await generateRefreshToken({
       userId: user.id,
       email: user.email,
       role: user.role,
+      tv: Number(user.token_version) || 0,
     })
 
     // Set cookies

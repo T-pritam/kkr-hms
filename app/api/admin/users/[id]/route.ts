@@ -13,7 +13,7 @@ export async function PUT(
     }
 
     const payload = await verifyToken(accessToken)
-    if (!payload || payload.role !== 'ADMIN') {
+    if (!payload || payload.type !== 'access' || payload.role !== 'ADMIN') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -82,7 +82,7 @@ export async function PATCH(
     }
 
     const payload = await verifyToken(accessToken)
-    if (!payload || payload.role !== 'ADMIN') {
+    if (!payload || payload.type !== 'access' || payload.role !== 'ADMIN') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -105,10 +105,27 @@ export async function PATCH(
       )
     }
 
+    /**
+     * Only the four fields an admin edits, and never a promotion to ADMIN —
+     * the same rule PUT already applied. This wrote the body as-is, so an admin
+     * session could set `password_hash`, `id` or `role: 'ADMIN'` (BUGS #6).
+     */
+    if (body.role === 'ADMIN') {
+      return NextResponse.json({ error: 'Cannot change role to admin' }, { status: 403 })
+    }
+    const EDITABLE = ['username', 'email', 'role', 'status'] as const
+    const changes: Record<string, unknown> = {}
+    for (const field of EDITABLE) {
+      if (body[field] !== undefined) changes[field] = body[field]
+    }
+    if (Object.keys(changes).length === 0) {
+      return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
+    }
+
     const { data: updatedUser, error } = await supabase
       .from('users')
       .update({
-        ...body,
+        ...changes,
         updated_at: new Date().toISOString(),
       })
       .eq('id', userId)
@@ -140,7 +157,7 @@ export async function DELETE(
     }
 
     const payload = await verifyToken(accessToken)
-    if (!payload || payload.role !== 'ADMIN') {
+    if (!payload || payload.type !== 'access' || payload.role !== 'ADMIN') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 

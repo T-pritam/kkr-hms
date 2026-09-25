@@ -2,54 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireBilling } from '@/lib/billing/authz'
 import { PAYMENT_MODES } from '@/lib/ledger/transactions'
 import { createClient } from '@/lib/supabase/server'
-import {
-  verifyToken,
-  getAccessToken,
-  getRefreshToken,
-  generateAccessToken,
-  generateRefreshToken,
-  setAuthCookies,
-} from '@/lib/auth/jwt'
 import { normaliseExpenseDetail, validateExpenseType } from '@/lib/finances/validate'
 import { istMonth } from '@/lib/dates/ist'
 
 // Helper function for token refresh
-async function refreshTokenIfNeeded() {
-  let accessToken = await getAccessToken()
-  if (!accessToken) {
-    const refreshToken = await getRefreshToken()
-    if (!refreshToken) {
-      return null
-    }
-
-    const refreshPayload = await verifyToken(refreshToken)
-    if (!refreshPayload) {
-      return null
-    }
-
-    accessToken = await generateAccessToken({
-      userId: refreshPayload.userId,
-      email: refreshPayload.email,
-      role: refreshPayload.role,
-    })
-
-    const newRefreshToken = await generateRefreshToken({
-      userId: refreshPayload.userId,
-      email: refreshPayload.email,
-      role: refreshPayload.role,
-    })
-
-    await setAuthCookies(accessToken, newRefreshToken)
-  }
-
-  const payload = await verifyToken(accessToken)
-  if (!payload) {
-    return null
-  }
-
-  return payload
-}
-
 /**
  * GET /api/finances/expenses
  * Query params: month_year (optional, YYYY-MM format)

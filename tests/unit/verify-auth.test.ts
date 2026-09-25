@@ -61,7 +61,7 @@ describe('verifyAuth', () => {
    * perfectly good seven-day refresh token sitting right beside it.
    */
   it('renews an expired token from the refresh token instead of refusing', async () => {
-    const { refreshToken } = await signInAs('RECEPTIONIST', { userId: 'u-recep' })
+    const { refreshToken } = await signInAs('RECEPTIONIST', { userId: 'u-recep', seedUser: true })
     cookieJar.set('refreshToken', refreshToken)
 
     const result = await verifyAuth(
@@ -104,11 +104,11 @@ describe('verifyAuth', () => {
   })
 
   /**
-   * Known defect — see BUGS.md #1. verifyAuth never inspects `payload.type`, so a
-   * long-lived refresh token is accepted wherever an access token is expected. The
-   * middleware, by contrast, requires type === 'access'.
+   * Was BUGS.md #1: verifyAuth never inspected `payload.type`, so a 7-day
+   * refresh token was accepted wherever a 10-minute access token was expected,
+   * while the middleware refused it.
    */
-  it.fails('should reject a refresh token presented as an access token', async () => {
+  it('rejects a refresh token presented as an access token', async () => {
     const refresh = await tokenFor('ADMIN', { type: 'refresh' })
     const result = await verifyAuth(
       makeRequest('GET', '/api/patients', { anonymous: true, cookies: { accessToken: refresh } })

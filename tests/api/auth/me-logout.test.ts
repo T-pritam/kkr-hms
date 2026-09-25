@@ -72,7 +72,7 @@ describe('GET /api/auth/me', () => {
    * refresh itself, falling back to the refresh token before giving up.
    */
   it('refreshes an expired access token from a still-valid refresh token, rather than 401ing', async () => {
-    const { refreshToken } = await signInAs('RECEPTIONIST', { userId: 'u-recep', email: 'r@hms.test' })
+    const { refreshToken } = await signInAs('RECEPTIONIST', { userId: 'u-recep', email: 'r@hms.test', seedUser: true })
     cookieJar.set('accessToken', await expiredToken('RECEPTIONIST'))
     cookieJar.set('refreshToken', refreshToken)
 

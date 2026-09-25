@@ -340,6 +340,8 @@ export const SCHEMA: Record<string, string[]> = {
   users: [
     'id', 'username', 'email', 'password_hash', 'role', 'status', 'needs_password_change',
     'reset_token', 'reset_token_expiry', 'last_login', 'created_at', 'updated_at',
+    // 20260925000004 — bumped on a password change; sessions carry it (BUGS #3)
+    'token_version',
   ],
 
   // 20260808000004 — what kinds of doctor visit exist

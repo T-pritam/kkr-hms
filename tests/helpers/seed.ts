@@ -22,6 +22,7 @@ export function aUser(overrides: Row = {}): Row {
     status: 'ACTIVE',
     needs_password_change: false,
     last_login: null,
+    token_version: 0,
     ...overrides,
   })[0]
 }

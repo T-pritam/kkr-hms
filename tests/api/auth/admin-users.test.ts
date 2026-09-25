@@ -173,10 +173,10 @@ describe('GET /api/admin/users', () => {
   })
 
   /**
-   * Known defect — see BUGS.md #5. `search` is interpolated straight into a PostgREST
+   * Was BUGS.md #5. `search` is interpolated straight into a PostgREST
    * `.or()` filter, so a comma or parenthesis in the term rewrites the filter expression.
    */
-  it.fails('should handle a search term containing a comma', async () => {
+  it('finds a name containing a comma, without the comma rewriting the filter', async () => {
     await signInAs('ADMIN')
     aUser({ id: 'u1', username: 'lastname, firstname' })
 
@@ -369,7 +369,7 @@ describe('PATCH /api/admin/users/[id]', () => {
    * update with no allowlist, and unlike PUT it has no "cannot change role to admin"
    * guard, so any admin can silently promote an account.
    */
-  it.fails('should refuse to promote a user to ADMIN', async () => {
+  it('refuses to promote a user to ADMIN', async () => {
     await signInAs('ADMIN')
     aUser({ id: 'u1', role: 'NURSE' })
 
@@ -378,8 +378,8 @@ describe('PATCH /api/admin/users/[id]', () => {
     expect(db.find('users', (r) => r.id === 'u1')!.role).toBe('NURSE')
   })
 
-  /** Known defect — see BUGS.md #6. The same missing allowlist lets the hash be set directly. */
-  it.fails('should refuse to overwrite password_hash directly', async () => {
+  /** Was BUGS.md #6: the same missing allowlist let the hash be set directly. */
+  it('refuses to overwrite password_hash directly', async () => {
     await signInAs('ADMIN')
     aUser({ id: 'u1', password_hash: 'original-hash' })
 

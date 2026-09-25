@@ -14,7 +14,8 @@ import { describe, it, expect, vi } from 'vitest'
 import crypto from 'crypto'
 import bcrypt from 'bcryptjs'
 import { POST as changePassword } from '@/app/api/auth/change-password/route'
-import { call } from '../../helpers/request'
+import { call, makeRequest } from '../../helpers/request'
+import { verifyAuth } from '@/lib/auth/verify'
 import { signInAs, signOut, hashPassword, expiredToken } from '../../helpers/auth'
 import { db } from '../../helpers/fake-supabase'
 import { cookieJar } from '../../helpers/cookie-jar'
@@ -172,15 +173,34 @@ describe('POST /api/auth/change-password — session mode', () => {
   })
 
   /**
-   * Known defect — see BUGS.md #3. Changing a password leaves every previously issued
-   * access and refresh token valid; there is no session invalidation or token version.
+   * Was BUGS.md #3: a password change left every session already issued valid
+   * for up to seven days. Now the user's `token_version` is bumped, so every
+   * older session stops renewing; the browser that made the change is given a
+   * fresh session on the new version, so its owner is not thrown out too.
    */
-  it.fails('should invalidate existing sessions after a password change', async () => {
+  it('ends every older session, and keeps this browser signed in on the new version', async () => {
     await seedUser()
-    await signInAs('RECEPTIONIST', { userId: 'u1' })
+    const before = await signInAs('RECEPTIONIST', { userId: 'u1' })
+
     await post({ newPassword: 'NewPassword@1' })
 
-    expect(cookieJar.has('accessToken')).toBe(false)
+    expect(db.find('users', (r) => r.id === 'u1')!.token_version).toBe(1)
+
+    // The old refresh token no longer renews anything…
+    cookieJar.delete('accessToken')
+    cookieJar.set('refreshToken', before.refreshToken)
+    expect((await verifyAuth(makeRequest('GET', '/api/patients'))).isValid).toBe(false)
+  })
+
+  it('gives the browser that changed it a session that still renews', async () => {
+    await seedUser()
+    await signInAs('RECEPTIONIST', { userId: 'u1' })
+
+    await post({ newPassword: 'NewPassword@1' })
+
+    // …but the cookies it was just handed do.
+    cookieJar.delete('accessToken')
+    expect((await verifyAuth(makeRequest('GET', '/api/patients'))).isValid).toBe(true)
   })
 })
 
@@ -298,12 +318,12 @@ describe('POST /api/auth/change-password — validate-only mode (check: true)', 
   })
 
   /**
-   * Known defect — see BUGS.md #4. `check` is only consulted after the password-length
-   * gate, and any falsy-but-present value falls through to a real password change. The
-   * client sends the literal dummy password 'testtestt', so a validation call that lost
-   * its flag would silently set every user's password to that string.
+   * Was BUGS.md #4: `check` was read only after the length rule, and a falsy
+   * `check` fell through to a real change — the page sent a dummy password,
+   * 'testtestt', alongside it. Now any request carrying `check` is
+   * validate-only and never changes a password.
    */
-  it.fails('should not change the password when check is present but falsy', async () => {
+  it('does not change the password when check is present but falsy', async () => {
     const user = await seedUser()
     seedResetToken()
 

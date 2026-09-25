@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isSessionCurrent } from './session-version';
 import {
   generateAccessToken,
   generateRefreshToken,
@@ -25,7 +26,11 @@ async function renewFromRefreshToken(): Promise<TokenPayload | null> {
   // An access token pasted into the refresh cookie must not mint a session.
   if (!payload || payload.type !== 'refresh') return null;
 
-  const claims = { userId: payload.userId, email: payload.email, role: payload.role };
+  // A password changed or an account deactivated since this was issued ends
+  // the session here, at its next renewal (BUGS #3).
+  if (!(await isSessionCurrent(payload))) return null;
+
+  const claims = { userId: payload.userId, email: payload.email, role: payload.role, tv: payload.tv ?? 0 };
   await setAuthCookies(await generateAccessToken(claims), await generateRefreshToken(claims));
   return payload;
 }
@@ -50,6 +55,12 @@ export async function verifyAuth(request: NextRequest) {
      * should be told so, not quietly handed a cookie session.
      */
     let payload = token ? await verifyToken(token) : null;
+
+    // Only an access token opens a request. A 7-day refresh token presented
+    // here used to be accepted like a 10-minute one (BUGS #1); the middleware
+    // already refused it, so the two halves disagreed about what a token is.
+    if (payload && payload.type !== 'access') payload = null;
+
     if (!payload && !authHeader) {
       payload = await renewFromRefreshToken();
     }

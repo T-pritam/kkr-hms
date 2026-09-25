@@ -70,7 +70,9 @@ route had no test at all.)
 
 ## Section 1 — Auth & RBAC
 
-### 🔴 #1 — `verifyAuth` accepts a refresh token as an access token
+### ✅ #1 — RESOLVED — only an access token opens a request
+**Resolved 2026-09-25.** `verifyAuth`, `/api/auth/me`, the change-password route and every admin route now require `type === 'access'`. Test: "rejects a refresh token presented as an access token".
+
 **Where:** `lib/auth/verify.ts:20`
 **Test:** `tests/unit/verify-auth.test.ts` → "should reject a refresh token presented as an access token"
 
@@ -84,7 +86,9 @@ disagree about what a valid token is.
 
 ---
 
-### 🔴 #3 — Changing a password does not invalidate existing sessions
+### ✅ #3 — RESOLVED — a password change ends the other sessions
+**Resolved 2026-09-25.** Each token carries `users.token_version` (migration `20260925000004`); every renewal — `verifyAuth`, the middleware and `/api/auth/me` — re-reads it with the account's status (`lib/auth/session-version.ts`). A password change or an admin reset bumps it, so older sessions stop renewing within ten minutes; deactivating an account ends its sessions the same way, which it never did. The browser that made the change keeps a fresh session. Tokens from before versions read as 0, so the deploy signed nobody out; if the check cannot run, sessions carry on as before. Tests: `tests/api/auth/sessions.test.ts`, `change-password.test.ts`.
+
 **Where:** `app/api/auth/change-password/route.ts:94`
 **Test:** `tests/api/auth/change-password.test.ts` → "should invalidate existing sessions after a password change"
 
@@ -97,7 +101,9 @@ the user row that `verifyToken` checks.
 
 ---
 
-### 🔴 #4 — `check: true` is evaluated too late, and only truthiness is tested
+### ✅ #4 — RESOLVED — validating a reset link is its own request
+**Resolved 2026-09-25.** Any request carrying `check` is validate-only, answered before the password rules, and never changes a password. The page no longer sends the dummy `'testtestt'`.
+
 **Where:** `app/api/auth/change-password/route.ts:61`
 **Test:** `tests/api/auth/change-password.test.ts` → "should not change the password when check is present but falsy"
 
@@ -111,7 +117,9 @@ and branch on `check !== undefined`.
 
 ---
 
-### 🔴 #5 — Search terms are interpolated into a PostgREST filter
+### ✅ #5 — RESOLVED — the admin search term is a quoted value
+**Resolved 2026-09-25.** It is double-quoted with `\` and `"` escaped — PostgREST's own escape — so a comma or parenthesis can no longer rewrite the filter, and a real name containing a comma is still found. (Patients and doctors already stripped punctuation.)
+
 **Where:** `app/api/admin/users/route.ts:33` (same pattern at `app/api/patients/route.ts` and `app/api/doctors/route.ts`)
 **Test:** `tests/api/auth/admin-users.test.ts` → "should handle a search term containing a comma"
 
@@ -128,7 +136,9 @@ expression.
 
 ---
 
-### 🔴 #6 — `PATCH /api/admin/users/[id]` writes the request body verbatim
+### ✅ #6 — RESOLVED — admin PATCH applies only the four editable fields
+**Resolved 2026-09-25.** `username`, `email`, `role`, `status`; a promotion to ADMIN is refused, as PUT already did; a patch with nothing editable is a 400.
+
 **Where:** `app/api/admin/users/[id]/route.ts:110`
 **Tests:** `tests/api/auth/admin-users.test.ts` → "should refuse to promote a user to ADMIN", "should refuse to overwrite password_hash directly"
 
@@ -682,7 +692,9 @@ service-role key (server-only, never `NEXT_PUBLIC_`), revoke the anon/authentica
 grants, and give live refresh a narrow alternative (RLS policies scoped to realtime, or
 server-sent refetch signals).
 
-### 🔴 #69 — A retired edge function still mints upload URLs for anyone with the anon key
+### ✅ #69 — RESOLVED — the retired edge function refuses everything
+**Resolved 2026-09-25.** Redeployed as a stub (version 9) that answers 410 Gone to every request; verified with the anon key. Delete it from the Supabase dashboard (Edge Functions → upload-case-sheet → Delete) when convenient — nothing calls it.
+
 **Where:** Supabase edge function `upload-case-sheet` (deployed, ACTIVE, version 8)
 
 The app stopped calling it (attachments go straight to R2 from the API), but it is still
@@ -690,7 +702,9 @@ deployed. It relies on the gateway's `verify_jwt`, which the public anon key sat
 anyone holding that key can mint presigned upload URLs for the case-sheet bucket.
 **Fix:** delete the function — nothing in the code calls it.
 
-### 🟡 #70 — The admin users list has no page-size cap
+### ✅ #70 — RESOLVED — the admin users list is capped
+**Resolved 2026-09-25.** It uses `parsePaging` like every other list (max 100).
+
 **Where:** `app/api/admin/users/route.ts:21`
 
 `?pageSize=100000` returns every account. Admin-only, so low risk; the patients and doctors

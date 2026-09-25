@@ -241,7 +241,24 @@ function splitTopLevel(input: string, separator = ','): string[] {
   const parts: string[] = []
   let depth = 0
   let current = ''
+  // PostgREST lets a value be double-quoted so it may contain `,` `(` `)`;
+  // inside quotes `\"` and `\\` are escapes. Honoured here so a quoted search
+  // term is split exactly where the real server would split it.
+  let inQuotes = false
+  let escaped = false
   for (const char of input) {
+    if (inQuotes) {
+      current += char
+      if (escaped) escaped = false
+      else if (char === '\\') escaped = true
+      else if (char === '"') inQuotes = false
+      continue
+    }
+    if (char === '"') {
+      inQuotes = true
+      current += char
+      continue
+    }
     if (char === '(') depth++
     if (char === ')') depth--
     if (char === separator && depth === 0) {
@@ -636,7 +653,11 @@ class QueryBuilder implements PromiseLike<any> {
           if (firstDot === -1 || secondDot === -1) return false
           const orColumn = term.slice(0, firstDot)
           const orOp = term.slice(firstDot + 1, secondDot)
-          const orValue = term.slice(secondDot + 1)
+          const rawValue = term.slice(secondDot + 1)
+          const orValue =
+            rawValue.length >= 2 && rawValue.startsWith('"') && rawValue.endsWith('"')
+              ? rawValue.slice(1, -1).replace(/\\(.)/g, '$1')
+              : rawValue
           return this.matches(row, {
             type: orOp as Filter['type'],
             column: orColumn,

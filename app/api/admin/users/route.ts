@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { parsePaging } from '@/lib/api/query'
 import { createClient } from '@/lib/supabase/server'
 import { verifyToken, getAccessToken } from '@/lib/auth/jwt'
 import bcrypt from 'bcryptjs'
@@ -11,15 +12,15 @@ export async function GET(request: NextRequest) {
     }
 
     const payload = await verifyToken(accessToken)
-    if (!payload || payload.role !== 'ADMIN') {
+    if (!payload || payload.type !== 'access' || payload.role !== 'ADMIN') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     // Get query parameters
     const searchParams = request.nextUrl.searchParams
-    const page = parseInt(searchParams.get('page') || '1')
-    const pageSize = parseInt(searchParams.get('pageSize') || '10')
-    const search = searchParams.get('search') || ''
+    // Clamped like every other list (#70): `?pageSize=100000` returned everyone.
+    const { page, pageSize, from, to } = parsePaging(searchParams)
+    const search = (searchParams.get('search') || '').trim()
 
     const supabase = await createClient()
 
@@ -28,14 +29,18 @@ export async function GET(request: NextRequest) {
       .from('users')
       .select('id, username, email, role, status, last_login, created_at', { count: 'exact' })
 
-    // Apply search filter if provided
+    /**
+     * The term is a *value*, so it is double-quoted — PostgREST's own escape for
+     * a value that contains `,` `(` or `)` — with `\` and `"` escaped inside.
+     * Spliced in raw, a comma started a new OR term and a parenthesis a new
+     * group, so a crafted search rewrote the filter (BUGS #5). Quoting also
+     * keeps a real name like "Kumar, Ramesh" searchable, which stripping the
+     * punctuation would not.
+     */
     if (search) {
-      query = query.or(`username.ilike.%${search}%,email.ilike.%${search}%,role.ilike.%${search}%`)
+      const term = `"%${search.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}%"`
+      query = query.or(`username.ilike.${term},email.ilike.${term},role.ilike.${term}`)
     }
-
-    // Apply pagination
-    const from = (page - 1) * pageSize
-    const to = from + pageSize - 1
 
     const { data: users, error, count } = await query
       .order('created_at', { ascending: false })
@@ -69,7 +74,7 @@ export async function POST(request: NextRequest) {
     }
 
     const payload = await verifyToken(accessToken)
-    if (!payload || payload.role !== 'ADMIN') {
+    if (!payload || payload.type !== 'access' || payload.role !== 'ADMIN') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 

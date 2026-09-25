@@ -6,6 +6,7 @@ import {
   generateAccessToken,
   ACCESS_TOKEN_TTL_SECONDS,
 } from '@/lib/auth/jwt'
+import { isSessionCurrent } from '@/lib/auth/session-version'
 import { createClient } from '@/lib/supabase/server'
 
 /**
@@ -55,7 +56,9 @@ async function identity(userId: string, email: string, role: string) {
 export async function GET(request: NextRequest) {
   try {
     const accessToken = await getAccessToken()
-    const payload = accessToken ? await verifyToken(accessToken) : null
+    const verified = accessToken ? await verifyToken(accessToken) : null
+    // Only an access token answers this directly (BUGS #1).
+    const payload = verified?.type === 'access' ? verified : null
 
     if (payload) {
       return NextResponse.json({
@@ -70,7 +73,9 @@ export async function GET(request: NextRequest) {
     const refreshToken = await getRefreshToken()
     const refreshPayload = refreshToken ? await verifyToken(refreshToken) : null
 
-    if (!refreshPayload || refreshPayload.type !== 'refresh') {
+    // A password changed or an account deactivated since the refresh token was
+    // issued ends the session here too (BUGS #3).
+    if (!refreshPayload || refreshPayload.type !== 'refresh' || !(await isSessionCurrent(refreshPayload))) {
       return NextResponse.json(
         { error: accessToken ? 'Invalid token' : 'Unauthorized' },
         { status: 401 },
@@ -81,6 +86,7 @@ export async function GET(request: NextRequest) {
       userId: refreshPayload.userId,
       email: refreshPayload.email,
       role: refreshPayload.role,
+      tv: refreshPayload.tv ?? 0,
     })
 
     const response = NextResponse.json({

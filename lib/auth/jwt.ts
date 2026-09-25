@@ -21,6 +21,8 @@ export interface TokenPayload {
   email: string
   role: string
   type: 'access' | 'refresh'
+  /** The user's `token_version` when this was issued (BUGS #3). Absent = 0. */
+  tv?: number
 }
 
 export async function generateAccessToken(payload: Omit<TokenPayload, 'type'>) {

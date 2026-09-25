@@ -5,6 +5,7 @@ import {
   generateAccessToken,
   ACCESS_TOKEN_TTL_SECONDS,
 } from '@/lib/auth/jwt'
+import { isSessionCurrent } from '@/lib/auth/session-version'
 import { updateSession } from '@/lib/supabase/middleware'
 
 const publicPaths = ['/login', '/reset-password', '/change-password', '/api/auth/login', '/api/auth/reset-password', '/api/auth/change-password']
@@ -77,11 +78,14 @@ export async function middleware(request: NextRequest) {
 
   if (!isAuthenticated && refreshTokenCookie) {
     const refreshPayload = await verifyToken(refreshTokenCookie.value)
-    if (refreshPayload && refreshPayload.type === 'refresh') {
+    // A password changed or an account deactivated since the refresh token was
+    // issued ends the session here rather than seven days later (BUGS #3).
+    if (refreshPayload && refreshPayload.type === 'refresh' && (await isSessionCurrent(refreshPayload))) {
       const newAccessToken = await generateAccessToken({
         userId: refreshPayload.userId,
         email: refreshPayload.email,
         role: refreshPayload.role,
+        tv: refreshPayload.tv ?? 0,
       })
 
       // The handler reads its cookies off the request, so the fresh token has

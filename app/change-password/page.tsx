@@ -33,15 +33,12 @@ function ChangePasswordContent() {
 
   const validateToken = async () => {
     try {
-      // Try to use the token - if it returns an error about expiry, we know it's expired
+      // Validate-only: a request carrying `check` never changes a password
+      // (BUGS #4). It used to send a dummy password alongside the flag.
       const response = await fetch('/api/auth/change-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          newPassword: 'testtestt', // dummy password just to validate token
-          token,
-          check: true
-        }),
+        body: JSON.stringify({ token, check: true }),
       })
 
       const data = await response.json()
@@ -84,11 +81,8 @@ function ChangePasswordContent() {
       const response = await fetch('/api/auth/change-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          newPassword,
-          token,
-          check :false
-        }),
+        // No `check` key at all: its presence now means "validate only".
+        body: JSON.stringify({ newPassword, token }),
       })
 
       const data = await response.json()

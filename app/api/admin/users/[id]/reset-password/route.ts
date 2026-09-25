@@ -14,7 +14,7 @@ export async function POST(
     }
 
     const payload = await verifyToken(accessToken)
-    if (!payload || payload.role !== 'ADMIN') {
+    if (!payload || payload.type !== 'access' || payload.role !== 'ADMIN') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -24,7 +24,7 @@ export async function POST(
     // Get user details
     const { data: user, error } = await supabase
       .from('users')
-      .select('id, email, username')
+      .select('id, email, username, token_version')
       .eq('id', userId)
       .single()
 
@@ -44,6 +44,8 @@ export async function POST(
       .update({
         password_hash: passwordHash,
         needs_password_change: true,
+        // Every session the user already had ends at its next renewal (BUGS #3).
+        token_version: (Number(user.token_version) || 0) + 1,
         updated_at: new Date().toISOString(),
       })
       .eq('id', userId)

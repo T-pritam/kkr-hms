@@ -46,7 +46,8 @@ export async function signInAs(
   cookieJar.set('accessToken', accessToken, { httpOnly: true, path: '/' })
   cookieJar.set('refreshToken', refreshToken, { httpOnly: true, path: '/' })
 
-  if (options.seedUser) {
+  // Idempotent: a test may already have seeded this user with its own fields.
+  if (options.seedUser && !db.find('users', (r) => r.id === userId)) {
     db.seed('users', {
       id: userId,
       email,
@@ -70,7 +71,9 @@ export async function signInWithRefreshTokenOnly(
   role: Role,
   options: { userId?: string; email?: string } = {}
 ): Promise<Session> {
-  const session = await signInAs(role, options)
+  // Renewing re-reads the user's row (status and token_version, BUGS #3), and a
+  // real session always has one — so this seeds it.
+  const session = await signInAs(role, { ...options, seedUser: true })
   cookieJar.delete('accessToken')
   return session
 }
