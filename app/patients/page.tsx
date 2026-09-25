@@ -292,8 +292,8 @@ export default function PatientsPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="relative lg:col-span-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <div className="relative sm:col-span-2 xl:col-span-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" size={18} />
             <Input
               type="text"
@@ -317,9 +317,11 @@ export default function PatientsPage() {
               </option>
             ))}
           </Select>
-          <div className="flex items-center gap-2">
+          {/* Two date boxes need half a row; in a quarter they spilled off-screen. */}
+          <div className="flex items-center gap-2 min-w-0 xl:col-span-2">
             <Input
               type="date"
+              className="min-w-0"
               value={joinedFrom}
               onChange={e => {
                 setJoinedFrom(e.target.value)
@@ -331,6 +333,7 @@ export default function PatientsPage() {
             <span className="text-muted text-sm shrink-0">to</span>
             <Input
               type="date"
+              className="min-w-0"
               value={joinedTo}
               onChange={e => {
                 setJoinedTo(e.target.value)
@@ -357,7 +360,11 @@ export default function PatientsPage() {
           <>
             <div className="bg-surface rounded-lg border border-border overflow-hidden">
               {/* Desktop */}
-              <div className="hidden md:block overflow-x-auto">
+              {/* The table needs the room: below 1280 px, with the sidebar open, its
+                  actions ran off the right edge and the sideways scrollbar sat
+                  under the last row (client, square screen at 100%). Narrower
+                  screens get the compact list, which shows every row's actions. */}
+              <div className="hidden xl:block overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-surface-hover">
                     <tr>
@@ -373,7 +380,7 @@ export default function PatientsPage() {
                       <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
                         Status
                       </th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">
+                      <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase sticky right-0 bg-surface-hover">
                         Actions
                       </th>
                     </tr>
@@ -409,7 +416,7 @@ export default function PatientsPage() {
                             {patient.status}
                           </Badge>
                         </td>
-                        <td className="px-4 py-3">{actionsFor(patient)}</td>
+                        <td className="px-4 py-3 sticky right-0 bg-surface">{actionsFor(patient)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -417,7 +424,7 @@ export default function PatientsPage() {
               </div>
 
               {/* Mobile */}
-              <div className="md:hidden divide-y divide-border">
+              <div className="xl:hidden divide-y divide-border">
                 {patients.map(patient => (
                   <div
                     key={patient.id}

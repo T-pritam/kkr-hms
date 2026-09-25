@@ -4,13 +4,17 @@
  *
  *   regular · advance · discharge · misc   picked by the desk
  *   registration                           the registration fee (CR-11)
+ *   lab                                    an in-house lab test (round 8)
  *
- * `lab` and `medicine` were here too, for a lab or medicine charge collected as
- * its own payment. That is gone (client revision, 2026-09-24): an *Included*
- * amount is the hospital's expense and an excluded one is not recorded at all,
- * so no payment is ever labelled either. The one live `lab` payment was
- * relabelled `regular` by 20260925000001 — the patient did hand that money to
- * the desk, so the payment itself is real.
+ * Registration and lab are *linked*: each also writes a line in Charges and
+ * books to its own ledger source (lib/billing/linked-charge.ts). They are set
+ * by the button that opens the form ("Collect now", "Add lab test"), and are
+ * never relabelled, so a charge line cannot be left behind.
+ *
+ * History: `lab` and `medicine` labels existed once for collected lab/medicine
+ * charges, and went on 2026-09-24. Lab is back with a different meaning: the
+ * hospital's lab is in-house, so a lab test is income (client, 26 Sep).
+ * Medicine is always the hospital's expense and never a payment.
  */
 export const PAYMENT_KINDS = [
   'regular',
@@ -18,6 +22,7 @@ export const PAYMENT_KINDS = [
   'discharge',
   'misc',
   'registration',
+  'lab',
 ] as const
 export type PaymentKind = (typeof PAYMENT_KINDS)[number]
 
@@ -31,6 +36,7 @@ export const PAYMENT_KIND_LABELS: Record<PaymentKind, string> = {
   discharge: 'Discharge',
   misc: 'Misc',
   registration: 'Registration',
+  lab: 'Lab',
 }
 
 export const isDeskPaymentKind = (kind: unknown): kind is DeskPaymentKind =>

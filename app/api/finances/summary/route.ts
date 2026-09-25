@@ -42,17 +42,22 @@ export async function GET(request: NextRequest) {
         month_year: overview.month_year,
 
         // What came in. `total_paid` is every patient payment, whatever its
-        // label; OPD receipts are counted beside it, which they never were.
+        // label, split into payments + registration + lab (round 8); OPD
+        // receipts are counted beside it.
         income: {
-          total_paid: overview.money_in.patient_payments,
+          total_paid:
+            overview.money_in.patient_payments + overview.money_in.registration + overview.money_in.lab,
+          payments: overview.money_in.patient_payments,
+          registration: overview.money_in.registration,
+          lab: overview.money_in.lab,
           opd_receipts: overview.money_in.opd_receipts,
           money_in: overview.money_in.total,
         },
 
         // What went out. Doctor fees and commissions are counted when they are
         // paid, not when they are priced, which is what used to make profit a
-        // comparison of two different bases. Lab and medicine is the one
-        // exception, counted from the day the charge is dated — see the note in
+        // comparison of two different bases. Medicine is the one exception,
+        // counted from the day the charge is dated — see the note in
         // lib/finances/overview.ts.
         expenses: {
           general_expenses: overview.money_out.general_expenses,
@@ -60,9 +65,9 @@ export async function GET(request: NextRequest) {
           salary_expenses: overview.money_out.salary,
           doctor_fees: overview.money_out.doctor_fees_paid,
           referral_commissions: overview.money_out.referral_commissions_paid,
-          // Lab and medicine the hospital carries for its patients (Q-83,
-          // revised): worked out from the Included charges, not stored.
-          lab_medicine: overview.money_out.lab_medicine,
+          // Medicine the hospital carries for its patients (round 8): worked out
+          // from the medicine charges, not stored.
+          medicine: overview.money_out.medicine,
           ledger_expenses: overview.money_out.legacy_ledger_expenses,
           total_expenses: overview.money_out.total,
         },

@@ -1,11 +1,11 @@
 /**
  * The Finances Overview, on a cash basis (PRD v2, CR-10 and Q-36).
  *
- * One deliberate exception, added 2026-09-24: **lab and medicine marked
- * Included** count from the day the charge is dated, which may be before the
- * hospital has actually settled with the lab. The patient has already paid us
- * for it, so the obligation is real, and dating it to the charge keeps it beside
- * the money that funded it. Everything else here is still strictly what moved.
+ * One deliberate exception: **medicine** counts from the day the charge is
+ * dated, which may be before the hospital has settled with the pharmacy. The
+ * patient has already paid us for it, so the obligation is real, and dating it
+ * to the charge keeps it beside the money that funded it. Everything else here
+ * is still strictly what moved.
  *
  * The old summary mixed two bases and nobody could say which. "Income" was the
  * payments actually received, while "expenses" included doctor fees and
@@ -15,14 +15,14 @@
  *
  * Q-36 settles it: **money that moved this month, and nothing else.**
  *
- *   Money in  = patient payments, every label — regular, advance, discharge,
- *               misc, registration, and the lab/medicine ones collected
- *               separately — plus OPD receipts.
+ *   Money in  = patient payments (regular, advance, discharge, misc)
+ *             + registration fees + lab tests (each its own line, round 8)
+ *             + OPD receipts.
  *   Money out = general expenses (the admin's, CR-07)
  *             + petty cash spent (the desk's float, one line, Q-69)
  *             + salary                                  (see the note below)
  *             + doctor fees and referral commissions **actually paid**
- *             + lab and medicine the hospital carries for its patients.
+ *             + medicine the hospital carries for its patients.
  *   Profit    = money in − money out.
  *
  * Three things are deliberately *not* here:
@@ -41,7 +41,7 @@
  * so far, so that is what it contributes.
  */
 
-import { labMedicineExpense } from '@/lib/finances/lab-medicine-expense'
+import { medicineExpense } from '@/lib/finances/medicine-expense'
 
 type Db = { from: (table: string) => any }
 
@@ -85,7 +85,10 @@ export function monthRange(monthYear: string): MonthRange {
 }
 
 export interface MoneyIn {
+  /** Regular, advance, discharge and misc payments. */
   patient_payments: number
+  registration: number
+  lab: number
   opd_receipts: number
   total: number
 }
@@ -96,8 +99,8 @@ export interface MoneyOut {
   salary: number
   doctor_fees_paid: number
   referral_commissions_paid: number
-  /** Lab and medicine the hospital carries for its patients (Q-83, revised). */
-  lab_medicine: number
+  /** Medicine the hospital carries for its patients (round 8). */
+  medicine: number
   /** Desk expenses booked to the ledger before petty cash existed (CR-07). */
   legacy_ledger_expenses: number
   total: number
@@ -121,7 +124,7 @@ export interface PendingPayouts {
 export async function moneyIn(db: Db, range: MonthRange): Promise<MoneyIn> {
   const { data: payments } = await db
     .from('patient_billing_installments')
-    .select('amount, payment_date')
+    .select('amount, payment_date, kind')
     .gte('payment_date', range.start)
     .lte('payment_date', range.end)
 
@@ -133,13 +136,18 @@ export async function moneyIn(db: Db, range: MonthRange): Promise<MoneyIn> {
     .eq('transaction_type', 'credit')
     .eq('source', 'opd')
 
-  const patientPayments = sum(payments)
+  const rows = payments ?? []
+  const registration = sum(rows.filter((row: any) => row.kind === 'registration'))
+  const lab = sum(rows.filter((row: any) => row.kind === 'lab'))
+  const patientPayments = sum(rows) - registration - lab
   const opdReceipts = sum(opd)
 
   return {
     patient_payments: patientPayments,
+    registration,
+    lab,
     opd_receipts: opdReceipts,
-    total: patientPayments + opdReceipts,
+    total: patientPayments + registration + lab + opdReceipts,
   }
 }
 
@@ -225,7 +233,7 @@ export async function moneyOut(db: Db, range: MonthRange): Promise<MoneyOut> {
     0,
   )
   const commissionsPaid = sum(commissions ?? [], 'referral_commission_amount')
-  const labMedicine = await labMedicineExpense(db, range)
+  const medicine = await medicineExpense(db, range)
   const legacyLedgerExpenses = sum(ledgerExpenses)
 
   return {
@@ -234,7 +242,7 @@ export async function moneyOut(db: Db, range: MonthRange): Promise<MoneyOut> {
     salary,
     doctor_fees_paid: doctorFeesPaid,
     referral_commissions_paid: commissionsPaid,
-    lab_medicine: labMedicine.total,
+    medicine: medicine.total,
     legacy_ledger_expenses: legacyLedgerExpenses,
     total:
       generalExpenses +
@@ -242,7 +250,7 @@ export async function moneyOut(db: Db, range: MonthRange): Promise<MoneyOut> {
       salary +
       doctorFeesPaid +
       commissionsPaid +
-      labMedicine.total +
+      medicine.total +
       legacyLedgerExpenses,
   }
 }

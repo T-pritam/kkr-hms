@@ -29,6 +29,7 @@
 import { createLedgerTransaction, PAYMENT_MODES, type PaymentMode } from '@/lib/ledger/transactions'
 import { ENTRY_LOCKED } from '@/lib/authz/ownership'
 import { istToday } from '@/lib/dates/ist'
+import { isLinkedKind, removeLinkedCharge, syncLinkedCharge, writeLinkedCharge } from '@/lib/billing/linked-charge'
 
 type Db = { from: (table: string) => any }
 
@@ -48,11 +49,11 @@ export {
 } from '@/lib/billing/payment-labels'
 
 /** The ledger source each kind is booked under. */
-const LEDGER_SOURCE = (kind: PaymentKind): 'patient' | 'registration' =>
-  kind === 'registration' ? 'registration' : 'patient'
+const LEDGER_SOURCE = (kind: PaymentKind): 'patient' | 'registration' | 'lab' =>
+  kind === 'registration' ? 'registration' : kind === 'lab' ? 'lab' : 'patient'
 
 /** Ledger sources that belong to a patient payment and are edited through it. */
-export const PAYMENT_LEDGER_SOURCES = ['patient', 'registration'] as const
+export const PAYMENT_LEDGER_SOURCES = ['patient', 'registration', 'lab'] as const
 
 export interface PaymentInput {
   amount: number
@@ -323,6 +324,16 @@ export async function recordPayment(
     .update({ ledger_transaction_id: ledgerRow.id })
     .eq('id', installment.id)
 
+  // Lab and registration also write their line in Charges — all three or none.
+  if (isLinkedKind(kind)) {
+    const line = await writeLinkedCharge(db, { kind, installment, patientId, billingId, userId })
+    if (!line.ok) {
+      await db.from('daily_ledger_transactions').delete().eq('id', ledgerRow.id)
+      await db.from('patient_billing_installments').delete().eq('id', installment.id)
+      return { ok: false, status: line.status, error: line.error }
+    }
+  }
+
   await resumPaid(db, billingId)
 
   if (kind === 'registration') {
@@ -446,6 +457,7 @@ export async function updatePayment(
   }
 
   await resumPaid(db, installment.patient_billing_id)
+  await syncLinkedCharge(db, data, userId)
 
   return { ok: true, installment: data }
 }
@@ -473,7 +485,10 @@ export async function deletePayment(db: Db, installment: any): Promise<void> {
 
   await resumPaid(db, installment.patient_billing_id)
 
+  if (isLinkedKind(installment.kind)) await removeLinkedCharge(db, installment)
+
   // Deleting the registration payment puts the fee back to "not collected".
+  // With its charge line gone too, the fee reads the catalogue's price again.
   if (installment.kind === 'registration') {
     await db
       .from('patient_billing')

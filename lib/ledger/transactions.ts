@@ -23,6 +23,8 @@ export type LedgerSource =
   | 'patient'
   // The registration fee, booked by lib/billing/payments.ts (PRD v2 CR-11).
   | 'registration'
+  // An in-house lab test, booked by lib/billing/payments.ts (round 8).
+  | 'lab'
   | 'opd'
   | 'expense'
   | 'doctor_settlement'

@@ -172,7 +172,8 @@ describe('generatePatientPDF', () => {
 
 /**
  * The Finance PDFs, fed the summary exactly as `GET /api/finances/summary`
- * returns it (PRD v2 CR-10, and the Lab & Medicine line from 2026-09-24).
+ * returns it (PRD v2 CR-10; round 8: Medicine, and payments split into
+ * payments + registration + lab).
  *
  * This fixture used to be the pre-v2 shape — `total_charges`, `total_commission`,
  * `recent_transactions` — none of which the API returns any more. The tests
@@ -183,14 +184,14 @@ describe('generatePatientPDF', () => {
 describe('finance report generators', () => {
   const summary = {
     month_year: '2026-03',
-    income: { total_paid: 136800, opd_receipts: 1200, money_in: 138000 },
+    income: { total_paid: 136800, payments: 135500, registration: 600, lab: 700, opd_receipts: 1200, money_in: 138000 },
     expenses: {
       general_expenses: 5000,
       petty_cash: 650,
       salary_expenses: 31000,
       doctor_fees: 8000,
       referral_commissions: 7000,
-      lab_medicine: 800,
+      medicine: 800,
       ledger_expenses: 500,
       total_expenses: 52950,
     },
@@ -213,7 +214,7 @@ describe('finance report generators', () => {
     ['Ledger', 'Rs.500.00'],
     ['Doctor Fees', 'Rs.8,000.00'],
     ['Referral', 'Rs.7,000.00'],
-    ['Lab & Med', 'Rs.800.00'],
+    ['Medicine', 'Rs.800.00'],
   ]
 
   beforeEach(() => {
@@ -230,7 +231,7 @@ describe('finance report generators', () => {
     expectValidPdf(saved()[0])
   })
 
-  it('draws every expense line in the breakdown, Lab & Medicine included', async () => {
+  it('draws every expense line in the breakdown, Medicine included', async () => {
     await generateExpenseBreakdownPDF('2026-03', summary)
 
     const text = textOf(saved()[0])
@@ -239,7 +240,7 @@ describe('finance report generators', () => {
       expect(text, label).toContain(label)
       expect(text, `${label} amount`).toContain(amount)
     }
-    expect(text).toContain('Lab & Medicine')
+    expect(text).not.toContain('Lab & Med')
     expect(text).toContain('Rs.52,950.00')
   })
 
@@ -254,6 +255,39 @@ describe('finance report generators', () => {
     }
     expect(text).toContain('Still To Pay')
     expect(text).toContain('Rs.9,500.00')
+    // Money in, split the way the client reads it (round 8).
+    expect(text).toContain('Registration')
+    expect(text).toContain('Rs.600.00')
+    expect(text).toContain('Lab Tests')
+    expect(text).toContain('Rs.700.00')
+  })
+
+  /**
+   * The transaction tables read /api/ledger/entries. They used to fetch
+   * GET /api/ledger/transactions, which has no GET, so they were always empty.
+   */
+  it('lists every patient payment in the income report — payments, registration and lab', async () => {
+    const rows = [
+      { transaction_date: '2026-03-05', source: 'patient', amount: 5000, payment_mode: 'cash', description: '12/26 Ramesh (Regular)', patient: { name: 'Ramesh' } },
+      { transaction_date: '2026-03-06', source: 'registration', amount: 300, payment_mode: 'cash', description: '12/26 Ramesh (Registration)', patient: { name: 'Ramesh' } },
+      { transaction_date: '2026-03-07', source: 'lab', amount: 450, payment_mode: 'upi', description: '12/26 Ramesh (Lab)', patient: { name: 'Ramesh' } },
+      { transaction_date: '2026-03-07', source: 'opd', amount: 999, payment_mode: 'cash', description: 'OPD', patient: null },
+    ]
+    const fetchMock = vi.fn(async (url: string) =>
+      new Response(JSON.stringify({ success: true, data: String(url).includes('page=1') ? rows : [], page_size: 50 }), { status: 200 })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await generateIncomePDF('2026-03', summary)
+
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/api/ledger/entries?')
+    // PDF text escapes brackets: "(Lab)" is stored as "\(Lab\)".
+    const text = textOf(saved()[0]).replace(/\\([()])/g, '$1')
+    expect(text).toContain('(Regular)')
+    expect(text).toContain('(Registration)')
+    expect(text).toContain('(Lab)')
+    expect(text).not.toContain('Rs.999.00')
+    expect(text).toContain('Rs.5,750.00')
   })
 
   // The regression: a field the API no longer returns printed as "undefined".
@@ -269,10 +303,10 @@ describe('finance report generators', () => {
   it('handles a month with no activity', async () => {
     const empty = {
       ...summary,
-      income: { total_paid: 0, opd_receipts: 0, money_in: 0 },
+      income: { total_paid: 0, payments: 0, registration: 0, lab: 0, opd_receipts: 0, money_in: 0 },
       expenses: {
         general_expenses: 0, petty_cash: 0, salary_expenses: 0, doctor_fees: 0,
-        referral_commissions: 0, lab_medicine: 0, ledger_expenses: 0, total_expenses: 0,
+        referral_commissions: 0, medicine: 0, ledger_expenses: 0, total_expenses: 0,
       },
       profit: { net_profit: 0, is_profit: true, profit_margin: 0 },
       pending_settlements: { doctor_fees: 0, doctor_count: 0, referral_commissions: 0, referral_count: 0, total: 0, rows: [] },

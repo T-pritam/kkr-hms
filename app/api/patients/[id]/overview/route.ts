@@ -2,19 +2,17 @@
  * GET /api/patients/[id]/overview?billing_id=…
  *
  * Everything the patient's Overview tab shows (PRD v2, CR-16): the stay, the
- * money, lab and medicine, the services used, and how much activity there is.
+ * money, the services used, and how much activity there is.
  *
- * The money model (CR-15, settled with the client on 2026-09-22/23):
+ * The money model (round 8, 26 Sep):
  *
- *   Total bill      = every payment received on the stay (all labels)
- *   Passed on       = payments labelled Lab or Medicine: money collected at the
- *                     desk for the lab or pharmacy, which is not the hospital's
- *   Hospital income = total bill − passed on
- *   Expenses        = doctor fees + referral commission, counted as soon as they
- *                     are priced, paid or not. An *included* lab/medicine amount
- *                     is income, not an expense: the lab or pharmacy bills the
- *                     hospital separately (2026-09-23).
- *   Net             = hospital income − expenses          (admin only, Q-66)
+ *   Total bill = payments + registration + lab           x + y + z = A
+ *                payments: regular, advance, discharge, misc
+ *                registration, lab: each its own figure (they come in directly)
+ *   Expenses   = doctor fees + referral commission, counted as soon as they are
+ *                priced, paid or not, + every medicine charge (always the
+ *                hospital's expense — the pharmacy bills us)
+ *   Net        = total bill − expenses                   (admin only, Q-66)
  *
  * Charges are internal: they say what the patient used and never make a balance.
  */
@@ -23,8 +21,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireBilling } from '@/lib/billing/authz'
 import { PAYMENT_KINDS, type PaymentKind } from '@/lib/billing/payment-labels'
-import { labMedicineKind } from '@/lib/billing/lab-medicine'
-import { getRegistrationFeeItem } from '@/lib/billing/registration-fee'
+import { isMedicineCategory } from '@/lib/billing/medicine'
+import { pendingRegistrationFee } from '@/lib/billing/registration-fee'
 import { istToday } from '@/lib/dates/ist'
 
 const num = (v: unknown) => Number(v) || 0
@@ -94,7 +92,7 @@ export async function GET(
       supabase
         .from('patient_charges')
         .select(
-          'id, charge_type, amount, qty, charge_date, lab_medicine_status, charge_item:charge_items(id, category)'
+          'id, charge_type, amount, qty, charge_date, installment_id, charge_item:charge_items(id, category)'
         )
         .eq('patient_billing_id', billing.id)
         .order('charge_date', { ascending: false }),
@@ -120,11 +118,16 @@ export async function GET(
     }
 
     /**
-     * Every payment is the hospital's now. "Passed on" is gone with the lab and
-     * medicine labels: an amount the patient paid the lab directly is not
-     * recorded at all, so there is nothing here to hand back (Q-82, revised
-     * 2026-09-24). What the hospital owes the lab is an expense below instead.
+     * The total bill, split the way the client reads it (round 8):
+     * payments + registration + lab = total. Registration and lab come in on
+     * their own, so they are not "payments" here.
      */
+    const breakdown = {
+      payments: byLabel.regular + byLabel.advance + byLabel.discharge + byLabel.misc,
+      registration: byLabel.registration,
+      lab: byLabel.lab,
+      total: totalBill,
+    }
     const hospitalIncome = totalBill
 
     const doctorFees = (settlements ?? []).reduce(
@@ -145,22 +148,13 @@ export async function GET(
       pending: billing.referral_settled ? 0 : commissionAmount,
     }
 
-    // ── Lab & medicine, and the services used ────────────────────────────────
+    // ── Medicine, and the services used ──────────────────────────────────────
     //
-    // `included` is what the hospital carries for this patient and owes the lab
-    // or pharmacy — an expense, counted below (Q-83, revised 2026-09-24).
-    // `undecided` is a charge nobody has answered for yet: it is not an expense
-    // until someone says it is, and it is shown so a person resolves it.
-    const labMedicine = {
-      included: 0,
-      undecided: 0,
-      rows: [] as any[],
-    }
+    // Every medicine charge is the hospital's expense, from the day it is dated
+    // (round 8). No question is asked and nothing is "not decided".
+    let medicineExpense = 0
     const byCategory = new Map<string, { category: string; total: number; count: number }>()
     let servicesUsed = 0
-
-    const feeItem = await getRegistrationFeeItem(supabase)
-    let registrationFeeAmount = 0
 
     for (const charge of charges ?? []) {
       const item = one<any>(charge.charge_item)
@@ -173,29 +167,21 @@ export async function GET(
       bucket.count += 1
       byCategory.set(category, bucket)
 
-      if (feeItem && item?.id === feeItem.id) registrationFeeAmount += total
-
-      const kind = labMedicineKind(category)
-      if (!kind) continue
-
-      if (charge.lab_medicine_status === 'included') labMedicine.included += total
-      else labMedicine.undecided += total
-
-      labMedicine.rows.push({
-        id: charge.id,
-        charge_type: charge.charge_type,
-        charge_date: charge.charge_date,
-        kind,
-        amount: total,
-        status: charge.lab_medicine_status === 'included' ? 'included' : null,
-      })
+      if (isMedicineCategory(category)) medicineExpense += total
     }
 
     /**
      * Counted as soon as they are priced or set, paid or not (Q-81) — and the
-     * lab/medicine the hospital carries, from the day the charge is dated.
+     * medicine the hospital carries, from the day the charge is dated.
      */
-    const expensesTotal = doctorFees.total + commission.amount + labMedicine.included
+    const expensesTotal = doctorFees.total + commission.amount + medicineExpense
+
+    /**
+     * An uncollected registration fee is whatever the catalogue says now; a
+     * collected one is what was taken (round 8). Nothing to collect once a
+     * registration payment exists, whatever the status column says.
+     */
+    const pendingFee = byLabel.registration > 0 ? null : await pendingRegistrationFee(supabase, billing)
 
     // ── Activity ─────────────────────────────────────────────────────────────
     const [visits, labOrders, pharmacyBills] = await Promise.all([
@@ -243,24 +229,24 @@ export async function GET(
         },
         referral,
         registration_fee: {
-          status: billing.registration_fee_status ?? null,
-          amount: registrationFeeAmount,
+          status: pendingFee !== null ? 'pending' : byLabel.registration > 0 ? 'collected' : (billing.registration_fee_status ?? null),
+          amount: pendingFee ?? byLabel.registration,
         },
       },
       money: {
         total_bill: totalBill,
         by_label: byLabel,
+        breakdown,
         hospital_income: hospitalIncome,
         expenses: {
           doctor_fees: doctorFees,
           referral_commission: commission,
-          lab_medicine: labMedicine.included,
+          medicine: medicineExpense,
           total: expensesTotal,
         },
         // What the hospital keeps. Admin only — reception sees the rest (Q-66).
         net: user.role === 'ADMIN' ? hospitalIncome - expensesTotal : null,
       },
-      lab_medicine: labMedicine,
       services_used: {
         total: servicesUsed,
         by_category: [...byCategory.values()].sort((a, b) => b.total - a.total),

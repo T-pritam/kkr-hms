@@ -11,7 +11,11 @@ import {
 import { call } from '../../helpers/request'
 import { signInAs, signOut } from '../../helpers/auth'
 import { db } from '../../helpers/fake-supabase'
-import { aBilling, aPatient, anInstallment, aTransaction, aUser } from '../../helpers/seed'
+import { aBilling, aChargeItem, aPatient, anInstallment, aTransaction, aUser } from '../../helpers/seed'
+import {
+  PATCH as editCharge,
+  DELETE as removeCharge,
+} from '@/app/api/patients/[id]/charges/[chargeId]/route'
 import { TODAY } from '../../setup'
 
 const list = (patientId: string, query = {}) =>
@@ -410,10 +414,15 @@ describe('POST /api/patients/[id]/installments — registration fee (PRD v2 CR-1
     await signInAs('RECEPTIONIST', { userId: 'u-recep' })
     aPatient({ id: 'p1', patient_id: '12/26', name: 'Ramesh Kumar' })
     aBilling({ id: 'b1', patient_id: 'p1', registration_fee_status: 'pending' })
+    aChargeItem({ id: 'reg', name: 'Registration', category: 'registration', is_registration_fee: true, default_price: 300 })
 
     const { status } = await create('p1', { patient_billing_id: 'b1', amount: 100, kind: 'registration' })
 
     expect(status).toBe(200)
+    // The third line (round 8): collected means it is in Charges too.
+    expect(db.rows('patient_charges')).toEqual([
+      expect.objectContaining({ charge_item_id: 'reg', charge_type: 'Registration', amount: 100, qty: 1 }),
+    ])
     expect(db.rows('patient_billing_installments')[0]).toMatchObject({ kind: 'registration', amount: 100 })
     expect(db.rows('daily_ledger_transactions')[0]).toMatchObject({
       source: 'registration',
@@ -669,5 +678,140 @@ describe('DELETE /api/patients/[id]/installments/[installmentId]', () => {
     await remove('p1', 'i1')
 
     expect(db.find('patient_billing', (r) => r.id === 'b1')!.registration_fee_status).toBe('pending')
+  })
+})
+
+/**
+ * Lab tests and the registration fee (round 8): one payment, three lines —
+ * Charges (for reference), Payments, Ledger — kept in step by the payment.
+ */
+describe('lab and registration payments write their Charges line (round 8)', () => {
+  const labItem = () =>
+    aChargeItem({ id: 'lab', name: 'Lab Test', category: 'lab', default_price: 0 })
+
+  const setUp = async () => {
+    await signInAs('RECEPTIONIST', { userId: 'u-recep' })
+    aPatient({ id: 'p1', patient_id: '12/26', name: 'Ramesh Kumar' })
+    aBilling({ id: 'b1', patient_id: 'p1' })
+    labItem()
+  }
+
+  it('writes the payment, its own Lab ledger row and a Charges line together', async () => {
+    await setUp()
+
+    const { status } = await create('p1', {
+      patient_billing_id: 'b1',
+      amount: 450,
+      kind: 'lab',
+      remarks: 'CBC, blood sugar',
+    })
+
+    expect(status).toBe(200)
+    const payment = db.rows('patient_billing_installments')[0]
+    expect(payment).toMatchObject({ kind: 'lab', amount: 450 })
+    expect(db.rows('daily_ledger_transactions')).toEqual([
+      expect.objectContaining({ source: 'lab', transaction_type: 'credit', amount: 450, patient_id: 'p1' }),
+    ])
+    expect(db.rows('daily_ledger_transactions')[0].description).toContain('(Lab)')
+    expect(db.rows('patient_charges')).toEqual([
+      expect.objectContaining({
+        charge_item_id: 'lab',
+        charge_type: 'Lab Test',
+        description: 'CBC, blood sugar',
+        amount: 450,
+        installment_id: payment.id,
+      }),
+    ])
+    expect(paidAmount()).toBe(450)
+  })
+
+  it('writes nothing at all when there is no lab entry in the catalogue', async () => {
+    await signInAs('RECEPTIONIST', { userId: 'u-recep' })
+    aPatient({ id: 'p1' })
+    aBilling({ id: 'b1', patient_id: 'p1' })
+
+    const { status, body } = await create('p1', { patient_billing_id: 'b1', amount: 450, kind: 'lab' })
+
+    expect(status).toBe(400)
+    expect(body.error).toMatch(/lab entry/i)
+    expect(db.count('patient_billing_installments')).toBe(0)
+    expect(db.count('daily_ledger_transactions')).toBe(0)
+    expect(db.count('patient_charges')).toBe(0)
+  })
+
+  it('moves the Charges line with the payment when the payment is edited', async () => {
+    await setUp()
+    await create('p1', { patient_billing_id: 'b1', amount: 450, kind: 'lab', remarks: 'CBC' })
+    const payment = db.rows('patient_billing_installments')[0]
+
+    const { status } = await edit('p1', payment.id, {
+      amount: 600,
+      payment_date: TODAY,
+      payment_method: 'cash',
+      remarks: 'CBC, LFT',
+    })
+
+    expect(status).toBe(200)
+    expect(db.rows('patient_charges')[0]).toMatchObject({ amount: 600, description: 'CBC, LFT' })
+  })
+
+  it('removes the Charges line when the payment is deleted', async () => {
+    await setUp()
+    await create('p1', { patient_billing_id: 'b1', amount: 450, kind: 'lab' })
+    const payment = db.rows('patient_billing_installments')[0]
+
+    const { status } = await remove('p1', payment.id)
+
+    expect(status).toBe(200)
+    expect(db.count('patient_charges')).toBe(0)
+    expect(db.count('daily_ledger_transactions')).toBe(0)
+  })
+
+  it('puts an uncollected registration fee back when its payment is deleted, line and all', async () => {
+    await setUp()
+    aChargeItem({ id: 'reg', name: 'Registration', category: 'registration', is_registration_fee: true })
+    db.find('patient_billing', (r) => r.id === 'b1')!.registration_fee_status = 'pending'
+    await create('p1', { patient_billing_id: 'b1', amount: 300, kind: 'registration' })
+    const payment = db.rows('patient_billing_installments')[0]
+
+    await remove('p1', payment.id)
+
+    expect(db.count('patient_charges')).toBe(0)
+    expect(db.find('patient_billing', (r) => r.id === 'b1')!.registration_fee_status).toBe('pending')
+  })
+
+  it('keeps the line read-only in Charges: changed through its payment', async () => {
+    await setUp()
+    await create('p1', { patient_billing_id: 'b1', amount: 450, kind: 'lab' })
+    const line = db.rows('patient_charges')[0]
+
+    const patched = await call(editCharge, 'PATCH', `/api/patients/p1/charges/${line.id}`, {
+      body: { amount: 1 },
+      params: { id: 'p1', chargeId: line.id },
+    })
+    const deleted = await call(removeCharge, 'DELETE', `/api/patients/p1/charges/${line.id}`, {
+      params: { id: 'p1', chargeId: line.id },
+    })
+
+    expect(patched.status).toBe(409)
+    expect(patched.body.code).toBe('CHARGE_IS_PAYMENT_LINE')
+    expect(deleted.status).toBe(409)
+    expect(db.rows('patient_charges')[0].amount).toBe(450)
+  })
+
+  it('does not let a lab payment be relabelled, so its line cannot be left behind', async () => {
+    await setUp()
+    await create('p1', { patient_billing_id: 'b1', amount: 450, kind: 'lab' })
+    const payment = db.rows('patient_billing_installments')[0]
+
+    const { status } = await edit('p1', payment.id, {
+      amount: 450,
+      payment_date: TODAY,
+      payment_method: 'cash',
+      kind: 'regular',
+    })
+
+    expect(status).toBe(400)
+    expect(db.rows('patient_billing_installments')[0].kind).toBe('lab')
   })
 })

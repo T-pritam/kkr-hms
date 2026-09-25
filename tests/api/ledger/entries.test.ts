@@ -126,6 +126,25 @@ describe('the ledger log — filters and totals', () => {
     })
   })
 
+  // The client, 26 Sep: reception works the ledger but does not see its money
+  // totals — not on screen, and not in what the browser is sent.
+  it('sends reception the row count only, no money totals', async () => {
+    await signInAs('RECEPTIONIST', { userId: 'u-asha' })
+    aBusyDay()
+
+    const { body } = await list()
+
+    expect(body.totals).toEqual({ count: 4 })
+    expect(body.data).toHaveLength(4)
+  })
+
+  it.each(['NURSE', 'DOCTOR'] as const)('still sends %s the totals', async (role) => {
+    await signInAs(role)
+    aBusyDay()
+
+    expect((await list()).body.totals).toMatchObject({ in: 9000, out: 2000, count: 4 })
+  })
+
   it('filters by date range, direction, mode, type and who added it', async () => {
     await signInAs('ADMIN')
     aBusyDay()

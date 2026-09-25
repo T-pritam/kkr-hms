@@ -187,7 +187,7 @@ export default function PettyCashPage() {
                       <th className="p-3 text-right font-medium">Out</th>
                       <th className="p-3 text-right font-medium">Balance</th>
                       <th className="p-3 text-left font-medium">Added by</th>
-                      <th className="p-3 text-right font-medium">Actions</th>
+                      <th className="p-3 text-right font-medium sticky right-0 bg-surface-inset">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -218,7 +218,8 @@ export default function PettyCashPage() {
                         </td>
                         <td className="p-3 text-right text-foreground">{inr(entry.running_balance)}</td>
                         <td className="p-3">{entry.created_by_user?.username || '—'}</td>
-                        <td className="p-3">
+                        {/* Pinned: on a narrow screen the rest scrolls, the actions stay in view. */}
+                        <td className="p-3 sticky right-0 bg-surface">
                           <div className="flex justify-end gap-1">
                             {entry.kind === 'advance' ? (
                               <span className="text-xs text-muted">on the advance</span>

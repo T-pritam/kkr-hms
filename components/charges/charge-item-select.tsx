@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Search, X } from 'lucide-react'
 import { CHARGE_CATEGORY_LABELS } from '@/lib/billing/constants'
+import { isLinkedChargeItem } from '@/lib/billing/linked-charge'
 
 /**
  * The charge being placed — one catalogue entry, searchable.
@@ -25,6 +26,7 @@ export interface ChargeItemOption {
   billing_mode: string
   default_price: number
   unit_label: string | null
+  is_registration_fee?: boolean | null
 }
 
 interface Props {
@@ -40,6 +42,11 @@ interface Props {
   includeId?: string | null
   fallbackLabel?: string | null
   id?: string
+  /**
+   * Hide the lab and registration entries: on a patient they are added with
+   * their payment, never as a bare charge (lib/billing/linked-charge.ts).
+   */
+  excludeLinked?: boolean
 }
 
 const money = (n: number) => `₹${Number(n || 0).toLocaleString('en-IN')}`
@@ -51,6 +58,7 @@ export function ChargeItemSelect({
   includeId,
   fallbackLabel,
   id = 'charge-item-select',
+  excludeLinked = false,
 }: Props) {
   const [items, setItems] = useState<ChargeItemOption[]>([])
   const [query, setQuery] = useState('')
@@ -95,6 +103,7 @@ export function ChargeItemSelect({
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase()
     return items
+      .filter(i => !excludeLinked || !isLinkedChargeItem(i))
       .filter(
         i =>
           !q ||
@@ -103,7 +112,7 @@ export function ChargeItemSelect({
           i.category.toLowerCase().includes(q),
       )
       .slice(0, 25)
-  }, [items, query])
+  }, [items, query, excludeLinked])
 
   const choose = (item: ChargeItemOption | null) => {
     onChange(item)

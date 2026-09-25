@@ -35,7 +35,6 @@ import {
 } from 'lucide-react'
 import { OpdEntryModal } from '@/components/ledger/opd-entry-modal'
 import { EditTransactionModal } from '@/components/ledger/edit-transaction-modal'
-import { AddPatientInstallmentModal } from '@/components/ledger/add-patient-installment-modal'
 import { CloseEntriesDialog } from '@/components/ledger/close-entries-dialog'
 import { ledgerExpenseCategoryLabel } from '@/lib/format/expense'
 import { istToday } from '@/lib/dates/ist'
@@ -65,18 +64,20 @@ interface Entry {
   can_edit: boolean
 }
 
+/** Reception gets `count` only — the money figures are not sent to them. */
 interface Totals {
-  in: number
-  out: number
-  net: number
-  cash_in: number
-  cash_out: number
+  in?: number
+  out?: number
+  net?: number
+  cash_in?: number
+  cash_out?: number
   count: number
 }
 
 const SOURCE_LABELS: Record<string, string> = {
   patient: 'Patient payment',
   registration: 'Registration fee',
+  lab: 'Lab',
   opd: 'OPD',
   expense: 'Expense',
   doctor_settlement: 'Doctor fee',
@@ -110,6 +111,8 @@ function thisMonth() {
 export default function LedgerPage() {
   const { user } = useUser()
   const isAdmin = user?.role === 'ADMIN'
+  // Reception works the ledger but does not see its money totals (client, 26 Sep).
+  const showTotals = user?.role !== 'RECEPTIONIST'
 
   const [tab, setTab] = useState<'all' | 'open'>('all')
   const [entries, setEntries] = useState<Entry[]>([])
@@ -131,7 +134,6 @@ export default function LedgerPage() {
     search: '',
   })
 
-  const [showPayment, setShowPayment] = useState(false)
   const [showOpd, setShowOpd] = useState(false)
   const [editing, setEditing] = useState<Entry | null>(null)
   const [closing, setClosing] = useState<'close' | 'reopen' | null>(null)
@@ -233,9 +235,6 @@ export default function LedgerPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button onClick={() => setShowPayment(true)}>
-              <Plus className="h-4 w-4 mr-1" /> Add payment
-            </Button>
             <Button variant="outline" onClick={() => setShowOpd(true)}>
               <Plus className="h-4 w-4 mr-1" /> Add OPD receipt
             </Button>
@@ -249,8 +248,8 @@ export default function LedgerPage() {
         </div>
 
         {/* Totals for the current filter (Q-22) */}
-        {totals && (
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        {showTotals && totals && totals.in !== undefined && (
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
             {[
               ['Money in', inr(totals.in), 'text-success-text'],
               ['Money out', inr(totals.out), 'text-destructive'],
@@ -291,7 +290,7 @@ export default function LedgerPage() {
 
         {/* Filters */}
         <Card>
-          <CardContent className="p-4 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+          <CardContent className="p-4 grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
             <div>
               <label className="text-xs text-muted">From</label>
               <Input type="date" value={filters.from} onChange={(e) => setFilter('from', e.target.value)} />
@@ -437,7 +436,7 @@ export default function LedgerPage() {
                       <th className="p-3 text-left font-medium">Mode</th>
                       <th className="p-3 text-left font-medium">Added by</th>
                       <th className="p-3 text-left font-medium">Status</th>
-                      <th className="p-3 text-right font-medium">Actions</th>
+                      <th className="p-3 text-right font-medium sticky right-0 bg-surface-inset">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -501,7 +500,8 @@ export default function LedgerPage() {
                             <Badge variant="warning">Open</Badge>
                           )}
                         </td>
-                        <td className="p-3">
+                        {/* Pinned: on a narrow screen the rest scrolls, the actions stay in view. */}
+                        <td className="p-3 sticky right-0 bg-surface">
                           <div className="flex justify-end gap-1">
                             {entry.payment_installment_id && entry.patient ? (
                               <Link
@@ -562,15 +562,6 @@ export default function LedgerPage() {
         </div>
       </div>
 
-      <AddPatientInstallmentModal
-        isOpen={showPayment}
-        onClose={() => setShowPayment(false)}
-        onSuccess={() => {
-          setShowPayment(false)
-          void fetchEntries()
-        }}
-        selectedDate={istToday()}
-      />
       <OpdEntryModal
         isOpen={showOpd}
         onClose={() => setShowOpd(false)}

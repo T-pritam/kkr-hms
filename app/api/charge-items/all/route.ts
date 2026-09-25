@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from('charge_items')
-      .select('id, code, name, category, billing_mode, default_price, unit_label, is_active')
+      .select('id, code, name, category, billing_mode, default_price, unit_label, is_active, is_registration_fee')
 
     query = includeId
       ? query.or(`is_active.eq.true,id.eq.${includeId}`)

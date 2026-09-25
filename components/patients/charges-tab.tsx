@@ -11,7 +11,6 @@ import { PharmacyBillAddModal } from '@/components/patients/pharmacy-bill-add-mo
 import { PharmacyBillViewModal } from '@/components/patients/pharmacy-bill-view-modal';
 import { PatientChargesDownloadModal } from '@/components/patients/patient-charges-download-modal';
 import { CHARGE_CATEGORY_LABELS } from '@/lib/billing/constants';
-import { hasBillingCapability } from '@/lib/billing/authz';
 import { groupByCharge, groupByDate } from '@/lib/billing/group-charges';
 import {
   printPatientCharges, type PatientChargesPatient,
@@ -99,47 +98,10 @@ export default function ChargesTab({ patientId, billing, onCreateBilling, patien
     setModalOpen(true);
   };
 
+  // A lab or registration line mirrors its payment and is changed there
+  // (lib/billing/linked-charge.ts), so it has no Edit or Delete here.
   const canModify = (charge: any) =>
-    user?.role === 'ADMIN' || user?.id === charge.created_by;
-
-  /** Whoever takes payments decides lab/medicine charges (PRD v2 Q-65). */
-  const canDecide = hasBillingCapability(user?.role, 'payment:write');
-
-  /**
-   * Lab and medicine: is the amount included in the patient's payments, so the
-   * hospital owes the lab, or has nobody decided yet? Admin and reception may
-   * change it at any time — the client's own wording — because it is a running
-   * correction to what the hospital owes, and the person who spots it is rarely
-   * the person who typed the charge.
-   */
-  const decide = async (charge: any, action: 'include' | 'clear') => {
-    setError('');
-    setNotice('');
-    try {
-      const response = await fetch(`/api/patients/${patientId}/charges/${charge.id}/lab-medicine`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result?.error || 'Failed to update the charge');
-      setNotice(
-        result.status === 'included'
-          ? 'Included in the patient\u2019s payments \u2014 added to the hospital\u2019s expenses'
-          : 'Set back to not decided \u2014 it counts as no expense until someone answers',
-      );
-      await fetchCharges();
-      return true;
-    } catch (err: any) {
-      setError(err.message);
-      return false;
-    }
-  };
-
-  const labMedicineProps = {
-    canDecide,
-    onDecide: (charge: any, action: 'include' | 'clear') => void decide(charge, action),
-  };
+    !charge.installment_id && (user?.role === 'ADMIN' || user?.id === charge.created_by);
 
   const handleDelete = async (charge: any, wholeGroup: boolean) => {
     const count = wholeGroup
@@ -326,7 +288,6 @@ export default function ChargesTab({ patientId, billing, onCreateBilling, patien
                         onView={setPharmacyViewBillId}
                         onEdit={openEdit}
                         onDelete={(c) => handleDelete(c, false)}
-                        {...labMedicineProps}
                       />
                     ))}
                   </div>
@@ -414,7 +375,6 @@ export default function ChargesTab({ patientId, billing, onCreateBilling, patien
                         onView={setPharmacyViewBillId}
                         onEdit={openEdit}
                         onDelete={(c) => handleDelete(c, false)}
-                        {...labMedicineProps}
                       />
                     ))}
                   </div>
@@ -491,8 +451,6 @@ function ChargeDetailRow({
   onView,
   onEdit,
   onDelete,
-  canDecide,
-  onDecide,
 }: {
   charge: any;
   canModify: boolean;
@@ -501,18 +459,12 @@ function ChargeDetailRow({
   onView: (billId: string) => void;
   onEdit: (charge: any) => void;
   onDelete: (charge: any) => void;
-  canDecide: boolean;
-  onDecide: (charge: any, action: 'include' | 'clear') => void;
 }) {
   const bill = charge.pharmacy_bill;
-  // Lab / medicine: included in the patient's payments, or not yet decided
-  // (CR-15, revised 2026-09-24). Included means the hospital owes the lab, so
-  // the amount is one of its expenses; undecided is nobody's expense yet and is
-  // flagged so a person resolves it (the client's Q-87: "mark it no status and
-  // later you can change").
-  const status: string | null = charge.lab_medicine_status ?? null;
-  const isLabMedicine = ['lab', 'pharmacy'].includes(charge.charge_item?.category);
-  const undecided = isLabMedicine && !status;
+  // Medicine is always the hospital's expense; a lab or registration line
+  // comes from its payment and is read-only here (round 8).
+  const medicine = charge.charge_item?.category === 'pharmacy';
+  const fromPayment = Boolean(charge.installment_id);
 
   return (
     <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 px-4 py-3">
@@ -520,11 +472,11 @@ function ChargeDetailRow({
         <p className="text-sm font-medium text-foreground">
           {charge.charge_type}
           {bill && <Badge variant="info" className="ml-2">Pharmacy</Badge>}
-          {status === 'included' && (
-            <Badge variant="success" className="ml-2">Hospital pays — {money(lineTotal(charge))}</Badge>
-          )}
-          {undecided && (
-            <Badge variant="warning" className="ml-2">Not decided</Badge>
+          {medicine && <Badge variant="warning" className="ml-2">Expense</Badge>}
+          {fromPayment && (
+            <Badge variant="success" className="ml-2" title="Change or delete it on the Payments tab">
+              From payment
+            </Badge>
           )}
           {charge.billing_mode === 'per_day' && (
             <span className="ml-2 text-xs text-muted">per day</span>
@@ -563,16 +515,6 @@ function ChargeDetailRow({
         </span>
 
         <div className="flex flex-wrap gap-2">
-          {canDecide && undecided && (
-            <button onClick={() => onDecide(charge, 'include')} className="text-success-text text-sm font-medium">
-              Included
-            </button>
-          )}
-          {canDecide && status === 'included' && (
-            <button onClick={() => onDecide(charge, 'clear')} className="text-muted text-sm font-medium">
-              Not decided
-            </button>
-          )}
           {bill && (
             <button
               onClick={() => onView(bill.id)}

@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
@@ -154,8 +155,9 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
         )}
       >
         <div className="flex flex-col h-full">
-          {/* Logo */}
-          <div className="flex items-center justify-center h-20 border-b border-sidebar-border">
+          {/* Logo — the emblem from the hospital's letterhead (client, 26 Sep) */}
+          <div className="flex items-center justify-center gap-3 h-20 border-b border-sidebar-border">
+            <Image src="/kkr-logo.png" alt="KKR Hospitals" width={44} height={44} priority className="shrink-0" />
             <h1 className="text-2xl font-bold">
               <span className="text-primary">KKR</span>{' '}
               <span className="text-foreground">HMS</span>

@@ -48,6 +48,10 @@ interface FinancialSummary {
   month_year: string
   income: {
     total_paid: number
+    /** Regular, advance, discharge, misc — registration and lab are apart (round 8). */
+    payments: number
+    registration: number
+    lab: number
     opd_receipts: number
     money_in: number
   }
@@ -58,8 +62,8 @@ interface FinancialSummary {
     ledger_expenses: number
     referral_commissions: number
     doctor_fees: number
-    /** Included lab/medicine charges — the hospital's, worked out from them. */
-    lab_medicine: number
+    /** Medicine charges — always the hospital's expense, worked out from them. */
+    medicine: number
     total_expenses: number
   }
   profit: {
@@ -94,9 +98,9 @@ export default function FinancesPage() {
     'overview'
   )
   const [doctorFeesModalOpen, setDoctorFeesModalOpen] = useState(false)
-  // The Lab & medicine line opens the charges behind it, for the month shown.
-  const [labMedicineOpen, setLabMedicineOpen] = useState(false)
-  const [labMedicineRows, setLabMedicineRows] = useState<any[] | null>(null)
+  // The Medicine line opens the charges behind it, for the month shown.
+  const [medicineOpen, setMedicineOpen] = useState(false)
+  const [medicineRows, setMedicineRows] = useState<any[] | null>(null)
   const [referralModalOpen, setReferralModalOpen] = useState(false)
   const [showAddForm, setShowAddForm] = useState(false)
   const [expenses, setExpenses] = useState<any[]>([])
@@ -136,19 +140,19 @@ export default function FinancesPage() {
   }
 
   /**
-   * The charges behind the Lab & medicine line, for the month on screen. Loaded
+   * The charges behind the Medicine line, for the month on screen. Loaded
    * on demand rather than with the summary: it is a list of patients, which the
    * Overview does not need until someone asks what the figure is made of.
    */
-  const loadLabMedicine = async () => {
-    setLabMedicineRows(null)
+  const loadMedicine = async () => {
+    setMedicineRows(null)
     try {
-      const response = await fetch(`/api/finances/lab-medicine?month=${selectedMonth}`)
+      const response = await fetch(`/api/finances/medicine?month=${selectedMonth}`)
       const result = await response.json()
-      setLabMedicineRows(response.ok ? result.rows ?? [] : [])
+      setMedicineRows(response.ok ? result.rows ?? [] : [])
     } catch (error) {
       console.error('Error fetching the lab & medicine breakdown:', error)
-      setLabMedicineRows([])
+      setMedicineRows([])
     }
   }
 
@@ -405,12 +409,18 @@ export default function FinancesPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <div className="flex justify-between items-center pb-2 border-b border-border">
-                    <span className="text-muted">Patient payments</span>
-                    <span className="font-semibold text-success-text">
-                      {formatCurrency(summary.income.total_paid)}
-                    </span>
-                  </div>
+                  {/* Payments + registration + lab, each its own line (round 8) —
+                      the same split as the patient's Overview. */}
+                  {([
+                    ['Patient payments', summary.income.payments],
+                    ['Registration fees', summary.income.registration],
+                    ['Lab tests', summary.income.lab],
+                  ] as const).map(([label, amount]) => (
+                    <div key={label} className="flex justify-between items-center pb-2 border-b border-border">
+                      <span className="text-muted">{label}</span>
+                      <span className="font-semibold text-success-text">{formatCurrency(amount)}</span>
+                    </div>
+                  ))}
                   <div className="flex justify-between items-center pb-2 border-b border-border">
                     <span className="text-muted">OPD receipts</span>
                     <span className="font-semibold text-success-text">
@@ -587,23 +597,23 @@ export default function FinancesPage() {
                     </button>
                   </div>
 
-                  {/* Lab & medicine the hospital carries for its patients (Q-83,
-                      revised 2026-09-24). Worked out from the Included charges,
-                      so the drill-down is the same query, not a second copy. */}
+                  {/* Medicine the hospital carries for its patients (round 8).
+                      Worked out from the medicine charges, so the drill-down is
+                      the same query, not a second copy. */}
                   <div className="flex items-center py-2 px-2 border-b border-border hover:bg-surface-hover rounded-lg transition-colors group">
                     <button
                       onClick={() => {
-                        setLabMedicineOpen(true)
-                        void loadLabMedicine()
+                        setMedicineOpen(true)
+                        void loadMedicine()
                       }}
                       className="flex-1 flex justify-between items-center cursor-pointer"
                     >
                       <span className="text-muted group-hover:text-foreground flex items-center gap-1 transition-colors">
-                        Lab &amp; Medicine
+                        Medicine (on patients&apos; behalf)
                         <ChevronRight className="h-3.5 w-3.5 opacity-0 group-hover:opacity-60 transition-opacity" />
                       </span>
                       <span className="font-semibold text-foreground">
-                        {formatCurrency(summary.expenses.lab_medicine)}
+                        {formatCurrency(summary.expenses.medicine)}
                       </span>
                     </button>
                   </div>
@@ -914,23 +924,23 @@ export default function FinancesPage() {
         />
       )}
 
-      {labMedicineOpen && (
+      {medicineOpen && (
         <Modal
-          isOpen={labMedicineOpen}
-          onClose={() => setLabMedicineOpen(false)}
+          isOpen={medicineOpen}
+          onClose={() => setMedicineOpen(false)}
           size="lg"
-          title="Lab & medicine"
-          description={`Charges the hospital carries for its patients in ${selectedMonth}. The patient's payments covered them and the lab bills us, so each is one of the hospital's expenses.`}
+          title="Medicine"
+          description={`Medicine charged to patients in ${selectedMonth}. The patient's payments cover it and the pharmacy bills us, so each is one of the hospital's expenses.`}
         >
-          {labMedicineRows === null ? (
+          {medicineRows === null ? (
             <p className="text-sm text-muted py-6 text-center">Loading…</p>
-          ) : labMedicineRows.length === 0 ? (
+          ) : medicineRows.length === 0 ? (
             <p className="text-sm text-muted py-6 text-center">
               Nothing marked Included this month.
             </p>
           ) : (
             <div className="divide-y divide-border">
-              {labMedicineRows.map((row: any) => (
+              {medicineRows.map((row: any) => (
                 <div key={row.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
                   <span className="min-w-0">
                     {row.patient ? (
@@ -952,10 +962,10 @@ export default function FinancesPage() {
               ))}
               <div className="flex justify-between items-center pt-3 text-sm">
                 <span className="font-semibold text-foreground">
-                  Total — {labMedicineRows.length} charge{labMedicineRows.length === 1 ? '' : 's'}
+                  Total — {medicineRows.length} charge{medicineRows.length === 1 ? '' : 's'}
                 </span>
                 <span className="font-bold text-foreground">
-                  {formatCurrency(labMedicineRows.reduce((t: number, r: any) => t + Number(r.amount || 0), 0))}
+                  {formatCurrency(medicineRows.reduce((t: number, r: any) => t + Number(r.amount || 0), 0))}
                 </span>
               </div>
             </div>

@@ -21,6 +21,8 @@ failures**. What is open:
 |---|---|---|
 | 🟡 #68 | ~~The database is readable and writable with the key the browser carries~~ | **Closed in practice 2026-09-25** (steps 1–3 of [`docs/SECURITY-DB-ACCESS.md`](docs/SECURITY-DB-ACCESS.md)); step 4, row-level security as a second lock, not done |
 
+**Fixed on 2026-09-26:** the registration fee disagreeing between tabs (#77) · lists cut off on narrower screens (#78) · empty Finances PDF tables (#79).
+
 **Fixed on 2026-09-25:** the browser's key closed (#68, steps 1–3) · live refresh on every screen (#75) · scheduled backups, failing since at least 24 Sep (#76) · the placeholder Dashboard removed (#73, Q-99 = A) · security #1, #3, #4, #5, #6, #69, #70, #74 · correctness #9, #14,
 #22, #26, #27, #44, #45, #54, #64, #65, #66, #67 · polish #71, #72 · and 14 older entries
 found already fixed by earlier rebuilds (#10–#13, #15, #47/#48, #51, #57–#63).
@@ -705,6 +707,28 @@ the suite exercises the API, not the database's own access rules.
 service-role key (server-only, never `NEXT_PUBLIC_`), revoke the anon/authenticated table
 grants, and give live refresh a narrow alternative (RLS policies scoped to realtime, or
 server-sent refetch signals).
+
+### ✅ #77 — RESOLVED — An uncollected registration fee showed in Charges, and at a stale price
+**Where:** `lib/billing/registration-fee.ts`, the patient's Overview, Payments and Charges tabs
+
+Reported by the client on patient 6/26: the Overview and Payments said "collect the registration fee" while Charges already listed it, which reads as collected. Registration wrote the charge line even when the fee was not taken, and froze the price of that moment — the catalogue went from ₹100 to ₹300 48 seconds later, and the fee to collect stayed ₹100. A hand-added "Registration" charge could also exist with no payment at all (5 bills: 60/26, 280/26–283/26).
+
+**Resolved 2026-09-26 (round 8).** Nothing is written until the fee is collected; until then the amount is the catalogue's current price; collecting writes the charge line, the payment and the ledger row together (`lib/billing/linked-charge.ts`), and the line is read-only in Charges. The Charges form no longer offers the Registration or Lab items.
+
+### ✅ #78 — RESOLVED — Lists cut off on narrower screens, with no visible scroll
+**Where:** patients, doctors, charge sheets, lab orders, employee details, salary, admin panel, ledger, petty cash
+
+On a squarer screen (or Windows display scaling) the content beside the sidebar is narrower than the tables: at 1024 px the doctor list's actions sat off the right edge, and the sideways scrollbar was under the last of up to 100 rows, with `overflow-x: hidden` on the page. Measured overflow at 1024 px: doctors 129 px, patients 97, lab orders 383, admin 215, ledger 109, employee details 72, salary 62, charge sheets 23, petty cash 6.
+
+**Resolved 2026-09-26.** Pages with a compact list use it below 1280 px; the Ledger and Petty cash pin their Actions column; the patient filter row and the Ledger's boxes wrap instead of overflowing. Checked in Chrome at 1024, 1265 and 1440 px.
+
+### ✅ #79 — RESOLVED — The Finances PDFs' transaction tables were always empty
+**Where:** `lib/pdf/finance-pdf.ts`
+
+The income, ledger-expense and monthly reports fetched `GET /api/ledger/transactions`, which has never had a GET, so every transaction table printed empty (and the income one would have left out registration fees anyway). **Resolved 2026-09-26:** they read `/api/ledger/entries`, page by page; the income report lists payments, registration fees and lab tests.
+
+### ⚪ Note — this network's DNS redirects `*.supabase.co`
+Found 2026-09-26: from the development machine, `bmbbifxkjqmdqriootdw.supabase.co` resolved to an ISP address (`106.51.115.156`) and TLS failed; through DNS-over-HTTPS it works. The live app is unaffected (Vercel reaches Supabase itself). **But browsers talk to Supabase directly for live refresh**, so on a network whose DNS does this, screens will not refresh on their own (everything else works). If staff report that, the fix is on the network (a different DNS such as 1.1.1.1), not in the app.
 
 ### ✅ #76 — RESOLVED — Scheduled database backups were all failing
 **Where:** Supabase edge function `backup-database`, cron job "DB Backup to R2"

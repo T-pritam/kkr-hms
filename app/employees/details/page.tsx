@@ -319,7 +319,7 @@ export default function EmployeeDetailsPage() {
           <>
             <div className="bg-surface rounded-lg border border-border overflow-hidden">
               {/* Desktop */}
-              <div className="hidden md:block overflow-x-auto">
+              <div className="hidden xl:block overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-surface-hover">
                     <tr>
@@ -377,7 +377,7 @@ export default function EmployeeDetailsPage() {
               </div>
 
               {/* Mobile */}
-              <div className="md:hidden divide-y divide-border">
+              <div className="xl:hidden divide-y divide-border">
                 {employees.map(employee => (
                   <div
                     key={employee.id}

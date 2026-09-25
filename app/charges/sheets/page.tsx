@@ -249,7 +249,7 @@ export default function ChargeSheetsPage() {
           </div>
         ) : (
           <div className="bg-surface rounded-lg border border-border overflow-hidden">
-            <div className="hidden md:block overflow-x-auto">
+            <div className="hidden xl:block overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-surface-hover">
                   <tr>
@@ -368,7 +368,7 @@ export default function ChargeSheetsPage() {
             </div>
 
             {/* Mobile */}
-            <div className="md:hidden divide-y divide-border">
+            <div className="xl:hidden divide-y divide-border">
               {sheets.map(sheet => (
                 <div key={sheet.id} className="p-4 space-y-2">
                   <div className="flex items-start justify-between gap-3">

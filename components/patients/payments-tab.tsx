@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, Edit, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, Edit, AlertTriangle, FlaskConical } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useUser } from '@/hooks/use-user';
 import { UpdatedStamp } from '@/components/ui/updated-stamp';
@@ -28,7 +28,8 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
   // Every payment is written with its ledger entry now (PRD v2 CR-12), so there
   // is no "create ledger entry" switch. `kind` is the payment's label (CR-15):
   // the desk picks Regular / Advance / Discharge / Misc; it is 'registration'
-  // only when the form was opened from "Collect now".
+  // only when the form was opened from "Collect now", and 'lab' from "Add lab
+  // test". Those two also write their line in Charges (round 8).
   const EMPTY_FORM = {
     amount: '',
     payment_date: istToday(),
@@ -133,6 +134,28 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
     setShowForm(true);
   };
 
+  /**
+   * "Add lab test" (round 8): the in-house lab is income. Saving writes the
+   * payment, its ledger row and a line in Charges together. The notes say which
+   * tests; the amount starts at the catalogue's lab price, if it has one.
+   */
+  const handleAddLabTest = async () => {
+    setEditingId(null);
+    setFormData({ ...EMPTY_FORM, payment_date: istToday(), kind: 'lab' });
+    setShowForm(true);
+    try {
+      const res = await fetch('/api/charge-items/all');
+      const items = res.ok ? await res.json() : [];
+      const lab = Array.isArray(items) ? items.find((i: any) => i.category === 'lab') : null;
+      const price = Number(lab?.default_price) || 0;
+      if (price > 0) {
+        setFormData((prev) => (prev.kind === 'lab' && !prev.amount ? { ...prev, amount: String(price) } : prev));
+      }
+    } catch {
+      // No price to suggest; the desk types it.
+    }
+  };
+
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this installment?')) return;
 
@@ -208,9 +231,6 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
     );
   };
 
-  // Nothing locks a payment's amount any more: the lab/medicine labels are gone,
-  // and they were the only payments whose amount belonged to something else.
-  const amountLocked = false;
 
   return (
     <div className="space-y-6">
@@ -237,6 +257,12 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
         </button>
       </div>
 
+      <div className="flex justify-end -mt-3">
+        <Button size="sm" variant="outline" onClick={() => void handleAddLabTest()}>
+          <FlaskConical className="h-4 w-4 mr-1" /> Add lab test
+        </Button>
+      </div>
+
       {registrationPending && (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-warning/30 bg-warning-subtle p-4">
           <p className="flex items-center gap-2 text-sm text-warning-text">
@@ -256,6 +282,14 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
               {editingId ? 'Edit registration fee payment' : 'Collect registration fee'}
             </p>
           )}
+          {formData.kind === 'lab' && (
+            <p className="text-sm font-medium text-foreground">
+              {editingId ? 'Edit lab test payment' : 'Add lab test'}
+              <span className="block text-xs font-normal text-muted">
+                Saved as a payment (Lab), in the Ledger, and as a line in Charges.
+              </span>
+            </p>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-muted mb-2">
@@ -268,8 +302,6 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
                 min="0.01"
                 placeholder="0.00"
                 value={formData.amount}
-                disabled={amountLocked}
-                title={amountLocked ? 'Set by the lab/medicine charge this payment collected' : undefined}
                 onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
                 className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"
               />
@@ -346,10 +378,11 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
 
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-muted mb-2">
-                Remarks
+                {formData.kind === 'lab' ? 'Test(s) — optional' : 'Remarks'}
               </label>
               <textarea
                 rows={2}
+                placeholder={formData.kind === 'lab' ? 'e.g. CBC, blood sugar' : undefined}
                 value={formData.remarks}
                 onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
                 className="w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none"

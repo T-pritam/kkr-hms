@@ -362,8 +362,9 @@ describe('GET /api/finances/summary — the Overview, on a cash basis (Q-36)', (
     it('counts every patient payment made in the month, whatever its label', async () => {
       await signInAs('ADMIN')
       aBilling({ id: 'b1' })
-      // All five labels that exist (CR-15). Lab and Medicine were labels until
-      // 2026-09-24; the database now refuses them, so they are not seeded here.
+      // All six labels that exist: the desk's four, registration, and lab
+      // (round 8 — the in-house lab is income).
+      anInstallment({ patient_billing_id: 'b1', amount: 700, payment_date: '2026-03-06', kind: 'lab' })
       anInstallment({ patient_billing_id: 'b1', amount: 5000, payment_date: '2026-03-05', kind: 'regular' })
       anInstallment({ patient_billing_id: 'b1', amount: 3000, payment_date: '2026-03-20', kind: 'advance' })
       anInstallment({ patient_billing_id: 'b1', amount: 100, payment_date: '2026-03-20', kind: 'registration' })
@@ -373,7 +374,10 @@ describe('GET /api/finances/summary — the Overview, on a cash basis (Q-36)', (
 
       const { body } = await summary({ month_year: THIS_MONTH })
 
-      expect(body.income.total_paid).toBe(9000)
+      expect(body.income.total_paid).toBe(9700)
+      // x + y + z, the same split as the patient's Overview (round 8).
+      expect(body.income).toMatchObject({ payments: 8900, registration: 100, lab: 700 })
+      expect(body.income.money_in).toBe(9700)
     })
 
     it('counts OPD receipts beside them, which it never did', async () => {
@@ -497,26 +501,26 @@ describe('GET /api/finances/summary — the Overview, on a cash basis (Q-36)', (
     })
 
     /**
-     * The other half of the reversal: an Included lab or medicine charge is the
-     * hospital's expense (Q-83, reversed), counted in the month of the charge
-     * rather than when the lab is paid — the patient's money has already come
-     * in, so the obligation belongs beside it.
+     * Every medicine charge is the hospital's expense (round 8), counted in the
+     * month of the charge rather than when the pharmacy is paid. Lab is income
+     * now, so a lab charge is never an expense, whatever its old status says.
      */
-    it('counts an included lab or medicine charge as an expense', async () => {
+    it('counts every medicine charge as an expense, and no lab charge', async () => {
       await signInAs('ADMIN')
       aChargeItem({ id: 'lab', name: 'Lab Test', category: 'lab' })
       aChargeItem({ id: 'med', name: 'Medication', category: 'pharmacy' })
       aChargeItem({ id: 'room', name: 'Room', category: 'room' })
       aCharge({ charge_item_id: 'lab', amount: 300, qty: 2, charge_date: '2026-03-05', lab_medicine_status: 'included' })
       aCharge({ charge_item_id: 'med', amount: 900, qty: 1, charge_date: '2026-03-06', lab_medicine_status: 'included' })
-      // Not decided: nobody has said the hospital carries it, so it is nobody's.
+      // No status: counted all the same — there is no "not decided" any more.
       aCharge({ charge_item_id: 'med', amount: 5000, qty: 1, charge_date: '2026-03-07', lab_medicine_status: null })
       // A room charge is internal and moves no money, whatever its status says.
       aCharge({ charge_item_id: 'room', amount: 8000, qty: 1, charge_date: '2026-03-08', lab_medicine_status: 'included' })
       // Another month's.
       aCharge({ charge_item_id: 'lab', amount: 4000, qty: 1, charge_date: '2026-02-20', lab_medicine_status: 'included' })
 
-      expect((await summary({ month_year: THIS_MONTH })).body.expenses.lab_medicine).toBe(1500)
+      // 900 + 5,000; the lab charge (600) is not an expense.
+      expect((await summary({ month_year: THIS_MONTH })).body.expenses.medicine).toBe(5900)
     })
 
     /** Desk expenses booked to the ledger before petty cash existed (CR-07). */
@@ -536,8 +540,8 @@ describe('GET /api/finances/summary — the Overview, on a cash basis (Q-36)', (
       aSalaryRecord({ month_year: THIS_MONTH, status: 'settled', calculated_salary: 20000 })
       aSettlement({ settled: true, total_amount: 1000, settlement_amount: 1000, settlement_date: '2026-03-05T06:00:00.000Z' })
       aBilling({ referral_settled: true, referral_commission_amount: 300, referral_settlement_date: '2026-03-05T06:00:00.000Z' })
-      aChargeItem({ id: 'lab', name: 'Lab Test', category: 'lab' })
-      aCharge({ charge_item_id: 'lab', amount: 200, qty: 1, charge_date: '2026-03-05', lab_medicine_status: 'included' })
+      aChargeItem({ id: 'med', name: 'Medication', category: 'pharmacy' })
+      aCharge({ charge_item_id: 'med', amount: 200, qty: 1, charge_date: '2026-03-05' })
       aTransaction({ transaction_type: 'debit', source: 'expense', amount: 100, transaction_date: '2026-03-05' })
 
       // 4,000 + 500 + 20,000 + 1,000 + 300 + 200 + 100

@@ -277,6 +277,9 @@ export const SCHEMA: Record<string, string[]> = {
     // `collected_installment_id` is dropped, there being no separate payment
     // left for it to point at.
     'lab_medicine_status',
+    // 20260926000001 — the lab or registration payment this line mirrors
+    // (lib/billing/linked-charge.ts). Read-only in the Charges tab.
+    'installment_id',
   ],
 
   patient_consultations: [

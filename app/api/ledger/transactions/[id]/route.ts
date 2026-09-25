@@ -13,9 +13,10 @@ import { paymentLinks } from '@/lib/billing/payments'
  */
 async function assertNotPaymentEntry(supabase: any, existing: any): Promise<NextResponse | null> {
   // An unlinked `patient` row is an orphan left by an old payment delete; it
-  // stays editable so an admin can clean it up. A registration row never is one.
+  // stays editable so an admin can clean it up. A registration or lab row never
+  // is one — both are only ever written with their payment.
   const linked = (await paymentLinks(supabase, [existing.id])).has(existing.id)
-  if (!linked && existing.source !== 'registration') return null
+  if (!linked && existing.source !== 'registration' && existing.source !== 'lab') return null
 
   return NextResponse.json(
     {

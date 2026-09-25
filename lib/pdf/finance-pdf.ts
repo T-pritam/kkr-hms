@@ -25,6 +25,28 @@ function pct(val: number, total: number): string {
 // EXPORTED PDF GENERATORS
 // ═══════════════════════════════════════════════════════════════════════════════
 
+
+/**
+ * Every ledger row in a date range, read page by page from /api/ledger/entries.
+ *
+ * These reports used to fetch `GET /api/ledger/transactions`, which has never
+ * existed (that route only takes POST), so their transaction tables were always
+ * empty. Found and fixed 2026-09-26.
+ */
+async function fetchLedgerRows(filters: { from: string; to: string; direction: 'credit' | 'debit'; source?: string }): Promise<any[]> {
+  const rows: any[] = []
+  for (let page = 1; page <= 200; page++) {
+    const params = new URLSearchParams({ from: filters.from, to: filters.to, direction: filters.direction, page: String(page) })
+    if (filters.source) params.set('source', filters.source)
+    const res = await fetch(`/api/ledger/entries?${params}`)
+    const result = await res.json().catch(() => ({}))
+    const batch: any[] = res.ok && Array.isArray(result.data) ? result.data : []
+    rows.push(...batch)
+    if (batch.length < (Number(result.page_size) || 50)) break
+  }
+  return rows
+}
+
 // ── Salary PDF ────────────────────────────────────────────────────────────────
 export async function generateSalaryPDF(monthYear: string) {
   const res = await fetch(`/api/employees/salary?month_year=${monthYear}`)
@@ -136,10 +158,7 @@ export async function generateLedgerExpensesPDF(monthYear: string) {
   const [year, month] = monthYear.split('-').map(Number)
   const startDate = `${monthYear}-01`
   const endDate   = `${monthYear}-${new Date(year, month, 0).getDate()}`
-  const params = new URLSearchParams({ start_date: startDate, end_date: endDate, transaction_type: 'debit', source: 'expense' })
-  const res = await fetch(`/api/ledger/transactions?${params}`)
-  const result = await res.json()
-  const txns: any[] = result.success ? result.data : (Array.isArray(result) ? result : [])
+  const txns: any[] = await fetchLedgerRows({ from: startDate, to: endDate, direction: 'debit', source: 'expense' })
 
   const total = txns.reduce((s, t) => s + (Number(t.amount) || 0), 0)
   const h = mkDoc()
@@ -248,16 +267,19 @@ export async function generateIncomePDF(monthYear: string, summary: any) {
   const [year, month] = monthYear.split('-').map(Number)
   const startDate = `${monthYear}-01`
   const endDate   = `${monthYear}-${new Date(year, month, 0).getDate()}`
-  const params = new URLSearchParams({ start_date: startDate, end_date: endDate, transaction_type: 'credit', source: 'patient' })
-  const res = await fetch(`/api/ledger/transactions?${params}`)
-  const result = await res.json()
-  const txns: any[] = result.success ? result.data : (Array.isArray(result) ? result : [])
+  // Every patient payment, whatever its label: payments, registration fees and
+  // lab tests each book to their own ledger source (round 8).
+  const PAYMENT_SOURCES = ['patient', 'registration', 'lab']
+  const txns: any[] = (await fetchLedgerRows({ from: startDate, to: endDate, direction: 'credit' }))
+    .filter((t: any) => PAYMENT_SOURCES.includes(t.source))
 
   const h = mkDoc()
   hdr(h, 'Income Report', getMonthLabel(monthYear))
 
   boxRow(h, [
-    { label: 'Patient Payments', value: fmt(summary.income.total_paid),     accent: C.green },
+    { label: 'Patient Payments', value: fmt(summary.income.payments ?? summary.income.total_paid), accent: C.green },
+    { label: 'Registration',     value: fmt(summary.income.registration ?? 0), accent: C.green },
+    { label: 'Lab Tests',        value: fmt(summary.income.lab ?? 0),          accent: C.green },
     { label: 'OPD Receipts',     value: fmt(summary.income.opd_receipts),   accent: C.navy },
     { label: 'Money In',         value: fmt(summary.income.money_in),       accent: C.teal },
   ])
@@ -335,7 +357,7 @@ export async function generateExpenseBreakdownPDF(monthYear: string, summary: an
     ['Ledger (legacy)',      exp.ledger_expenses],
     ['Doctor Fees',          exp.doctor_fees || 0],
     ['Referral Commissions', exp.referral_commissions],
-    ['Lab & Medicine',       exp.lab_medicine || 0],
+    ['Medicine',             exp.medicine || 0],
   ]
   rows.forEach(([label, val], i) => {
     trow(h, [
@@ -363,15 +385,14 @@ export async function generateMonthlyFinancePDF(monthYear: string, summary: any)
   const endDate    = `${monthYear}-${new Date(year, month, 0).getDate()}`
   const monthLabel = getMonthLabel(monthYear)
 
-  const [salaryRes, expensesRes, ledgerRes, referralRes] = await Promise.all([
+  const [salaryRes, expensesRes, ledgTxns, referralRes] = await Promise.all([
     fetch(`/api/employees/salary?month_year=${monthYear}`),
     fetch(`/api/finances/expenses?month_year=${monthYear}`),
-    fetch(`/api/ledger/transactions?${new URLSearchParams({ start_date: startDate, end_date: endDate, transaction_type: 'debit', source: 'expense' })}`),
+    fetchLedgerRows({ from: startDate, to: endDate, direction: 'debit', source: 'expense' }),
     fetch('/api/finances/referral-commissions'),
   ])
   const salaryData   = await salaryRes.json()
   const expensesData = await expensesRes.json()
-  const ledgerData   = await ledgerRes.json()
   const referralData = await referralRes.json()
 
   const h = mkDoc()
@@ -440,7 +461,9 @@ export async function generateMonthlyFinancePDF(monthYear: string, summary: any)
   h.y += TH_H
 
   const incRows = [
-    ['Patient Payments', fmt(summary.income.total_paid)],
+    ['Patient Payments', fmt(summary.income.payments ?? summary.income.total_paid)],
+    ['Registration',     fmt(summary.income.registration ?? 0)],
+    ['Lab Tests',        fmt(summary.income.lab ?? 0)],
     ['OPD Receipts',     fmt(summary.income.opd_receipts)],
   ]
   const expRows = [
@@ -450,7 +473,7 @@ export async function generateMonthlyFinancePDF(monthYear: string, summary: any)
     ['Ledger',      fmt(summary.expenses.ledger_expenses)],
     ['Doctor Fees', fmt(summary.expenses.doctor_fees || 0)],
     ['Referral',    fmt(summary.expenses.referral_commissions)],
-    ['Lab & Med',   fmt(summary.expenses.lab_medicine || 0)],
+    ['Medicine',    fmt(summary.expenses.medicine || 0)],
   ]
   const maxRows = Math.max(incRows.length, expRows.length)
   for (let i = 0; i < maxRows; i++) {
@@ -553,7 +576,6 @@ export async function generateMonthlyFinancePDF(monthYear: string, summary: any)
   // ── Page 4: Ledger Expenses ─────────────────────────────────────────────────
   h.doc.addPage(); h.y = M
   hdr(h, 'Ledger Expenses', monthLabel)
-  const ledgTxns: any[] = ledgerData.success ? ledgerData.data : (Array.isArray(ledgerData) ? ledgerData : [])
   sec(h, 'LEDGER DEBIT TRANSACTIONS')
   thead(h, [
     { label: '#',           x: M + 2 },

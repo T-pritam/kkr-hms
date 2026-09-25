@@ -6,8 +6,6 @@ import { Badge } from '@/components/ui/badge';
 import { useRealtimeRefetch } from '@/hooks/use-realtime-refetch';
 import { CHARGE_CATEGORY_LABELS } from '@/lib/billing/constants';
 import { PAYMENT_KIND_LABELS, type PaymentKind } from '@/lib/billing/payment-labels';
-import { hasBillingCapability } from '@/lib/billing/authz';
-import { useUser } from '@/hooks/use-user';
 
 /**
  * Everything about one patient's stay on one screen (PRD v2, CR-16).
@@ -75,15 +73,6 @@ export default function OverviewTab({ patientId, billingId, onCreateBilling }: P
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [deciding, setDeciding] = useState<string | null>(null);
-  const { user } = useUser();
-
-  /**
-   * Admin and reception change a lab/medicine decision from here, at any time —
-   * the client's own wording. Finances, where the same amounts appear as an
-   * expense, is admin-only, so this block is reception's only way in.
-   */
-  const canDecide = hasBillingCapability(user?.role, 'payment:write');
 
   const fetchOverview = useCallback(async () => {
     try {
@@ -127,27 +116,9 @@ export default function OverviewTab({ patientId, billingId, onCreateBilling }: P
     );
   }
 
-  const { stay, money, lab_medicine: labMedicine, services_used: services, doctor_fees: doctorFees, activity } = data;
+  const { stay, money, services_used: services, doctor_fees: doctorFees, activity } = data;
+  const breakdown = money.breakdown ?? { payments: money.total_bill, registration: 0, lab: 0, total: money.total_bill };
   const registration = stay.registration_fee;
-
-  const decide = async (chargeId: string, action: 'include' | 'clear') => {
-    setDeciding(chargeId);
-    try {
-      const res = await fetch(`/api/patients/${patientId}/charges/${chargeId}/lab-medicine`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setError(body?.error || 'Failed to update the charge');
-        return;
-      }
-      await fetchOverview();
-    } finally {
-      setDeciding(null);
-    }
-  };
 
   return (
     <div className="space-y-6">
@@ -198,9 +169,9 @@ export default function OverviewTab({ patientId, billingId, onCreateBilling }: P
       <Section title="Money">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card
-            label="Total bill (payments received)"
-            value={inr(money.total_bill)}
-            hint="Everything the patient has paid"
+            label="Total received from the patient"
+            value={inr(breakdown.total)}
+            hint="Payments + registration fee + lab tests"
             tone="good"
           />
           <Card
@@ -211,6 +182,25 @@ export default function OverviewTab({ patientId, billingId, onCreateBilling }: P
           {money.net !== null && money.net !== undefined && (
             <Card label="Net for the hospital" value={inr(money.net)} hint="Income after expenses" />
           )}
+        </div>
+
+        {/* The client's own reading of the total (round 8): x + y + z = A. */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-surface-inset px-4 py-3 text-sm">
+          {[
+            ['Payments', breakdown.payments],
+            ['Registration fee', breakdown.registration],
+            ['Lab tests', breakdown.lab],
+          ].map(([label, amount], i) => (
+            <span key={String(label)} className="flex items-center gap-2">
+              {i > 0 && <span className="text-muted">+</span>}
+              <span>
+                <span className="font-semibold text-foreground">{inr(amount)}</span>{' '}
+                <span className="text-muted">{label}</span>
+              </span>
+            </span>
+          ))}
+          <span className="text-muted">=</span>
+          <span className="font-bold text-success-text">{inr(breakdown.total)}</span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
@@ -255,70 +245,14 @@ export default function OverviewTab({ patientId, billingId, onCreateBilling }: P
               </span>
               <span className="text-foreground">{inr(money.expenses.referral_commission.amount)}</span>
             </div>
-            {money.expenses.lab_medicine > 0 && (
-              <div className="flex justify-between text-sm pt-1 border-t border-border">
-                <span className="text-muted">Lab &amp; medicine the hospital pays</span>
-                <span className="text-foreground">{inr(money.expenses.lab_medicine)}</span>
-              </div>
-            )}
+            {/* Medicine is always the hospital's expense (round 8). */}
+            <div className="flex justify-between text-sm pt-1 border-t border-border">
+              <span className="text-muted">Medicine</span>
+              <span className="text-foreground">{inr(money.expenses.medicine ?? 0)}</span>
+            </div>
           </div>
         </div>
       </Section>
-
-      {/* Lab & medicine */}
-      {labMedicine.rows.length > 0 && (
-        <Section
-          title="Lab & medicine"
-          aside={<span className="text-sm text-muted">what the hospital carries for this patient</span>}
-        >
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <Card
-              label="Hospital pays (an expense)"
-              value={inr(labMedicine.included)}
-              hint="Covered by the patient's payments; the lab bills us"
-              tone="muted"
-            />
-            <Card
-              label="Not decided"
-              value={inr(labMedicine.undecided)}
-              hint={labMedicine.undecided > 0 ? 'Counts as no expense until someone answers' : undefined}
-              tone={labMedicine.undecided > 0 ? 'warn' : 'muted'}
-            />
-          </div>
-          <div className="divide-y divide-border">
-            {labMedicine.rows.map((row: any) => (
-              <div key={row.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
-                <span className="text-foreground">
-                  {row.charge_type}
-                  <span className="text-muted"> · {date(row.charge_date)}</span>
-                </span>
-                <span className="flex items-center gap-2">
-                  {row.status === 'included' ? (
-                    <Badge variant="success">Hospital pays</Badge>
-                  ) : (
-                    <Badge variant="warning">Not decided</Badge>
-                  )}
-                  <span className="text-foreground">{inr(row.amount)}</span>
-                  {canDecide && (
-                    <button
-                      onClick={() => void decide(row.id, row.status === 'included' ? 'clear' : 'include')}
-                      disabled={deciding === row.id}
-                      className="text-info text-xs font-medium disabled:opacity-50"
-                    >
-                      {row.status === 'included' ? 'Not decided' : 'Included'}
-                    </button>
-                  )}
-                </span>
-              </div>
-            ))}
-          </div>
-          <p className="text-xs text-muted">
-            Included means the patient&apos;s payments already covered it and the lab bills the
-            hospital, so the amount is one of the hospital&apos;s expenses. An amount the patient
-            paid the lab directly is not recorded at all.
-          </p>
-        </Section>
-      )}
 
       {/* Services used */}
       <Section

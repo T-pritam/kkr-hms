@@ -13,27 +13,14 @@ import {
 } from '@/components/charges/charge-item-select'
 import { MAX_CHARGE_DAYS, MAX_HOURS_PER_DAY, isRangeBillingMode } from '@/lib/billing/constants'
 import { istToday } from '@/lib/dates/ist'
+import { isMedicineCategory, MEDICINE_SAVED_MESSAGE } from '@/lib/billing/medicine'
 
 /**
- * Lab and medicine charges ask one more thing when saved (PRD v2 CR-15, revised
- * 2026-09-24): is the amount already included in the patient's payments, or did
- * the patient pay the lab directly?
- *
- * Included, the hospital owes the lab, so the charge is saved and the amount
- * becomes an expense in Finances. Paid directly, the hospital never touched that
- * money, so **nothing is saved at all** — which the dialog says in as many
- * words, because a charge that disappears on Save is otherwise baffling.
- *
- * The old middle answer, "excluded — collect later", and the separate Lab and
- * Medicine payments it led to are gone.
+ * Medicine is always the hospital's expense (round 8): nothing is asked when it
+ * is saved, and the desk is told so. Lab tests and the registration fee are not
+ * offered here at all — they are added on the Payments tab, which writes their
+ * line in Charges together with the payment (lib/billing/linked-charge.ts).
  */
-const LAB_MEDICINE_LABEL: Record<string, string> = { lab: 'Lab', pharmacy: 'Medicine' }
-
-interface LabMedicineAnswer {
-  choice: 'included' | 'direct'
-}
-
-const DEFAULT_ANSWER: LabMedicineAnswer = { choice: 'included' }
 
 /**
  * Placing a charge on a patient, and correcting one.
@@ -169,15 +156,12 @@ export function ChargeEntryModal({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
-  /** The save-time question for lab/medicine; null until Save is first pressed. */
-  const [labAnswer, setLabAnswer] = useState<LabMedicineAnswer | null>(null)
 
   useEffect(() => {
     if (!isOpen) return
     setError('')
     setFieldErrors({})
     setItem(null)
-    setLabAnswer(null)
 
     setForm(
       charge
@@ -239,8 +223,6 @@ export function ChargeEntryModal({
 
   const chooseItem = (chosen: ChargeItemOption | null) => {
     setItem(chosen)
-    // A different charge may not be lab/medicine, or may be the other one.
-    setLabAnswer(null)
     // Only per_day asks for a range now; per_hour uses the single charge date.
     const ranged = chosen?.billing_mode === 'per_day'
     setForm(prev => ({
@@ -272,17 +254,11 @@ export function ChargeEntryModal({
     return { total: rate * qty * (days || 0), rate, qty }
   }, [form.amount, form.qty, days, isHourly, hours, showQty])
 
-  /** Lab or Medicine when the chosen catalogue entry is one — only on create. */
-  const labMedicine = mode === 'create' ? LAB_MEDICINE_LABEL[item?.category ?? ''] : undefined
+  /** A medication charge — the hospital's expense, said so on save. */
+  const medicine = mode === 'create' && isMedicineCategory(item?.category)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-
-    // First Save on a lab/medicine charge asks the question instead of saving.
-    if (labMedicine && !labAnswer) {
-      setLabAnswer(DEFAULT_ANSWER)
-      return
-    }
 
     setSaving(true)
     setError('')
@@ -314,7 +290,6 @@ export function ChargeEntryModal({
           payload.charge_date = form.charge_date
         }
 
-        if (labMedicine && labAnswer) payload.lab_medicine = { choice: labAnswer.choice }
       } else {
         payload.charge_date = form.charge_date
         if (!form.charge_item_id) payload.charge_type = form.charge_type
@@ -337,6 +312,9 @@ export function ChargeEntryModal({
         throw new Error(body?.error || 'Failed to save the charge')
       }
 
+      // The client asked for an alert on save: medicine is an expense only.
+      if (body?.medicine_expense) window.alert(MEDICINE_SAVED_MESSAGE)
+
       onSuccess()
       onClose()
     } catch (err: any) {
@@ -352,21 +330,15 @@ export function ChargeEntryModal({
     : Boolean(form.charge_date)
   // A day holds at most 24 hours, and billing zero of them bills nothing at all.
   const hoursReady = !isHourly || (hours >= 1 && hours <= MAX_HOURS_PER_DAY)
-  // Both answers are always complete: there is no payment to fill in any more.
-  const labAnswerReady = true
   const canSave =
     named &&
     Number(form.amount) > 0 &&
     datesReady &&
     hoursReady &&
-    labAnswerReady &&
     (mode === 'edit' || !!billingId)
 
   const submitLabel = () => {
     if (mode === 'edit') return 'Save changes'
-    if (labMedicine && labAnswer) {
-      return labAnswer.choice === 'included' ? 'Save (included)' : 'Record nothing'
-    }
     if (isRange && days > 1) return `Add ${days} lines`
     return 'Add charge'
   }
@@ -397,43 +369,9 @@ export function ChargeEntryModal({
       }
     >
       <form id="charge-entry-form" onSubmit={handleSubmit} className="space-y-4">
-        {labMedicine && labAnswer && (
-          <div className="rounded-lg border border-warning/40 bg-warning-subtle p-4 space-y-3" role="alert">
-            <p className="text-sm font-medium text-foreground">
-              {labMedicine} {money(preview.total)} — who paid for it?
-            </p>
-            <label className="flex items-start gap-2 text-sm text-foreground">
-              <input
-                type="radio"
-                name="lab-medicine-choice"
-                checked={labAnswer.choice === 'included'}
-                onChange={() => setLabAnswer({ choice: 'included' })}
-                className="mt-1"
-              />
-              <span>
-                <strong>Included in the patient&apos;s payments</strong>
-                <span className="block text-xs text-muted">
-                  Nothing extra is collected. The hospital owes the {labMedicine.toLowerCase()}{' '}
-                  {money(preview.total)}, so it is added to Expenses in Finances.
-                </span>
-              </span>
-            </label>
-            <label className="flex items-start gap-2 text-sm text-foreground">
-              <input
-                type="radio"
-                name="lab-medicine-choice"
-                checked={labAnswer.choice === 'direct'}
-                onChange={() => setLabAnswer({ choice: 'direct' })}
-                className="mt-1"
-              />
-              <span>
-                <strong>Paid directly to the {labMedicine.toLowerCase()}</strong>
-                <span className="block text-xs text-muted">
-                  The hospital never handled this money, so <strong>nothing is saved</strong> — no
-                  charge, no payment. Press Record nothing and the charge is discarded.
-                </span>
-              </span>
-            </label>
+        {medicine && (
+          <div className="rounded-lg border border-info/40 bg-info-subtle p-3 text-sm text-foreground" role="note">
+            Medicine is the hospital&apos;s expense — it is added as an expense only.
           </div>
         )}
 
@@ -452,6 +390,7 @@ export function ChargeEntryModal({
               value={form.charge_item_id}
               onChange={chooseItem}
               disabled={saving}
+              excludeLinked
             />
           </Field>
         )}

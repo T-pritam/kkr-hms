@@ -224,7 +224,7 @@ export default function LabOrdersPage() {
           <>
             <div className="bg-surface rounded-lg border border-border overflow-hidden">
               {/* Desktop */}
-              <div className="hidden md:block overflow-x-auto">
+              <div className="hidden xl:block overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-surface-hover">
                     <tr>
@@ -282,7 +282,7 @@ export default function LabOrdersPage() {
               </div>
 
               {/* Mobile */}
-              <div className="md:hidden divide-y divide-border">
+              <div className="xl:hidden divide-y divide-border">
                 {orders.map(order => (
                   <div key={order.id} className="p-4 space-y-3">
                     <div className="flex items-start justify-between gap-3">

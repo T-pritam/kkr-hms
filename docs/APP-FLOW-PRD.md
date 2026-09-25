@@ -54,10 +54,10 @@ A hospital back office for one hospital. Staff register patients, record what ca
    Charge sheets (quotes, walk-ins) ──forward──► Charges                     │
                                                                              ▼
    ┌────────────── THE DESK ──────────────┐     ┌──────────────── FINANCES (admin) ─────────────────┐
-   │ Ledger: every rupee received          │     │ Money in  = patient payments + OPD receipts        │
-   │   (payments, registration, OPD)       │────►│ Money out = general expenses + petty cash spent    │
+   │ Ledger: every rupee received          │     │ Money in  = payments + registration + lab + OPD    │
+   │   (payments, registration, lab, OPD)  │────►│ Money out = general expenses + petty cash spent    │
    │   admin bulk-closes rows              │     │           + salary + doctor fees paid              │
-   │ Petty cash: the desk's float          │────►│           + commissions paid + lab & medicine      │
+   │ Petty cash: the desk's float          │────►│           + commissions paid + medicine            │
    │   (desk expenses, desk advances)      │     │           + legacy ledger expenses                 │
    │ Employee advance (desk)               │     │ Profit    = in − out     Still to pay (unpaid fees) │
    └───────────────────────────────────────┘     └────────────────────────────────────────────────────┘
@@ -73,18 +73,19 @@ This is the rule the whole finance side follows. Everything in §5 is detail.
 
 ```
 CHARGES       = what the patient used (room, procedures, nursing, lab, medicine…).
-                An internal record only. No balance, no "due", no finance figure reads them.
+                A record for reference (and a dummy bill). No balance, no "due".
 
-TOTAL BILL    = every payment the patient made at the desk (advance, regular, discharge,
-                misc, registration). This is the hospital's income from the stay.
+TOTAL BILL    = payments + registration fee + lab tests            x + y + z = A
+                payments: advance, regular, discharge, misc. The hospital's income.
 
-EXPENSES      = doctor fees + referral commission + lab/medicine marked "Included".
-  of the stay   Counted as soon as they are priced or marked — paid or not.
+EXPENSES      = doctor fees + referral commission + every medicine charge.
+  of the stay   Counted as soon as they are priced or charged — paid or not.
 
 NET           = total bill − expenses                                  (admin only)
 
-LAB/MEDICINE  "Included in the patient's payments" → the hospital owes the lab → an expense.
-              "Paid directly to the lab"           → nothing is recorded at all.
+MEDICINE      Always the hospital's expense. Nothing is asked when it is charged.
+LAB, REG FEE  Taken on the Payments tab; each writes a Charges line, a payment and a
+              ledger row together. Lab is income: the lab is in-house.
 
 THE LEDGER    = money RECEIVED at the desk only. Payouts to doctors and referrers are
                 handed over by the admin directly and are NOT in the ledger.
@@ -151,18 +152,18 @@ This is the path most of the app exists to serve. Each step names who does it, w
                    fee pre-filled, ☑ Collected, cash/UPI  + "Registration" charge line                 internal
                                                           + payment (label Registration)                INCOME
                                                           + ledger IN "12/26 Ramesh Kumar (Registration)"  → Open
-                   ☐ not ticked                           charge only; Payments tab shows
-                                                          "Registration fee ₹100 not collected" [Collect now]
+                   ☐ not ticked                           nothing yet; Overview and Payments show
+                                                          "Registration fee ₹<catalogue> not collected" [Collect now]
                       │
  R,A,D,N        ② Record doctor visits                   visit (doctor, purpose, date/time IST)        —
                       │
  R,A,D,N        ③ Add charges as care happens            charge rows (per day / per hour / one-off)    internal
-                   lab or medicine? the app asks:
-                     "Included in the patient's payments" → charge saved, marked Included            EXPENSE
-                     "Paid directly to the lab/pharmacy"  → NOTHING saved                             —
+                   medicine: saved, "Added as an expense only."                                    EXPENSE
                       │
  R,A,D,N        ④ Take payments as the admin directs    payment (Advance / Regular / Discharge / Misc) INCOME
                    ("take ₹10,000 today")                 + ledger IN "12/26 Ramesh Kumar (Advance)"    → Open
+                   lab test: Payments ▸ Add lab test      payment (Lab) + ledger IN (Lab)               INCOME
+                                                          + a "Lab Test" charge line                    reference
                       │
  R,A            ⑤ Sync visits → price doctor fees         fee rows (doctor × visit purpose)             EXPENSE
                    set the referral person + commission   commission on the bill                        EXPENSE
@@ -220,9 +221,9 @@ This is the path most of the app exists to serve. Each step names who does it, w
 1. **Four required fields:** name, patient ID, gender, phone. Everything else (age or date of birth, blood group, address, emergency contact, ID proof, medical history, referred by) is optional and folded away, so a walk-in is registered in seconds.
 2. **Patient ID** is pre-filled with the next number (`5/26` = the 5th patient of 2026) and stays editable for legacy numbers. Looking at the next number does not use it up; the number is taken only when the patient is saved, so two receptionists registering at once get `5/26` and `6/26`. A typed duplicate is refused.
 3. **Gender has no default** (it used to default to Male). **Age** is stored as stated (`~45`) or as a date of birth; a stated age is never turned into an invented birth date.
-4. **Registration fee** [CR-11]: the amount is pre-filled from the catalogue item flagged as the registration fee (₹100 today), editable (0 waives it). Below it: **☐ Collected** (unticked by default) and **Cash / UPI** (UPI needs its reference).
-   - **☑ Collected** → a "Registration" charge line **and** a payment labelled *Registration*, with its ledger IN. Status: *collected*.
-   - **☐ not ticked** → the charge line only. Status: *pending*. The Payments tab shows "Registration fee ₹100 not collected yet" with **Collect now** (cash or UPI).
+4. **Registration fee** [CR-11]: the amount is pre-filled from the catalogue item flagged as the registration fee (₹300 today), editable (0 waives it). Below it: **☐ Collected** (unticked by default) and **Cash / UPI** (UPI needs its reference).
+   - **☑ Collected** → three lines together: a "Registration" **charge line**, a **payment** labelled *Registration*, and its **ledger** IN. Status: *collected*; the amount is then fixed.
+   - **☐ not ticked** → **nothing is written** yet. Status: *pending*. The Overview and Payments tab show "Registration fee ₹X not collected yet", where X is **always the catalogue's current price**, with **Collect now** (cash or UPI) — which writes the three lines [round 8].
    - **0** → nothing is charged or collected. Status: *waived*.
    - If the fee payment fails, the patient **stays registered** and the fee stays pending; nothing half-written is left behind.
 5. Saving also opens the patient's **bill** (one per stay), dated to the joining date.
@@ -243,12 +244,11 @@ This is the path most of the app exists to serve. Each step names who does it, w
 | Block | Shows |
 |---|---|
 | This stay | patient ID, name, age/sex, status · joined date and days in hospital (or discharge date) · referral person · registration fee status |
-| Money | **Total bill** (every payment, split by label) · **Expenses of this patient** (doctor fees by doctor, paid/pending · referral commission · lab & medicine the hospital pays) · **Net = total bill − expenses** *(admin only)* |
-| Lab & medicine | every lab/pharmacy charge, marked **Hospital pays** or **Not decided**, with the two totals — and a button on each to change it (admin **and** reception, at any time) |
+| Money | **Total received** as **"₹x Payments + ₹y Registration fee + ₹z Lab tests = ₹A"**, and by label · **Expenses of this patient** (doctor fees by doctor, paid/pending · referral commission · **medicine**) · **Net = total − expenses** *(admin only)* |
 | Services used | charges by category with their total, marked *for reference — not billed against* |
 | Activity | counts of visits, charges, payments, lab orders and pharmacy bills; last payment date; case sheet status |
 
-Reception sees everything except **Net** [Q-66]. The lab & medicine block is reception's only way to see and change what the hospital owes the lab, since Finances is admin-only.
+Reception sees everything except **Net** [Q-66]. The "Lab & medicine" block is gone (round 8): medicine is simply an expense line, and lab is income.
 
 ### 4.4 Doctor visits
 
@@ -263,7 +263,7 @@ Reception sees everything except **Net** [Q-66]. The lab & medicine block is rec
 
 **Who:** A D N R add; the creator or an admin edits/deletes. **Screen:** Patient ▸ Charges.
 
-**Charges are an internal record.** They say what the patient used; they do not create a balance or a due, and no finance figure reads them [CR-15, Q-64]. The one exception is lab and medicine marked *Included* (below).
+**Charges are a record for reference** — what the patient used, and what a dummy bill would list. They create no balance or due [CR-15, Q-64]. The one charge that feeds a finance figure is **medicine**, which is always the hospital's expense.
 
 **Adding a charge:**
 1. Pick an item from the **catalogue** (the price list) or type one in. Categories: Room & Bed · Medical & Nursing · Diagnostics · Procedures · Registration & Admin · Pharmacy · Lab · Other.
@@ -271,20 +271,8 @@ Reception sees everything except **Net** [Q-66]. The lab & medicine block is rec
    - **One-off** — a date, an amount and a quantity.
    - **Per day** (room rent, oxygen) — a date range; the app writes **one line per day** (up to 180 days), grouped so the block shows and deletes as one.
    - **Per hour** — pick the day and the hours (1–24); each day is its own line with its hours as the quantity.
-3. **Lab or pharmacy item?** On Save the app asks, as an alert:
-
-```
-   Lab ₹3,000 — who paid for it?
-   (•) Included in the patient's payments
-         Nothing extra is collected. The hospital owes the lab ₹3,000,
-         so it is added to Expenses in Finances.                          → charge saved, "Included"
-   ( ) Paid directly to the lab
-         The hospital never handled this money, so nothing is saved.       → NOTHING saved
-                                                     [Save (included)] / [Record nothing]
-```
-
-   - A charge saved without an answer (an older client, or a line forwarded from a quote) is saved as **Not decided**: shown as such, and nobody's expense until someone answers.
-   - The decision can be changed at any time, by admin or reception, from the Charges tab or the Overview's lab & medicine block. There is no payment behind it, so nothing locks it.
+3. **Medicine** (a pharmacy item) is saved with no question, and an alert says **"Added as an expense only."** It is the hospital's expense from its date [round 8].
+   - **Lab tests and the registration fee are not offered here.** They are added on the Payments tab, which writes their charge line with the payment. Those lines show a **From payment** tag and are read-only in Charges: they change or disappear with their payment.
 4. **Locks:** reception cannot add, edit or delete a charge once the patient is **Discharged** [Q-03 = B]. Admin can.
 
 **Pharmacy bills (SmartPharma360):** a pharmacy bill can be looked up by its number and attached to a charge, as a **record only** for a patient who wants the full itemised bill. It touches no finance figure [Q-84].
@@ -302,20 +290,24 @@ Reception sees everything except **Net** [Q-66]. The lab & medicine block is rec
 
 - A sheet is an **estimate**: numbered, with lines that each keep their own date, billing mode and quantity. Raising one creates no bill, no charge and no ledger row.
 - It can be for a **registered patient** or a **walk-in** (name only). A walk-in sheet cannot be forwarded — there is nobody to bill.
-- **Forwarding** copies every line onto the patient's charges exactly once (a second forward is refused), tags each copy with the sheet it came from, and carries any quoted pharmacy bill across. Lab and medicine lines arrive **Not decided**: a quote is not an agreement to carry the cost [Q-86].
+- **Forwarding** copies every line onto the patient's charges exactly once (a second forward is refused), tags each copy with the sheet it came from, and carries any quoted pharmacy bill across. **Lab lines are not forwarded** — a lab test is added on the Payments tab when the patient pays — and the result says how many were left [round 8].
 - A **forwarded** sheet can no longer be edited or deleted: it is where the patient's charges came from. A cancelled sheet stays editable.
 
 ### 4.7 Patient payments
 
-**Who:** A D N R record; the creator or an admin edits/deletes. **Screens:** Patient ▸ Payments, or Ledger ▸ Add payment.
+**Who:** A D N R record; the creator or an admin edits/deletes. **Screen:** Patient ▸ Payments (the Ledger no longer takes payments — round 8).
 
 1. Amount (> 0), date (any past date is fine), mode (cash · UPI · card · bank transfer · cheque; UPI needs a reference), remarks.
-2. **Label** — the desk picks: **Advance · Regular** (default) **· Discharge · Misc**. **Registration** is set by the app. The label can be changed later.
+2. **Label** — the desk picks: **Advance · Regular** (default) **· Discharge · Misc**, and can change it later. Two are set by the button that opens the form and never change:
+   - **Registration** — *Collect now*.
+   - **Lab** — **Add lab test**: amount (pre-filled from the catalogue's lab price), mode, and an optional **Test(s)** note. The in-house lab is income [round 8].
+
+   Registration and Lab each also write a **charge line** (for reference) and book to their **own ledger type** — three lines together, or none.
 3. Saving writes **the payment and its ledger IN together** — "12/26 Ramesh Kumar (Advance)". If the ledger write fails, the payment is removed too, so a retry never double-counts [CR-12].
 4. **Editing** a payment moves its ledger row with it (amount, mode, reference, date, label). **Deleting** removes both. A payment's ledger row cannot be edited or deleted from the Ledger screen; that screen links to the patient instead.
 5. **Locks:** once the ledger row is **Closed** by the admin, the payment is locked for everyone; the admin reopens the row first (§4.10).
 6. There is no balance to exceed: a payment is never capped by the charges.
-7. Deleting the registration payment puts the registration fee back to *not collected*.
+7. Editing a Registration or Lab payment moves its charge line too; deleting it removes the charge line. Deleting the registration payment puts the fee back to *not collected*, at the catalogue's price.
 
 The patient's **total bill** is the sum of these payments.
 
@@ -375,14 +367,15 @@ The patient's **total bill** is the sum of these payments.
 
 | Row | Where it comes from |
 |---|---|
-| Patient payment, labelled | Patient ▸ Payments, or Ledger ▸ **Add payment** |
-| Registration fee | registration, or Payments ▸ Collect now |
+| Patient payment, labelled | Patient ▸ Payments |
+| Registration fee — type *Registration fee* | registration, or Payments ▸ Collect now |
+| Lab test — type *Lab* | Payments ▸ Add lab test |
 | OPD receipt | Ledger ▸ **Add OPD receipt** (the only thing typed directly into the ledger) |
 | *Legacy desk expenses* | 6 rows from before petty cash existed, kept as history; no new ones can be added |
 
 **Not in it:** doctor fees and commissions (paid by the admin directly), desk spending (petty cash), admin spending (general expenses), salary and advances (Employees). The database itself refuses a doctor-fee or commission debit.
 
-**Viewing.** Everyone sees everyone's rows [CR-05]. Default view: this month, newest first, 50 per page. Filters: date range, in/out, type, mode, added by, status, patient. The totals (in, out, net, cash in, cash out) follow the filter.
+**Viewing.** Everyone sees everyone's rows [CR-05]. Default view: this month, newest first, 50 per page. Filters: date range, in/out, type, mode, added by, status, patient. The totals (in, out, net, cash in, cash out) follow the filter — **except for reception, who sees no totals** (not even sent to the browser) [round 8]. The Ledger has no *Add payment* any more; payments are taken on the patient.
 
 **Closing** [CR-06] — this replaced the old per-day close, verify and shift settlement:
 
@@ -451,28 +444,29 @@ The patient's **total bill** is the sum of these payments.
 **Overview — on a cash basis** [Q-36]: *money that moved this month*.
 
 ```
- MONEY IN   = patient payments made this month (every label)
+ MONEY IN   = patient payments made this month (advance, regular, discharge, misc)
+            + registration fees + lab tests          ← each its own line [round 8]
             + OPD receipts
  MONEY OUT  = general expenses (the admin's)
             + petty cash spent (one line: "Petty cash spent")          [Q-69]
             + salary (settled month: in full · unsettled: advances so far)
             + doctor fees PAID this month      ┐ read from the fee rows and bills,
             + referral commissions PAID        ┘ not the ledger
-            + lab & medicine marked Included, dated this month   ← the one exception to cash basis
+            + medicine charged, dated this month   ← the one exception to cash basis
             + legacy ledger expenses
  PROFIT     = money in − money out        (margin = profit ÷ money in)
 ```
 
-- **Why lab & medicine is the exception:** it counts from the day the charge is dated, which may be before the lab is paid. The patient's money has already come in, so the obligation belongs beside it.
+- **Why medicine is the exception:** it counts from the day the charge is dated, which may be before the pharmacy is paid. The patient's money has already come in, so the obligation belongs beside it.
 - **Not in money out:** charges (internal), top-ups (moving cash between pockets), anything priced but unpaid.
 - **Still to pay** [Q-81 b]: every unpaid doctor fee and commission, across all months, per patient — shown on the Expenses tab, and deliberately left out of money out.
-- Each line of the breakdown opens its source: salary → the salary page, general expenses → the Expenses tab, petty cash → the petty cash log, ledger → the ledger filtered to those rows, fees and commissions → the Settlements tab, and **Lab & Medicine → a list of every patient behind it** (patient ID, name, what, date, amount, each linking to the patient) [AC-15.9].
+- Each line of the breakdown opens its source: salary → the salary page, general expenses → the Expenses tab, petty cash → the petty cash log, ledger → the ledger filtered to those rows, fees and commissions → the Settlements tab, and **Medicine → a list of every patient behind it** (patient ID, name, what, date, amount, each linking to the patient) [AC-15.9].
 
 **Expenses tab** — the admin's **general expenses**: date, type (Electric bill · Oxygen supply · Lift maintenance · Water & sanitation · Cleaning supplies · Medical equipment maintenance · Internet/telecom · Miscellaneous — which needs a detail), amount, mode, remarks (required), added by. These never touch petty cash or the ledger [CR-07].
 
 **Settlements tab** — the unpaid doctor fees and commissions, to pay in bulk (§4.8, §4.9).
 
-**PDFs** — income, expense breakdown and the full monthly report; every expense line, Lab & Medicine included, appears in each.
+**PDFs** — income, expense breakdown and the full monthly report; every income line (payments, registration, lab, OPD) and every expense line, Medicine included, appears in each. Their transaction tables had always come out empty (they read a route that has no GET); fixed on 2026-09-26.
 
 ### 4.15 Lab / pathology
 
@@ -538,7 +532,8 @@ Three logs, and they never overlap [Q-07 = A]:
 | Money | Ledger | Petty cash | General expenses | Where else | Counted in Finances as |
 |---|:-:|:-:|:-:|---|---|
 | Patient payment (Advance · Regular · Discharge · Misc) | **IN** | — | — | the patient's Payments | money in |
-| Registration fee, collected | **IN** | — | — | Payments (label Registration) | money in |
+| Registration fee, collected | **IN** (type Registration fee) | — | — | Payments (Registration) + a Charges line | money in, own line |
+| Lab test (in-house) | **IN** (type Lab) | — | — | Payments (Lab) + a Charges line | money in, own line |
 | OPD receipt | **IN** | — | — | — | money in |
 | Petty cash top-up (admin → desk) | — | **IN** | — | — | *not counted* (cash moving between pockets) |
 | Desk expense | — | **OUT** | — | — | money out, as one "Petty cash spent" line |
@@ -548,29 +543,28 @@ Three logs, and they never overlap [Q-07 = A]:
 | General expense (admin) | — | — | **yes** | — | money out |
 | Doctor fee paid | — | — | — | the fee row | money out, on the day paid |
 | Referral commission paid | — | — | — | the bill | money out, on the day paid |
-| Lab / medicine **Included** | — | — | — | the charge | money out, on the charge's date |
-| Lab / medicine **paid directly** | — | — | — | *nowhere* | *not counted* |
+| Medicine | — | — | — | the charge | money out, on the charge's date |
 | Charges (everything else) | — | — | — | the patient's Charges | *not counted* (internal) |
 
 ### 5.2 A worked example: one stay
 
 | What happened | Amount | Patient paid | Hospital's expense | In the ledger |
 |---|--:|--:|--:|---|
-| Room ₹20,000 + procedures ₹9,900 (charges) | 29,900 | — | — | — *(internal)* |
-| Registration fee, collected | 100 | 100 | — | IN "12/26 Ramesh Kumar (Registration)" |
+| Room ₹20,000 + procedures ₹9,900 (charges) | 29,900 | — | — | — *(reference only)* |
+| Registration fee, collected | 100 | 100 | — | IN "12/26 Ramesh Kumar (Registration)" + a Charges line |
 | Advance | 10,000 | 10,000 | — | IN "… (Advance)" |
 | Regular payment | 15,000 | 15,000 | — | IN "… (Regular)" |
-| Medicine ₹9,000, **paid directly to the pharmacy** | — | — | — | — *(not recorded at all)* |
-| Lab ₹3,000, **Included** in the payments above | 3,000 | — | 3,000 | — |
+| Lab test (in-house) | 3,000 | 3,000 | — | IN "… (Lab)" + a Charges line |
+| Medicine charged | 1,000 | — | 1,000 | — |
 | Discharge payment | 5,000 | 5,000 | — | IN "… (Discharge)" |
 | Doctor fees (Dr Rao) | 6,000 | — | 6,000 | — *(the admin pays directly)* |
 | Referral commission | 2,000 | — | 2,000 | — *(the admin pays directly)* |
-| **Totals** | | **Total bill 30,100** | **Expenses 11,000** | |
+| **Totals** | | **Total 33,100** | **Expenses 9,000** | |
 
 ```
-Total bill        30,100
-− expenses        11,000   (doctor fees 6,000 + commission 2,000 + lab 3,000)
-= Net             19,100   (admin only)
+Total received    30,000 payments + 100 registration + 3,000 lab = 33,100
+− expenses         9,000   (doctor fees 6,000 + commission 2,000 + medicine 1,000)
+= Net             24,100   (admin only)
 ```
 
 This exact example is an automated test (`tests/api/billing/patient-overview.test.ts`).
@@ -581,7 +575,7 @@ This exact example is an automated test (`tests/api/billing/patient-overview.tes
 |---|---|---|
 | Question it answers | What did this stay bring in, and what does it cost us? | What money moved this month? |
 | Doctor fees / commission | counted as soon as **priced**, paid or not [Q-81 c] | counted only when **paid**, in the month paid |
-| Lab & medicine Included | counted | counted, in the month of the charge |
+| Medicine | counted | counted, in the month of the charge |
 | Payments | every payment on the stay | every payment made in the month |
 | Who sees Net / profit | admin only | admin only |
 
@@ -626,7 +620,7 @@ The rule is enforced by the server, not just hidden in the screens: every write 
 | edit · delete (until its fee is paid) | ✅ | own | own | own | — |
 | **Charges** — read | ✅ | ✅ | ✅ | ✅ | ✅ |
 | add · edit · delete (until discharge) | ✅ | own | own | own | — |
-| lab / medicine: included or not, at any time | ✅ | ✅ | ✅ | ✅ | — |
+| lab test / registration line — through its payment only | ✅ | ✅ | ✅ | ✅ | — |
 | **Charge catalogue** — edit | ✅ | — | — | ✅ | — |
 | the registration-fee item | ✅ | — | — | — | — |
 | **Charge sheets** — raise · edit own draft | ✅ | own | own | own | — |
@@ -678,9 +672,8 @@ BILL (one/stay)    registration fee:  pending ──► collected   ·   waived 
 PAYMENT + LEDGER   Open ──(admin: Mark closed)──► Closed 🔒 ──(admin: reopen + reason)──► Open
                    admin-created rows are born Closed
 
-LAB / MEDICINE     Not decided ◄──────► Included (= the hospital's expense)
-  CHARGE             (either way, any time, admin or reception)
-                   "Paid directly" → never saved at all
+LAB / REG CHARGE   exists only with its payment: written, changed and removed with it;
+  LINE               read-only in Charges ("From payment")
 
 DOCTOR FEE /       Unpaid (anyone at the desk may change it) ──(pay)──► Paid 🔒 (admin only)
 COMMISSION                              ▲──────────── un-pay (admin) ──────────┘
@@ -761,6 +754,9 @@ If you knew the app before September 2026, these are the rules that moved. Each 
 | Lab/medicine: *Excluded* = collected as its own payment; *Included* = the hospital's income | *Included* = the hospital's **expense**; *paid directly* = **not recorded at all** | 2026-09-24 [Q-82, Q-83] |
 | A doctor fee or commission payout wrote a ledger OUT | **No ledger entry**: the admin hands the money over directly; the fee row is the record | 2026-09-24 [CR-13] |
 | "Given by" was free text on commissions and missing on doctor fees | A **user picker** on both, plus who changed the amount, the status and the carrier | 2026-09-24 |
+| Medicine / lab asked *Included* or *paid directly*; "not decided" existed | **Medicine is always an expense**, no question. **Lab is income**: a payment, like the registration fee | 2026-09-26 [round 8] |
+| An uncollected registration fee wrote a charge at registration, at that day's price | Nothing is written until collected; it **follows the catalogue** until then; collecting writes charge + payment + ledger | 2026-09-26 [round 8] |
+| The Ledger had *Add payment*; everyone saw the totals | Payments only on the patient; **reception sees no totals** | 2026-09-26 [round 8] |
 
 ---
 
@@ -781,15 +777,15 @@ Ordered by how much they matter. The full, verified pre-release list is the "Sta
 
 ## 12. Test and verification status
 
-As of 2026-09-25, on `feature/v2-release-fixes`:
+As of 2026-09-26, on `feature/round-8`:
 
 | Check | Result |
 |---|---|
-| Automated tests | **62 files · 1,843 tests · all pass · 0 expected failures** — every defect that had a pinned test is fixed |
+| Automated tests | **63 files · 1,851 tests · all pass · 0 expected failures** |
 | Line coverage (API, `lib/`, middleware) | about **82%** · billing 94% · finances 95% · ledger 91% · petty cash 96% · auth & middleware 97–98% · lowest: pharmacy integration 0–17%, lab API 64%, charge-sheet pharmacy routes 64% |
 | Type check (`tsc`) | clean |
 | Production build (`next build`) | passes |
-| Lint (`npm run lint`) | **passes — 0 errors.** 773 warnings by decision: 764 `no-explicit-any` (reason in `eslint.config.mjs`) and 9 hook-dependency warnings, each checked and harmless |
+| Lint (`npm run lint`) | **passes — 0 errors.** About 775 warnings by decision: 764 `no-explicit-any` (reason in `eslint.config.mjs`) and 9 hook-dependency warnings, each checked and harmless |
 | API routes with **no** test | 11, all in the baseline lab, pharmacy and case-sheet modules (no v2 rule depends on them) |
 
 **What changed on 2026-09-25.** A test audit aligned every test with the decided rules and exposed six defects (the empty Given-by picker, Q-88 gaps on paid payouts, a payout route refusing reception, a ₹0 fee, an "undefined" in the monthly PDF, and editable paid visits). The pre-release pass then fixed every remaining pinned defect — sessions (#1, #3, #4), the admin user API (#5, #6, #70, #72), id filters (#74), patient delete (#9), visit dates (#14), one bill per patient (#22), fee payment and merging (#27, #44, #45), the CSV import (#54), the advance log (#71) — and neutralised the retired upload edge function (#69). The full list, with evidence, is in [`BUGS.md`](../BUGS.md).

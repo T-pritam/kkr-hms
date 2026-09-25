@@ -10,14 +10,14 @@
  *             and the patient shows "registration fee not collected" with a
  *             "Collect now" button until it is paid.
  *   - Q-44 A  UPI needs a reference, like every UPI entry.
- *   - Q-45 B  It is a charge line (services used) *and* a payment.
+ *   - Q-45 B  It is a charge line (services used) *and* a payment — written
+ *             together, only once it is collected (round 8).
  *   - Q-46 B  It shows as its own type — installment kind / ledger source
  *             `registration`.
  *   - Q-47    Whoever can register a patient takes the fee and owns the entries.
  *   - Req 11  Collected only as cash or UPI.
  */
 
-import { recalculatePatientBilling } from '@/lib/recalculate-billing'
 import { istToday } from '@/lib/dates/ist'
 import { recordPayment } from '@/lib/billing/payments'
 
@@ -107,12 +107,19 @@ export function parseRegistrationFee(
 }
 
 /**
- * Charge the fee on the new patient's bill and, if collected, record the
- * payment (installment + ledger credit).
+ * The fee at registration: collected now, left to collect, or waived.
  *
  * Runs after the patient and their bill exist. A failure here does not undo the
  * registration: the patient is registered, the fee shows as not collected, and
  * the desk collects it from the Payments tab. The outcome says which happened.
+ *
+ * Nothing is written to Charges until the fee is collected (round 8). A fee left
+ * to collect is only the bill's `pending` status, and its amount is the
+ * catalogue's price *at the moment it is collected* — the client changed the
+ * price to ₹300 a minute after registering a patient whose uncollected fee then
+ * stayed at ₹100 for good. Collecting writes the charge line, the payment and
+ * the ledger entry together (lib/billing/linked-charge.ts), and the amount is
+ * fixed from then on.
  */
 export async function applyRegistrationFee(
   db: Db,
@@ -125,7 +132,7 @@ export async function applyRegistrationFee(
     userRole?: string | null
   },
 ): Promise<RegistrationFeeOutcome> {
-  const { patientId, billingId, chargeDate, fee, userId, userRole } = args
+  const { patientId, billingId, fee, userId, userRole } = args
 
   const item = await getRegistrationFeeItem(db)
   if (!item) return { status: 'not_configured' }
@@ -135,31 +142,9 @@ export async function applyRegistrationFee(
     return { status: 'waived', amount: 0 }
   }
 
-  const { error: chargeError } = await db.from('patient_charges').insert({
-    patient_billing_id: billingId,
-    patient_id: patientId,
-    charge_item_id: item.id,
-    // Snapshotted, like every charge: a later rename of the catalogue entry
-    // never rewrites an issued bill.
-    charge_type: item.name,
-    description: null,
-    amount: fee.amount,
-    qty: 1,
-    billing_mode: 'one_time',
-    charge_date: chargeDate,
-    created_by: userId,
-    updated_by: userId,
-  })
-
-  if (chargeError) {
-    console.error('Registration fee charge could not be added:', chargeError)
-    return { status: 'failed', amount: fee.amount, error: 'The registration fee could not be added to the bill' }
-  }
-
-  await recalculatePatientBilling(db as any, billingId)
   await db.from('patient_billing').update({ registration_fee_status: 'pending' }).eq('id', billingId)
 
-  if (!fee.collected) return { status: 'not_collected', amount: fee.amount }
+  if (!fee.collected) return { status: 'not_collected', amount: item.amount }
 
   const payment = await recordPayment(db, {
     patientId,
@@ -182,4 +167,17 @@ export async function applyRegistrationFee(
   }
 
   return { status: 'collected', amount: fee.amount, installment_id: payment.installment.id }
+}
+
+/**
+ * What an uncollected fee is, right now: the catalogue's current price.
+ * `null` when the fee is not pending (collected, waived, or never offered).
+ */
+export async function pendingRegistrationFee(
+  db: Db,
+  billing: { registration_fee_status?: string | null },
+): Promise<number | null> {
+  if (billing.registration_fee_status !== 'pending') return null
+  const item = await getRegistrationFeeItem(db)
+  return item ? item.amount : null
 }

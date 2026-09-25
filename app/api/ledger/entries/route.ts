@@ -34,10 +34,14 @@ export async function GET(request: NextRequest) {
     const filters = parseFilters(request.nextUrl.searchParams)
     const { rows, totals, page, page_size } = await listEntries(supabase, auth.user, filters)
 
+    // Reception sees the entries but not the money totals (client, 26 Sep):
+    // only how many rows match, so paging still reads right.
+    const visibleTotals = auth.user.role === 'RECEPTIONIST' ? { count: totals.count } : totals
+
     return NextResponse.json({
       success: true,
       data: rows,
-      totals,
+      totals: visibleTotals,
       page,
       page_size,
       filters,

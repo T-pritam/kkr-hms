@@ -193,7 +193,7 @@ function SalaryContent() {
         ) : (
           <div className="bg-surface rounded-lg border border-border overflow-hidden">
             {/* Desktop */}
-            <div className="hidden md:block overflow-x-auto">
+            <div className="hidden xl:block overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-surface-hover">
                   <tr>
@@ -276,7 +276,7 @@ function SalaryContent() {
             </div>
 
             {/* Mobile */}
-            <div className="md:hidden divide-y divide-border">
+            <div className="xl:hidden divide-y divide-border">
               {employees.map(employee => {
                 const record = employee.salary_record
                 const status = statusOf(record)

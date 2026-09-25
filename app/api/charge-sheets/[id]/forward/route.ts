@@ -23,6 +23,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireBilling } from '@/lib/billing/authz'
+import { isLinkedChargeItem } from '@/lib/billing/linked-charge'
 import { recalculatePatientBilling } from '@/lib/recalculate-billing'
 import { copyBillToCharge } from '@/lib/pharmacy/store'
 import { istToday } from '@/lib/dates/ist'
@@ -122,23 +123,30 @@ export async function POST(
     // charges tab and can be removed in one go if it was forwarded in error.
     const groupId = crypto.randomUUID()
 
-    // Lab and medicine lines arrive "to collect" — excluded, the client's default
-    // (PRD v2 CR-15). A forward is one click for many lines, so nobody is asked
-    // per line here; the Charges tab offers Collect now / Included on each.
+    /**
+     * Lab tests and the registration fee reach Charges only with their payment
+     * (round 8, lib/billing/linked-charge.ts), so a quote's lab line is not
+     * forwarded: the desk adds it on the Payments tab when the patient pays.
+     * Medicine lines forward like any other — they are the hospital's expense.
+     */
     const itemIds = [...new Set(items.map((item: any) => item.charge_item_id).filter(Boolean))]
-    const categoryById = new Map<string, string>()
+    const linkedItemIds = new Set<string>()
     if (itemIds.length > 0) {
       const { data: catalogue } = await supabase
         .from('charge_items')
-        .select('id, category')
+        .select('id, category, is_registration_fee')
         .in('id', itemIds)
-      for (const row of catalogue ?? []) categoryById.set(row.id, row.category)
+      for (const row of catalogue ?? []) if (isLinkedChargeItem(row)) linkedItemIds.add(row.id)
     }
+    const forwarded = items.filter((item: any) => !linkedItemIds.has(item.charge_item_id))
+    const skipped = items.length - forwarded.length
 
-    const { data: charges, error: chargeError } = await supabase
+    const { data: charges, error: chargeError } = forwarded.length === 0
+      ? { data: [] as { id: string }[], error: null }
+      : await supabase
       .from('patient_charges')
       .insert(
-        items.map((item: any) => ({
+        forwarded.map((item: any) => ({
           patient_id: sheet.patient_id,
           patient_billing_id: billingId,
           charge_item_id: item.charge_item_id ?? null,
@@ -155,11 +163,6 @@ export async function POST(
           charge_date: item.service_date ?? istToday(),
           charge_group_id: groupId,
           source_sheet_id: sheet.id,
-          // A forwarded lab/medicine charge arrives *not decided*: the sheet was
-          // a quote and nobody has yet said whether the hospital carries it
-          // (CR-15, revised 2026-09-24). It shows as such on the patient's
-          // Overview until someone answers, and is nobody's expense meanwhile.
-          lab_medicine_status: null,
           created_by: user.id,
           updated_by: user.id,
         }))
@@ -176,7 +179,7 @@ export async function POST(
      * Copied rather than moved so the forwarded sheet still shows what it
      * quoted; see copyBillToCharge.
      */
-    for (const [index, item] of items.entries()) {
+    for (const [index, item] of forwarded.entries()) {
       const quoted = Array.isArray(item.pharmacy_bill) ? item.pharmacy_bill[0] : item.pharmacy_bill
       const chargeId = charges?.[index]?.id
       if (!quoted || !chargeId) continue
@@ -208,10 +211,16 @@ export async function POST(
 
     await recalculatePatientBilling(supabase, billingId)
 
+    const created = charges?.length ?? forwarded.length
     return NextResponse.json({
-      message: `${charges?.length ?? items.length} charge(s) added to the patient's bill`,
+      message:
+        `${created} charge(s) added to the patient's bill` +
+        (skipped > 0
+          ? `. ${skipped} lab line(s) not forwarded — add lab tests on the Payments tab when the patient pays.`
+          : ''),
       billing_id: billingId,
-      charges_created: charges?.length ?? items.length,
+      charges_created: created,
+      lab_lines_skipped: skipped,
     })
   } catch (error: any) {
     console.error('Error forwarding charge sheet:', error)

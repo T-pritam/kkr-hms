@@ -15,7 +15,7 @@ import { PATCH as patchItem, DELETE as deleteItem } from '@/app/api/charge-items
 import { call } from '../../helpers/request'
 import { signInAs, signOut } from '../../helpers/auth'
 import { db } from '../../helpers/fake-supabase'
-import { aBilling, aCharge, aChargeItem, aPatient } from '../../helpers/seed'
+import { aBilling, aCharge, aChargeItem, anInstallment, aPatient } from '../../helpers/seed'
 import { TODAY, THIS_MONTH } from '../../setup'
 
 const VALID = { name: 'Ramesh Kumar', gender: 'Male', phone: '9876543210' }
@@ -122,14 +122,19 @@ describe('POST /api/patients — registration fee', () => {
     expect(db.rows('patient_billing_installments')[0].amount).toBe(50)
   })
 
-  it('charges but does not collect when "collected" is left unticked (Q-43)', async () => {
+  /**
+   * Round 8: nothing is written until the fee is collected. Patient 6/26 was
+   * registered at ₹100, the catalogue went to ₹300 a minute later, and the
+   * uncollected fee stayed at ₹100 in Charges while Payments said "collect".
+   */
+  it('writes nothing to Charges when "collected" is left unticked (Q-43, round 8)', async () => {
     await signInAs('RECEPTIONIST')
     feeItem()
 
     const { body } = await register({ ...VALID, registration_fee: { amount: 100, collected: false } })
 
     expect(body.registration_fee).toEqual({ status: 'not_collected', amount: 100 })
-    expect(db.count('patient_charges')).toBe(1)
+    expect(db.count('patient_charges')).toBe(0)
     expect(db.count('patient_billing_installments')).toBe(0)
     expect(db.count('daily_ledger_transactions')).toBe(0)
     expect(bill().registration_fee_status).toBe('pending')
@@ -237,7 +242,8 @@ describe('POST /api/patients — registration fee', () => {
     expect(status).toBe(201)
     expect(body.registration_fee.status).toBe('failed')
     expect(db.count('patients')).toBe(1)
-    expect(db.count('patient_charges')).toBe(1)
+    // All three lines or none: no charge is left behind a failed payment.
+    expect(db.count('patient_charges')).toBe(0)
     expect(db.count('patient_billing_installments')).toBe(0)
     expect(bill().registration_fee_status).toBe('pending')
   })
@@ -253,17 +259,45 @@ describe('POST /api/patients — registration fee', () => {
 })
 
 describe('GET /api/patients/[id]/billing — registration fee amount', () => {
-  it('adds up the registration-fee charges on each bill', async () => {
+  const getBill = () => call(getBilling, 'GET', '/api/patients/p1/billing', { params: { id: 'p1' } })
+
+  // The client's case (round 8): the catalogue changed after registration, so
+  // the fee still to collect is the catalogue's price now.
+  it('follows the catalogue while the fee is not collected', async () => {
     await signInAs('RECEPTIONIST')
-    feeItem()
+    feeItem({ default_price: 300 })
     aPatient({ id: 'p1' })
     aBilling({ id: 'b1', patient_id: 'p1', registration_fee_status: 'pending' })
+    // A line written the old way, before round 8, does not pin the amount.
     aCharge({ patient_id: 'p1', patient_billing_id: 'b1', charge_item_id: 'reg', amount: 100 })
-    aCharge({ patient_id: 'p1', patient_billing_id: 'b1', charge_item_id: null, amount: 5000 })
 
-    const { body } = await call(getBilling, 'GET', '/api/patients/p1/billing', { params: { id: 'p1' } })
+    const { body } = await getBill()
 
-    expect(body.billings[0]).toMatchObject({ registration_fee_status: 'pending', registration_fee_amount: 100 })
+    expect(body.billings[0]).toMatchObject({ registration_fee_status: 'pending', registration_fee_amount: 300 })
+  })
+
+  it('is fixed at what was taken once collected', async () => {
+    await signInAs('RECEPTIONIST')
+    feeItem({ default_price: 300 })
+    aPatient({ id: 'p1' })
+    aBilling({ id: 'b1', patient_id: 'p1', registration_fee_status: 'collected' })
+    anInstallment({ patient_billing_id: 'b1', kind: 'registration', amount: 100 })
+
+    const { body } = await getBill()
+
+    expect(body.billings[0]).toMatchObject({ registration_fee_status: 'collected', registration_fee_amount: 100 })
+  })
+
+  it('never offers to collect a fee that has a payment, whatever the status says', async () => {
+    await signInAs('RECEPTIONIST')
+    feeItem({ default_price: 300 })
+    aPatient({ id: 'p1' })
+    aBilling({ id: 'b1', patient_id: 'p1', registration_fee_status: 'pending' })
+    anInstallment({ patient_billing_id: 'b1', kind: 'registration', amount: 100 })
+
+    const { body } = await getBill()
+
+    expect(body.billings[0]).toMatchObject({ registration_fee_status: 'collected', registration_fee_amount: 100 })
   })
 })
 

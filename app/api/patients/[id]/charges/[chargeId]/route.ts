@@ -22,6 +22,21 @@ import { requireBilling } from '@/lib/billing/authz'
 import { isValidDate } from '@/lib/billing/validate'
 import { recalculatePatientBilling } from '@/lib/recalculate-billing'
 
+/**
+ * A lab or registration line mirrors its payment (lib/billing/linked-charge.ts)
+ * and is changed through it, so the two can never disagree.
+ */
+function linkedLineRefusal(charge: { installment_id?: string | null }) {
+  if (!charge.installment_id) return null
+  return NextResponse.json(
+    {
+      error: "This line comes from a payment. Change or delete it on the patient's Payments tab.",
+      code: 'CHARGE_IS_PAYMENT_LINE',
+    },
+    { status: 409 }
+  )
+}
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; chargeId: string }> }
@@ -37,13 +52,16 @@ export async function PATCH(
 
     const { data: charge } = await supabase
       .from('patient_charges')
-      .select('created_by, patient_billing_id, amount, qty')
+      .select('created_by, patient_billing_id, amount, qty, installment_id')
       .eq('id', chargeId)
       .maybeSingle()
 
     if (!charge) {
       return NextResponse.json({ error: 'Charge not found' }, { status: 404 })
     }
+
+    const linked = linkedLineRefusal(charge)
+    if (linked) return linked
 
     const allowed = canModify(user, {
       created_by: charge.created_by,
@@ -129,13 +147,16 @@ export async function DELETE(
 
     const { data: charge } = await supabase
       .from('patient_charges')
-      .select('created_by, patient_billing_id, charge_group_id')
+      .select('created_by, patient_billing_id, charge_group_id, installment_id')
       .eq('id', chargeId)
       .maybeSingle()
 
     if (!charge) {
       return NextResponse.json({ error: 'Charge not found' }, { status: 404 })
     }
+
+    const linked = linkedLineRefusal(charge)
+    if (linked) return linked
 
     const allowed = canModify(user, {
       created_by: charge.created_by,

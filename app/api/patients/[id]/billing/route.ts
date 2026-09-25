@@ -68,31 +68,35 @@ export async function GET(
       }
     }
 
-    // What the registration fee charged on each bill comes to, so the Payments
-    // tab can say "registration fee ₹X not collected" (PRD v2 Q-43) while
-    // registration_fee_status is 'pending'.
+    // The registration fee on each bill (PRD v2 Q-43, round 8): while it is
+    // pending, whatever the catalogue says now — nothing is written until it is
+    // collected; once collected, what was taken.
     const billings = billingRecords ?? [];
     const feeItem = billings.length > 0 ? await getRegistrationFeeItem(supabase) : null;
-    const feeByBill = new Map<string, number>();
-    if (feeItem) {
-      const { data: feeCharges } = await supabase
-        .from('patient_charges')
-        .select('patient_billing_id, amount, qty')
-        .eq('charge_item_id', feeItem.id)
+    const collectedByBill = new Map<string, number>();
+    if (billings.length > 0) {
+      const { data: feePayments } = await supabase
+        .from('patient_billing_installments')
+        .select('patient_billing_id, amount')
+        .eq('kind', 'registration')
         .in('patient_billing_id', billings.map((b: any) => b.id));
-      for (const c of feeCharges ?? []) {
-        feeByBill.set(
-          c.patient_billing_id,
-          (feeByBill.get(c.patient_billing_id) ?? 0) + Number(c.amount) * (Number(c.qty) || 1)
-        );
+      for (const p of feePayments ?? []) {
+        collectedByBill.set(p.patient_billing_id, (collectedByBill.get(p.patient_billing_id) ?? 0) + Number(p.amount));
       }
     }
 
     return NextResponse.json({
-      billings: billings.map((b: any) => ({
-        ...b,
-        registration_fee_amount: feeByBill.get(b.id) ?? 0,
-      })),
+      billings: billings.map((b: any) => {
+        const collected = collectedByBill.get(b.id);
+        const pending = collected === undefined && b.registration_fee_status === 'pending';
+        return {
+          ...b,
+          ...(collected !== undefined && b.registration_fee_status === 'pending'
+            ? { registration_fee_status: 'collected' }
+            : {}),
+          registration_fee_amount: pending ? (feeItem?.amount ?? 0) : (collected ?? 0),
+        };
+      }),
       referral: referralData,
     });
   } catch (error) {

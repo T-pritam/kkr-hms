@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, Suspense } from 'react'
+import Image from 'next/image'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -50,7 +51,8 @@ function LoginContent() {
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md animate-fadeIn">
         <CardHeader className="space-y-1">
-          <div className="flex items-center justify-center mb-4">
+          <div className="flex flex-col items-center justify-center gap-3 mb-4">
+            <Image src="/kkr-logo.png" alt="KKR Hospitals" width={96} height={96} priority />
             <div className="text-4xl font-bold">
               <span className="text-primary">KKR</span>
               <span className="text-foreground ml-2">HMS</span>

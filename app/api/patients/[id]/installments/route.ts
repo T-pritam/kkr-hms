@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { requireBilling } from '@/lib/billing/authz';
 import { isDeskPaymentKind, recordPayment, validatePayment, type PaymentKind } from '@/lib/billing/payments';
+import { isLinkedKind } from '@/lib/billing/linked-charge';
 
 export async function GET(request: NextRequest) {
   try {
@@ -60,9 +61,9 @@ export async function GET(request: NextRequest) {
  * record now (lib/billing/payments.ts, PRD v2 CR-12).
  *
  * `kind` is the payment's label: regular (default), advance, discharge or misc,
- * as the desk picks; or registration, for the registration fee's "Collect now"
- * (CR-11, at most once per bill). Lab and medicine payments are made from the
- * charge they belong to (…/charges/[chargeId]/lab-medicine), never here.
+ * as the desk picks; registration, for the registration fee's "Collect now"
+ * (CR-11, at most once per bill); or lab, for "Add lab test". Those two also
+ * write their line in Charges (lib/billing/linked-charge.ts).
  */
 export async function POST(
   request: NextRequest,
@@ -81,7 +82,7 @@ export async function POST(
       body.kind === undefined || body.kind === null || body.kind === '' || body.kind === 'payment'
         ? 'regular'
         : body.kind;
-    if (!isDeskPaymentKind(kind) && kind !== 'registration') {
+    if (!isDeskPaymentKind(kind) && !isLinkedKind(kind)) {
       return NextResponse.json({ error: 'Invalid payment label' }, { status: 400 });
     }
 

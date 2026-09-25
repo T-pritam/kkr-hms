@@ -131,21 +131,6 @@ export async function PATCH(
       kind = body.kind;
     }
 
-    if (
-      (storedKind === 'lab' || storedKind === 'medicine') &&
-      body.amount !== undefined &&
-      Number(body.amount) !== Number(installment.amount)
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            'This payment collected a lab/medicine charge, so its amount comes from that charge. Delete the payment and collect the charge again.',
-          code: 'LAB_MEDICINE_AMOUNT_FIXED',
-        },
-        { status: 400 }
-      );
-    }
-
     const check = validatePayment(body, {
       amount: Number(installment.amount),
       payment_date: installment.payment_date,

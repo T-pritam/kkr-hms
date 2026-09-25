@@ -1,15 +1,14 @@
 /**
  * GET /api/patients/[id]/overview — the patient Overview tab (PRD v2 CR-16).
  *
- * The money model, as the client revised it on 2026-09-24:
- *   total bill      = every payment on the stay
- *   hospital income = the total bill — nothing is "passed on" any more, because
- *                     an amount the patient paid the lab directly is not
- *                     recorded at all (Q-82, reversed)
- *   expenses        = doctor fees + referral commission + **included lab and
- *                     medicine**, all counted once priced, paid or not (Q-83,
- *                     reversed: an included amount used to be income)
- *   net             = hospital income − expenses, admin only
+ * The money model, as the client revised it on 26 Sep (round 8):
+ *   total bill = payments + registration + lab           x + y + z = A
+ *   expenses   = doctor fees + referral commission + every medicine charge,
+ *                all counted once priced, paid or not
+ *   net        = total bill − expenses, admin only
+ *
+ * Lab is the hospital's income now — the lab is in-house — and is taken as a
+ * payment. Medicine is always the hospital's expense; nothing is "not decided".
  */
 
 import { describe, it, expect } from 'vitest'
@@ -39,23 +38,25 @@ function aStay() {
 
   aChargeItem({ id: 'room', name: 'Room', category: 'room' })
   aChargeItem({ id: 'proc', name: 'Procedure', category: 'procedure' })
-  aChargeItem({ id: 'reg', name: 'Registration', category: 'registration', is_registration_fee: true, default_price: 100 })
+  aChargeItem({ id: 'reg', name: 'Registration', category: 'registration', is_registration_fee: true, default_price: 300 })
   aChargeItem({ id: 'med', name: 'Medication', category: 'pharmacy' })
   aChargeItem({ id: 'lab', name: 'Lab Test', category: 'lab' })
 
   aCharge({ patient_billing_id: 'b1', patient_id: 'p1', charge_item_id: 'room', amount: 20000, qty: 1 })
   aCharge({ patient_billing_id: 'b1', patient_id: 'p1', charge_item_id: 'proc', amount: 9900, qty: 1 })
-  aCharge({ patient_billing_id: 'b1', patient_id: 'p1', charge_item_id: 'reg', amount: 100, qty: 1 })
-  // The ₹9,000 of medicine in the PRD's example is now paid straight to the
-  // pharmacy, so there is no charge and no payment for it at all.
+  // Registration and lab: each a payment with its mirrored charge line.
+  aCharge({ patient_billing_id: 'b1', patient_id: 'p1', charge_item_id: 'reg', amount: 100, qty: 1, installment_id: 'i1' })
   aCharge({
     patient_billing_id: 'b1', patient_id: 'p1', charge_item_id: 'lab', charge_type: 'Lab Test',
-    amount: 3000, qty: 1, lab_medicine_status: 'included',
+    amount: 3000, qty: 1, installment_id: 'i4',
   })
+  // Medicine: the hospital's expense, always.
+  aCharge({ patient_billing_id: 'b1', patient_id: 'p1', charge_item_id: 'med', charge_type: 'Medication', amount: 1000, qty: 1 })
 
   anInstallment({ id: 'i1', patient_billing_id: 'b1', installment_number: 1, amount: 100, kind: 'registration' })
   anInstallment({ id: 'i2', patient_billing_id: 'b1', installment_number: 2, amount: 10000, kind: 'advance' })
   anInstallment({ id: 'i3', patient_billing_id: 'b1', installment_number: 3, amount: 15000, kind: 'regular' })
+  anInstallment({ id: 'i4', patient_billing_id: 'b1', installment_number: 4, amount: 3000, kind: 'lab' })
   anInstallment({ id: 'i5', patient_billing_id: 'b1', installment_number: 5, amount: 5000, kind: 'discharge', payment_date: TODAY })
 
   aDoctor({ id: 'd1', name: 'Dr Rao' })
@@ -85,17 +86,28 @@ describe('patient overview — money', () => {
     const { status, body } = await get()
 
     expect(status).toBe(200)
-    expect(body.money.total_bill).toBe(30100)
+    expect(body.money.total_bill).toBe(33100)
     expect(body.money.by_label).toMatchObject({
       registration: 100,
       advance: 10000,
       regular: 15000,
       discharge: 5000,
       misc: 0,
+      lab: 3000,
     })
-    // Every payment is the hospital's now: there is nothing to pass on.
+    // Every payment is the hospital's: there is nothing to pass on.
     expect(body.money.passed_on).toBeUndefined()
-    expect(body.money.hospital_income).toBe(30100)
+    expect(body.money.hospital_income).toBe(33100)
+  })
+
+  // The client's own reading (round 8): x + y + z = A.
+  it('splits the total into payments + registration + lab', async () => {
+    await signInAs('RECEPTIONIST')
+    aStay()
+
+    const { body } = await get()
+
+    expect(body.money.breakdown).toEqual({ payments: 30000, registration: 100, lab: 3000, total: 33100 })
   })
 
   it('counts doctor fees and the commission as expenses once priced, paid or not', async () => {
@@ -106,26 +118,25 @@ describe('patient overview — money', () => {
 
     expect(body.money.expenses.doctor_fees).toEqual({ total: 6000, paid: 0, pending: 6000 })
     expect(body.money.expenses.referral_commission).toEqual({ amount: 2000, paid: 0, pending: 2000 })
-    // 6,000 + 2,000 + the 3,000 lab charge marked Included.
-    expect(body.money.expenses.total).toBe(11000)
+    // 6,000 + 2,000 + the 1,000 of medicine.
+    expect(body.money.expenses.total).toBe(9000)
   })
 
   /**
-   * The reversal, stated as a number. An Included lab amount used to be counted
-   * as income and left out of expenses; it is now the hospital's to pay, because
-   * the patient's payments covered it and the lab bills us. The worked example's
-   * net moves from ₹22,100 to ₹19,100.
+   * Round 8, stated as a number: medicine is an expense, lab is income. The
+   * lab test adds to the total bill and never to expenses.
    */
-  it("counts an included lab/medicine amount as the hospital's expense", async () => {
+  it('counts medicine as an expense and lab as income', async () => {
     await signInAs('ADMIN')
     aStay()
 
     const { body } = await get()
 
-    expect(body.lab_medicine.included).toBe(3000)
-    expect(body.money.expenses.lab_medicine).toBe(3000)
-    expect(body.money.expenses.total).toBe(11000)
-    expect(body.money.net).toBe(19100) // 30,100 − 11,000
+    expect(body.money.expenses.medicine).toBe(1000)
+    expect(body.money.expenses).not.toHaveProperty('lab_medicine')
+    expect(body).not.toHaveProperty('lab_medicine')
+    expect(body.money.expenses.total).toBe(9000)
+    expect(body.money.net).toBe(24100) // 33,100 − 9,000
   })
 
   it('splits a settled doctor fee into paid', async () => {
@@ -145,33 +156,25 @@ describe('patient overview — money', () => {
     const { body } = await get()
 
     expect(body.money.net).toBeNull()
-    expect(body.money.total_bill).toBe(30100)
-    expect(body.money.expenses.total).toBe(11000)
+    expect(body.money.total_bill).toBe(33100)
+    expect(body.money.expenses.total).toBe(9000)
   })
 })
 
 describe('patient overview — the rest of the stay', () => {
-  // Two states left: the hospital carries it, or nobody has said yet. An
-  // undecided charge is deliberately no expense — it is shown so a person
-  // resolves it, not so the total quietly grows.
-  it('splits lab and medicine into what the hospital carries and what is undecided', async () => {
+  // No "not decided" any more: every medicine charge counts, whatever the old
+  // status column says.
+  it('counts every medicine charge, with or without the old status', async () => {
     await signInAs('ADMIN')
     aStay()
     aCharge({
-      patient_billing_id: 'b1', patient_id: 'p1', charge_item_id: 'lab', charge_type: 'Lab Test',
-      amount: 500, qty: 1, lab_medicine_status: null,
-    })
-    aCharge({
       patient_billing_id: 'b1', patient_id: 'p1', charge_item_id: 'med', charge_type: 'Medication',
-      amount: 250, qty: 1, lab_medicine_status: null,
+      amount: 250, qty: 2, lab_medicine_status: null,
     })
 
     const { body } = await get()
 
-    expect(body.lab_medicine).toMatchObject({ included: 3000, undecided: 750 })
-    expect(body.money.expenses.lab_medicine).toBe(3000)
-    expect(body.lab_medicine.rows).toHaveLength(3)
-    expect(body.lab_medicine.rows.every((r: any) => ['lab', 'medicine'].includes(r.kind))).toBe(true)
+    expect(body.money.expenses.medicine).toBe(1500)
   })
 
   it('totals the services used by category, charges being internal', async () => {
@@ -180,7 +183,8 @@ describe('patient overview — the rest of the stay', () => {
 
     const { body } = await get()
 
-    expect(body.services_used.total).toBe(33000)
+    // 20,000 + 9,900 + 100 + 3,000 + 1,000: charges are for reference only.
+    expect(body.services_used.total).toBe(34000)
     expect(body.services_used.by_category.find((c: any) => c.category === 'room')).toMatchObject({ total: 20000, count: 1 })
     expect(body.services_used.by_category.find((c: any) => c.category === 'registration')).toMatchObject({ total: 100 })
   })
@@ -211,7 +215,7 @@ describe('patient overview — the rest of the stay', () => {
 
     const { body } = await get()
 
-    expect(body.activity).toMatchObject({ charges: 4, payments: 4, visits: 0, lab_orders: 0, pharmacy_bills: 0 })
+    expect(body.activity).toMatchObject({ charges: 5, payments: 5, visits: 0, lab_orders: 0, pharmacy_bills: 0 })
     expect(body.activity.last_payment_date).toBe(TODAY)
   })
 })

@@ -168,7 +168,7 @@ export default function AdminPage() {
             ) : (
               <>
                 {/* Desktop Table View */}
-                <div className="hidden md:block overflow-x-auto">
+                <div className="hidden xl:block overflow-x-auto">
                   <table className="w-full">
                     <thead>
                       <tr className="border-b border-border">
@@ -272,7 +272,7 @@ export default function AdminPage() {
                 </div>
 
                 {/* Mobile Card View */}
-                <div className="md:hidden space-y-4">
+                <div className="xl:hidden space-y-4">
                   {users.map((user: any) => (
                     <div
                       key={user.id}

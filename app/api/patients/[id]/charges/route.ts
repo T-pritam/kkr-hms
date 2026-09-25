@@ -32,7 +32,8 @@ import {
 } from '@/lib/billing/validate'
 import { firstError } from '@/lib/patients/validate'
 import { recalculatePatientBilling } from '@/lib/recalculate-billing'
-import { labMedicineKind, parseLabMedicineChoice } from '@/lib/billing/lab-medicine'
+import { isMedicineCategory, MEDICINE_SAVED_MESSAGE } from '@/lib/billing/medicine'
+import { isLinkedChargeItem, LINKED_ITEM_REFUSAL } from '@/lib/billing/linked-charge'
 
 const LIST_SELECT = `
   *,
@@ -140,18 +141,36 @@ export async function POST(
     // The catalogue is the authority on how a service is billed. Taking
     // billing_mode from the request would let a caller bill a per-day service as
     // a single row by lying about the mode.
-    let chargeItem: { id: string; name: string; billing_mode: string; category: string } | null = null
+    let chargeItem: {
+      id: string
+      name: string
+      billing_mode: string
+      category: string
+      is_registration_fee: boolean | null
+    } | null = null
 
     if (values.charge_item_id) {
       const { data } = await supabase
         .from('charge_items')
-        .select('id, name, billing_mode, category')
+        .select('id, name, billing_mode, category, is_registration_fee')
         .eq('id', values.charge_item_id)
         .maybeSingle()
 
       if (!data) {
         return NextResponse.json(
           { error: 'That charge is not in the catalogue', fieldErrors: { charge_item_id: 'Unknown charge' } },
+          { status: 400 }
+        )
+      }
+
+      /**
+       * Lab tests and the registration fee reach Charges only with their payment
+       * (lib/billing/linked-charge.ts). A hand-added copy is how a bill came to
+       * show the fee in Charges while Payments still said "collect it".
+       */
+      if (isLinkedChargeItem(data)) {
+        return NextResponse.json(
+          { error: LINKED_ITEM_REFUSAL, code: 'LINKED_CHARGE_ITEM', fieldErrors: { charge_item_id: LINKED_ITEM_REFUSAL } },
           { status: 400 }
         )
       }
@@ -173,39 +192,8 @@ export async function POST(
       )
     }
 
-    /**
-     * Lab and medicine ask one more thing, at the moment of saving (PRD v2
-     * CR-15): is it included in the patient's payments, or did the patient pay
-     * the lab directly? Checked here, before anything is written.
-     */
-    const labMedicine = labMedicineKind(chargeItem?.category)
-    const choice = labMedicine ? parseLabMedicineChoice(body.lab_medicine) : null
-    if (choice && !choice.ok) {
-      return NextResponse.json(
-        { error: choice.error, fieldErrors: choice.fieldErrors },
-        { status: choice.status }
-      )
-    }
-    const decision = choice?.ok ? choice.value : null
-
-    /**
-     * "Paid directly to the lab" records **nothing at all** (Q-82, revised
-     * 2026-09-24). The hospital never handled that money, so there is no charge
-     * to keep: saving one and flagging it would leave a row that has to be
-     * excluded from every total by hand, which is how the old `to_collect`
-     * state ended up in three places at once.
-     *
-     * A 200 rather than a 201, and a message that says so plainly — a charge
-     * that vanishes on save with a cheerful "Charge added" is baffling.
-     */
-    if (labMedicine && decision?.choice === 'direct') {
-      return NextResponse.json({
-        recorded: false,
-        lab_medicine: { kind: labMedicine, status: 'direct' },
-        message:
-          'Nothing recorded \u2014 the patient pays the lab directly, so this is not the hospital\u2019s money.',
-      })
-    }
+    // Medicine is always the hospital's expense (round 8): nothing to ask.
+    const medicine = isMedicineCategory(chargeItem?.category)
 
     const shared = {
       patient_id: patientId,
@@ -218,9 +206,6 @@ export async function POST(
       qty: values.qty,
       created_by: user.id,
       updated_by: user.id,
-      // Only `included` survives. A caller that did not answer leaves it NULL,
-      // which reads as *not decided* and is nobody's expense yet.
-      lab_medicine_status: labMedicine && decision?.choice === 'included' ? 'included' : null,
     }
 
     // One row per day for either range mode, one row otherwise. The group id ties
@@ -271,18 +256,13 @@ export async function POST(
             ? values.billing_mode === 'per_hour'
               ? `Added ${rows.length} days of hourly charges`
               : `Added ${rows.length} daily charges`
-            : 'Charge added',
+            : medicine
+              ? MEDICINE_SAVED_MESSAGE
+              : 'Charge added',
         charges: data,
         // The old route returned the bare row and the tab read `.id` off it.
         charge: Array.isArray(data) ? data[0] : data,
-        ...(labMedicine
-          ? {
-              lab_medicine: {
-                kind: labMedicine,
-                status: decision?.choice === 'included' ? 'included' : null,
-              },
-            }
-          : {}),
+        ...(medicine ? { medicine_expense: true } : {}),
       },
       { status: 201 }
     )

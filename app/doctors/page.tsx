@@ -293,7 +293,11 @@ export default function DoctorsPage() {
           <>
             <div className="bg-surface rounded-lg border border-border overflow-hidden">
               {/* Desktop */}
-              <div className="hidden md:block overflow-x-auto">
+              {/* The table needs the room: below 1280 px, with the sidebar open, its
+                  actions ran off the right edge and the sideways scrollbar sat
+                  under the last row (client, square screen at 100%). Narrower
+                  screens get the compact list, which shows every row's actions. */}
+              <div className="hidden xl:block overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-surface-hover">
                     <tr>
@@ -305,7 +309,7 @@ export default function DoctorsPage() {
                           {h}
                         </th>
                       ))}
-                      <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">
+                      <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase sticky right-0 bg-surface-hover">
                         Actions
                       </th>
                     </tr>
@@ -336,7 +340,7 @@ export default function DoctorsPage() {
                             {doctor.is_active ? 'Active' : 'Inactive'}
                           </Badge>
                         </td>
-                        <td className="px-4 py-3">{actionsFor(doctor)}</td>
+                        <td className="px-4 py-3 sticky right-0 bg-surface">{actionsFor(doctor)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -344,7 +348,7 @@ export default function DoctorsPage() {
               </div>
 
               {/* Mobile */}
-              <div className="md:hidden divide-y divide-border">
+              <div className="xl:hidden divide-y divide-border">
                 {doctors.map(doctor => (
                   <div key={doctor.id} className="p-4 space-y-3">
                     <div className="flex items-start justify-between gap-3">
