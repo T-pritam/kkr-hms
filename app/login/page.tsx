@@ -36,7 +36,7 @@ function LoginContent() {
       if (data.needsPasswordChange) {
         router.push('/change-password')
       } else {
-        const from = searchParams.get('from') || '/dashboard'
+        const from = searchParams.get('from') || '/patients'
         router.push(from)
       }
     } catch (err: any) {

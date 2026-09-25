@@ -91,8 +91,8 @@ function ChangePasswordContent() {
         throw new Error(data.error || 'Password change failed')
       }
 
-      // Redirect to dashboard if already authenticated (session mode), otherwise login
-      router.push(isSessionMode ? '/dashboard' : '/login')
+      // Back to Patients if already authenticated (session mode), otherwise login
+      router.push(isSessionMode ? '/patients' : '/login')
     } catch (err: any) {
       setError(err.message || 'An error occurred')
     } finally {

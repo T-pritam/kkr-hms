@@ -20,10 +20,9 @@ failures**. What is open:
 | # | What | Status |
 |---|---|---|
 | 🔴 **#68** | The database is readable and writable with the key the browser carries | **Held for a decision** — plan and a one-day workaround in [`docs/SECURITY-DB-ACCESS.md`](docs/SECURITY-DB-ACCESS.md) |
-| 🟡 #73 | The Dashboard is a placeholder | Question Q-99 (remove it, or build it) |
 | 🟡 #75 | Live refresh never fires on 11 screens (lab worklist, charge sheets, petty cash…) | Fixed by step 3 of the #68 plan |
 
-**Fixed on 2026-09-25:** security #1, #3, #4, #5, #6, #69, #70, #74 · correctness #9, #14,
+**Fixed on 2026-09-25:** the placeholder Dashboard removed (#73, Q-99 = A) · security #1, #3, #4, #5, #6, #69, #70, #74 · correctness #9, #14,
 #22, #26, #27, #44, #45, #54, #64, #65, #66, #67 · polish #71, #72 · and 14 older entries
 found already fixed by earlier rebuilds (#10–#13, #15, #47/#48, #51, #57–#63).
 
@@ -732,12 +731,13 @@ advances leave empty.
 
 **Where:** `components/admin/create-user-modal.tsx`, `edit-user-modal.tsx`
 
-The role list offers Receptionist, Nurse and Doctor only.
 
 ### 🟡 #73 — The Dashboard is a placeholder
 **Where:** `app/dashboard/page.tsx`
 
 Every tile is a hard-coded 0. Only the admin lands on it.
+
+**Resolved 2026-09-25 (Q-99 = A).** Removed: everyone lands on Patients, the sidebar entry is gone, and `/dashboard` redirects to Patients for old bookmarks. Pinned by `tests/api/auth/middleware.test.ts`.
 
 ---
 

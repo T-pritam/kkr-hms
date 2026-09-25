@@ -91,12 +91,12 @@ describe('middleware — authenticated traffic', () => {
     expect(response.headers.get('location')).toBeNull()
   })
 
-  it.each(['/login', '/reset-password'])('bounces a signed-in user off %s to the dashboard', async (path) => {
+  it.each(['/login', '/reset-password'])('bounces a signed-in user off %s to Patients', async (path) => {
     await signInAs('RECEPTIONIST')
     const response = await visit(path)
 
     expect(response.status).toBe(307)
-    expect(locationOf(response).pathname).toBe('/dashboard')
+    expect(locationOf(response).pathname).toBe('/patients')
   })
 
   it('does not bounce a signed-in user off /change-password', async () => {
@@ -121,7 +121,7 @@ describe('middleware — role-based access control', () => {
       const response = await visit(path)
 
       expect(response.status).toBe(307)
-      expect(locationOf(response).pathname).toBe('/dashboard')
+      expect(locationOf(response).pathname).toBe('/patients')
     })
   }
 
@@ -130,7 +130,7 @@ describe('middleware — role-based access control', () => {
     const response = await visit('/employees/salary')
 
     expect(response.status).toBe(307)
-    expect(locationOf(response).pathname).toBe('/dashboard')
+    expect(locationOf(response).pathname).toBe('/patients')
   })
 
   /**
@@ -200,7 +200,7 @@ describe('middleware — silent access token refresh', () => {
     const response = await visit('/finances')
 
     expect(response.status).toBe(307)
-    expect(locationOf(response).pathname).toBe('/dashboard')
+    expect(locationOf(response).pathname).toBe('/patients')
   })
 
   it('still bounces a refreshing user off the login page', async () => {
@@ -208,7 +208,7 @@ describe('middleware — silent access token refresh', () => {
     const response = await visit('/login')
 
     expect(response.status).toBe(307)
-    expect(locationOf(response).pathname).toBe('/dashboard')
+    expect(locationOf(response).pathname).toBe('/patients')
   })
 
   /** Was BUGS.md #8: a 20-minute cookie around a 10-minute token. */

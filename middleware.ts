@@ -108,7 +108,7 @@ export async function middleware(request: NextRequest) {
 
   // Redirect authenticated users away from auth pages
   if (isAuthenticated && authPaths.some(path => pathname.startsWith(path))) {
-    return finalize(NextResponse.redirect(new URL('/dashboard', request.url)))
+    return finalize(NextResponse.redirect(new URL('/patients', request.url)))
   }
 
   // Redirect unauthenticated users to login
@@ -141,7 +141,7 @@ export async function middleware(request: NextRequest) {
      * is theirs too — the sidebar offers it, the page hides every payroll
      * figure from them, and lib/employees/authz.ts grants `advance:read` and
      * `advance:write`. This list was the one place never updated when CR-03
-     * landed, so the link bounced them to /dashboard and on to /patients.
+     * landed, so the link bounced them back to /patients.
      *
      * `/employees/salary` stays ADMIN and DOCTOR: that screen *is* payroll.
      *
@@ -158,7 +158,7 @@ export async function middleware(request: NextRequest) {
 
     if (shared) {
       if (!shared.roles.includes(userRole)) {
-        return finalize(NextResponse.redirect(new URL('/dashboard', request.url)))
+        return finalize(NextResponse.redirect(new URL('/patients', request.url)))
       }
     } else {
       /**
@@ -173,7 +173,7 @@ export async function middleware(request: NextRequest) {
       const isAdminOnlyPath = adminOnlyPaths.some(path => pathname.startsWith(path))
 
       if (isAdminOnlyPath && userRole !== 'ADMIN') {
-        return finalize(NextResponse.redirect(new URL('/dashboard', request.url)))
+        return finalize(NextResponse.redirect(new URL('/patients', request.url)))
       }
     }
   }

@@ -95,7 +95,6 @@ THE LEDGER    = money RECEIVED at the desk only. Payouts to doctors and referrer
 | Screen | Path | Who |
 |---|---|---|
 | Login · forgot / reset password · change password | `/login` · `/reset-password` · `/change-password` | everyone |
-| Dashboard *(placeholder, see §11)* | `/dashboard` | A |
 | Patients list · patient record (8 tabs) | `/patients` · `/patients/[id]` | A D N R |
 | Doctors list · a doctor's visit report | `/doctors` · `/doctors/[id]/visits` | A D N R (report: A D R) |
 | Charge sheets (quotes) · Charge catalogue (price list) | `/charges/sheets` · `/charges/catalogue` | A D N R |
@@ -122,13 +121,12 @@ THE LEDGER    = money RECEIVED at the desk only. Payouts to doctors and referrer
 
 **Sessions.** Signing in issues a 10-minute access token and a 7-day refresh token, both in `httpOnly` cookies. While the refresh token is valid, an expired access token is renewed silently on the next click, with no reload needed [CR-19]. A dead session sends the browser to `/login?from=<where you were>` and back again after signing in. An account marked Inactive cannot sign in. A password reset forces a change at the next sign-in. The sidebar shows the signed-in user's name and role.
 
-**Where each role lands.** After sign-in, Admin lands on the Dashboard; every other role is taken to Patients.
+**Where each role lands.** After sign-in, everyone is taken to **Patients** — or back to the page they were on, if their session had ended. There is no Dashboard [Q-99]: the old placeholder was removed, and `/dashboard` only redirects to Patients. *(A lab technician lands there too; their own screens are under Lab.)*
 
 **Menu per role** (the sidebar, `components/layout/sidebar.tsx`):
 
 | Menu | A | D | N | R | L |
 |---|:-:|:-:|:-:|:-:|:-:|
-| Dashboard | ✅ | ⚠️¹ | | | |
 | Patients · Doctors | ✅ | ✅ | ✅ | ✅ | |
 | Charges → Sheets · Catalogue | ✅ | ✅ | ✅ | ✅ | |
 | Lab → Orders · Test catalogue | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -138,7 +136,7 @@ THE LEDGER    = money RECEIVED at the desk only. Payouts to doctors and referrer
 | Employees → Salary · Advance Log | ✅ | ✅ | | | |
 | Finances · Admin Panel | ✅ | ⚠️¹ | | | |
 
-¹ Shown to Doctor but the page sends them away (to Patients from the Dashboard, and away from `/finances` and `/admin`, which are admin-only). See §11.
+¹ Shown to Doctor but the page sends them back to Patients: `/finances` and `/admin` are admin-only. See §11.
 
 ---
 
@@ -768,17 +766,16 @@ If you knew the app before September 2026, these are the rules that moved. Each 
 
 ## 11. Known gaps and risks
 
-Ordered by how much they matter. The full, verified pre-release list — 18 open items in fix order — is the "Start here" checklist in [`BUGS.md`](../BUGS.md).
+Ordered by how much they matter. The full, verified pre-release list is the "Start here" checklist in [`BUGS.md`](../BUGS.md).
 
 | # | Gap | Effect | Status |
 |:-:|---|---|---|
 | 1 | 🔴 **The database is open to anyone holding the browser's key.** Row-level security is off on all 52 tables, the anon role may read, insert, update and delete 50 of them — including `users` (password hashes), patients, payments and salaries — and that key is in the browser. The same key also receives live-refresh changes in full, can call 12 database functions, and can trigger the database backup (BUGS #68). | Anyone with the key can bypass every rule in §6. None of the app's tests can protect against this. | **Held for a decision.** Four-step plan, with a one-day workaround (steps 1–2) that closes writes, deletes, passwords, payroll and backups: [`SECURITY-DB-ACCESS.md`](SECURITY-DB-ACCESS.md). |
 | 2 | 🟠 **Visit purposes have no screen.** Q-72 decided they would be managed "now", and the API allows it (admin, reception), but no page can add, rename or retire one. | The list is stuck at what was seeded; a new kind of visit needs a database change. | Gap against a decided requirement. |
 | 3 | 🟡 **Live refresh never fires on 11 screens** — the lab worklist, charge sheets, petty cash, the charge catalogue, parts of the case sheet — because their tables were never added to the live-refresh stream (BUGS #75). | Those screens update only after your own action or a reload. | Fixed by step 3 of the #68 plan. |
-| 4 | 🟡 The **Dashboard** is a placeholder (every tile reads 0), and only the Admin ever sees it (BUGS #73). | Nobody gets a useful landing page. | Question **Q-99**: remove it, or build it. |
-| 5 | ⚪ The sidebar offers **Doctor** the Dashboard, Finances and Admin Panel, and each page sends them away. | None today: **no doctor has a login** [Q-98]. | **Deferred by the client:** doctor access will be designed when doctors are given logins; existing credentials are to be scrapped before the client release. |
-| 6 | 🟡 **Manual fee rows and merging fee rows** exist only in the API [Q-72: "later"]. | — | Decided as later. |
-| 7 | ⚪ Lab prices reach no bill [Q-51]; discharge raises no final bill [Q-52]; salary is not in the ledger [§3.3]; no refunds or receipts [Q-73]; a returning patient is registered again [Q-74]. | — | **Decided**, not defects. |
+| 4 | ⚪ The sidebar offers **Doctor** Finances and the Admin Panel, and each page sends them away. | None today: **no doctor has a login** [Q-98]. | **Deferred by the client:** doctor access will be designed when doctors are given logins; existing credentials are to be scrapped before the client release. |
+| 5 | 🟡 **Manual fee rows and merging fee rows** exist only in the API [Q-72: "later"]. | — | Decided as later. |
+| 6 | ⚪ Lab prices reach no bill [Q-51]; discharge raises no final bill [Q-52]; salary is not in the ledger [§3.3]; no refunds or receipts [Q-73]; a returning patient is registered again [Q-74]. | — | **Decided**, not defects. |
 
 ---
 

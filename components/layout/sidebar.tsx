@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import {
-  LayoutDashboard,
   Users,
   Stethoscope,
   UsersRound,
@@ -55,12 +54,6 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
   }
 
   const menuItems = [
-    {
-      name: 'Dashboard',
-      href: '/dashboard',
-      icon: LayoutDashboard,
-      roles: ['ADMIN', 'DOCTOR'],
-    },
     {
       name: 'Patients',
       href: '/patients',

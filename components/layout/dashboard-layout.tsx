@@ -29,12 +29,6 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         const role = data.user.role
 
         setUserRole(role)
-
-        // 🚨 ROLE BASED REDIRECT
-        if (role !== 'ADMIN' && pathname === '/dashboard') {
-          router.replace('/patients')
-          return
-        }
       } catch {
         router.push('/login')
       } finally {
