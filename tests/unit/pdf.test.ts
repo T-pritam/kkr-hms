@@ -170,28 +170,51 @@ describe('generatePatientPDF', () => {
   })
 })
 
+/**
+ * The Finance PDFs, fed the summary exactly as `GET /api/finances/summary`
+ * returns it (PRD v2 CR-10, and the Lab & Medicine line from 2026-09-24).
+ *
+ * This fixture used to be the pre-v2 shape — `total_charges`, `total_commission`,
+ * `recent_transactions` — none of which the API returns any more. The tests
+ * only checked that a PDF came out, so they passed while the monthly report
+ * printed "Billing Records: undefined" in production. They now assert that
+ * each line is drawn, with its amount, and that nothing reads "undefined".
+ */
 describe('finance report generators', () => {
   const summary = {
     month_year: '2026-03',
-    income: {
-      total_charges: 12000,
-      total_paid: 8000,
-      total_commission: 3000,
-      net_income: 8000,
-      billing_count: 3,
-    },
+    income: { total_paid: 136800, opd_receipts: 1200, money_in: 138000 },
     expenses: {
       general_expenses: 5000,
+      petty_cash: 650,
       salary_expenses: 31000,
-      ledger_expenses: 2500,
-      commission_expenses: 3000,
-      doctor_fees: 6500,
-      total_expenses: 48000,
+      doctor_fees: 8000,
+      referral_commissions: 7000,
+      lab_medicine: 800,
+      ledger_expenses: 500,
+      total_expenses: 52950,
     },
-    profit: { net_profit: -40000, profit_margin: -500 },
-    pending_settlements: { doctor_fees: 6500, doctor_count: 2, referral_commissions: 3000, referral_count: 1 },
-    recent_transactions: [],
+    profit: { net_profit: 85050, is_profit: true, profit_margin: 61.6 },
+    pending_settlements: {
+      doctor_fees: 6500,
+      doctor_count: 2,
+      referral_commissions: 3000,
+      referral_count: 1,
+      total: 9500,
+      rows: [],
+    },
   }
+
+  /** Every line of money out, as the PDFs label them, with its amount. */
+  const EXPENSE_LINES: Array<[string, string]> = [
+    ['Salary', 'Rs.31,000.00'],
+    ['General', 'Rs.5,000.00'],
+    ['Petty', 'Rs.650.00'],
+    ['Ledger', 'Rs.500.00'],
+    ['Doctor Fees', 'Rs.8,000.00'],
+    ['Referral', 'Rs.7,000.00'],
+    ['Lab & Med', 'Rs.800.00'],
+  ]
 
   beforeEach(() => {
     vi.stubGlobal(
@@ -207,29 +230,60 @@ describe('finance report generators', () => {
     expectValidPdf(saved()[0])
   })
 
-  it('generates the expense breakdown', async () => {
+  it('draws every expense line in the breakdown, Lab & Medicine included', async () => {
     await generateExpenseBreakdownPDF('2026-03', summary)
 
+    const text = textOf(saved()[0])
     expectValidPdf(saved()[0])
+    for (const [label, amount] of EXPENSE_LINES) {
+      expect(text, label).toContain(label)
+      expect(text, `${label} amount`).toContain(amount)
+    }
+    expect(text).toContain('Lab & Medicine')
+    expect(text).toContain('Rs.52,950.00')
   })
 
-  it('generates the full monthly report', async () => {
+  it('draws every expense line in the monthly report, and the total still owed', async () => {
     await generateMonthlyFinancePDF('2026-03', summary)
 
+    const text = textOf(saved()[0])
     expectValidPdf(saved()[0])
+    for (const [label, amount] of EXPENSE_LINES) {
+      expect(text, label).toContain(label)
+      expect(text, `${label} amount`).toContain(amount)
+    }
+    expect(text).toContain('Still To Pay')
+    expect(text).toContain('Rs.9,500.00')
+  })
+
+  // The regression: a field the API no longer returns printed as "undefined".
+  it('prints no "undefined" or "NaN" anywhere in the monthly report', async () => {
+    await generateMonthlyFinancePDF('2026-03', summary)
+
+    const text = textOf(saved()[0])
+    expect(text).not.toContain('undefined')
+    expect(text).not.toContain('NaN')
+    expect(text).not.toContain('Billing Records')
   })
 
   it('handles a month with no activity', async () => {
     const empty = {
       ...summary,
-      income: { total_charges: 0, total_paid: 0, total_commission: 0, net_income: 0, billing_count: 0 },
-      expenses: { general_expenses: 0, salary_expenses: 0, ledger_expenses: 0, commission_expenses: 0, doctor_fees: 0, total_expenses: 0 },
-      profit: { net_profit: 0, profit_margin: 0 },
+      income: { total_paid: 0, opd_receipts: 0, money_in: 0 },
+      expenses: {
+        general_expenses: 0, petty_cash: 0, salary_expenses: 0, doctor_fees: 0,
+        referral_commissions: 0, lab_medicine: 0, ledger_expenses: 0, total_expenses: 0,
+      },
+      profit: { net_profit: 0, is_profit: true, profit_margin: 0 },
+      pending_settlements: { doctor_fees: 0, doctor_count: 0, referral_commissions: 0, referral_count: 0, total: 0, rows: [] },
     }
 
     await generateMonthlyFinancePDF('2026-03', empty)
 
+    const text = textOf(saved()[0])
     expectValidPdf(saved()[0])
+    expect(text).not.toContain('undefined')
+    expect(text).not.toContain('NaN')
   })
 })
 

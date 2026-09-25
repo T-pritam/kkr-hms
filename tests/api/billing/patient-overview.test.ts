@@ -78,7 +78,7 @@ describe('patient overview — access', () => {
 })
 
 describe('patient overview — money', () => {
-  it('adds up the total bill, what was passed on, and the hospital income', async () => {
+  it('adds up the total bill, and every payment is the hospital\u2019s income', async () => {
     await signInAs('ADMIN')
     aStay()
 

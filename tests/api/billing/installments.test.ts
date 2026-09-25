@@ -200,8 +200,15 @@ describe('POST /api/patients/[id]/installments', () => {
     expect((await create('p1', { patient_billing_id: 'b1', amount: 100 })).status).toBe(500)
   })
 
-  /** Overpayment is possible: nothing compares the payment against the outstanding balance. */
-  it('accepts a payment larger than the outstanding balance', async () => {
+  /**
+   * There is no balance to exceed. Charges are for internal knowledge and move
+   * no money (CR-15; the client, Q-64: "charge has nothing to do with the
+   * balance and patient payments"), and the total bill *is* the payments
+   * received. So a payment larger than the charges is simply a payment — the
+   * old expectation that it be refused (BUGS #19's second half) was retired
+   * with the balance itself.
+   */
+  it('never caps a payment by the charges — they are internal (CR-15)', async () => {
     await signInAs('RECEPTIONIST')
     aBilling({ id: 'b1', patient_id: 'p1', total_charges: 1000, patient_paid_amount: 0 })
 
@@ -209,15 +216,6 @@ describe('POST /api/patients/[id]/installments', () => {
 
     expect(status).toBe(200)
     expect(paidAmount()).toBe(50000)
-  })
-
-  /** Known defect — see BUGS.md #19. */
-  it.fails('should reject a payment that exceeds the outstanding balance', async () => {
-    await signInAs('RECEPTIONIST')
-    aBilling({ id: 'b1', patient_id: 'p1', total_charges: 1000, patient_paid_amount: 0 })
-
-    const { status } = await create('p1', { patient_billing_id: 'b1', amount: 50000 })
-    expect(status).toBe(400)
   })
 
   /** Was BUGS.md #19 (the zero/negative half). Rejected before anything is written. */

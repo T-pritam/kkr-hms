@@ -10,7 +10,7 @@
  * calls this endpoint with a dummy password and check: true.
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import crypto from 'crypto'
 import bcrypt from 'bcryptjs'
 import { POST as changePassword } from '@/app/api/auth/change-password/route'
@@ -19,6 +19,16 @@ import { signInAs, signOut, hashPassword, expiredToken } from '../../helpers/aut
 import { db } from '../../helpers/fake-supabase'
 import { cookieJar } from '../../helpers/cookie-jar'
 import { NOW } from '../../setup'
+
+/**
+ * These tests hash passwords for real at bcrypt cost 12 — the cost is part of
+ * what they check. One cost-12 hash takes a few hundred milliseconds on an idle
+ * machine but several seconds while the whole suite hashes in parallel, so the
+ * default 5s timeout failed a different handful of them on each full run. The
+ * longer limit is scoped to this file, where the slowness is the behaviour
+ * under test, rather than raised suite-wide where it could hide real slowness.
+ */
+vi.setConfig({ testTimeout: 30_000 })
 
 const sha256 = (value: string) => crypto.createHash('sha256').update(value).digest('hex')
 const RESET_TOKEN = 'a'.repeat(64)

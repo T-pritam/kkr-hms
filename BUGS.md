@@ -13,7 +13,7 @@ Status legend: 🔴 security · 🟠 correctness · 🟡 consistency
 
 ## Start here
 
-19 failing-by-design tests cover the defects below. If you fix nothing else, fix this one:
+14 failing-by-design tests cover the open defects below (as of the 2026-09-25 audit, which retired three that encoded rules the client had decided against and fixed the defect behind a fourth). If you fix nothing else, fix this one:
 
 | # | What breaks | Where |
 |---|---|---|
@@ -226,23 +226,18 @@ patient in the URL (#24).
 ---
 
 ### ✅ #26 — RESOLVED — `total_amount` is written on every path
-**Resolved.** `20260808000005_consultation_visit_purpose.sql` repairs the drift already in
-the data, and every write path now sets `total_amount = amount_per_visit * visit_count`.
-It is deliberately not a generated column: `merge` and `create-manual` set it directly.
+**Resolved.** `20260808000005_consultation_visit_purpose.sql` repaired the drift already in
+the data, and every write path sets `total_amount = amount_per_visit * visit_count`. It is
+deliberately not a generated column: `merge` and `create-manual` set it directly.
+
+**Correction (2026-09-25):** this entry said "every path" while one was still open —
+`POST /api/patients/[id]/settlements` inserted the row without `total_amount`, and its
+expected-failure test said so. It now computes it like the pricing route, and stamps
+`amount_set_by`. That mattered more once the route was opened to reception (Q-19, #66): a
+fee priced through it would have read as ₹0 on the patient's Overview.
 
 **Where:** `app/api/doctor-settlements/[settlementId]/route.ts` (PUT), `app/api/patients/[id]/settlements/route.ts` (POST)
 **Tests:** `tests/api/billing/patient-settlements.test.ts`, `tests/api/finances/doctor-settlements.test.ts`
-
-The column is a plain nullable numeric in the live schema — **no generated expression and
-no trigger** (confirmed: `information_schema.columns.is_generated = 'NEVER'`, and the
-database has no triggers at all). Only `create-manual` and `merge` ever set it.
-
-So: `sync` creates settlements with `total_amount` null, and the pricing endpoint changes
-`amount_per_visit` and `visit_count` without touching it. Meanwhile the billing roll-up
-sums precisely that column, and the finance summary's "pending doctor fees" reads it too.
-
-**Fix:** make it a generated column (`visit_count * amount_per_visit`), or write it
-explicitly everywhere pricing changes.
 
 ---
 
@@ -273,16 +268,19 @@ attached to another patient's billing record is all accepted.
 
 ---
 
-### 🟠 #19 — Payments are not compared against the balance *(half resolved)*
+### ✅ #19 — RESOLVED — payments and the balance
 **Where:** `app/api/patients/[id]/installments/route.ts`
-**Tests:** `tests/api/billing/installments.test.ts` (1 failing case, 1 now passing)
+**Tests:** `tests/api/billing/installments.test.ts`
 
-**Resolved (2026-09-22, PRD v2 CR-12):** a zero or negative amount is rejected before
-anything is written (`lib/billing/payments.ts` `validatePayment`).
+**Zero and negative (2026-09-22, PRD v2 CR-12):** rejected before anything is written
+(`lib/billing/payments.ts` `validatePayment`).
 
-**Still open:** nothing compares the payment against the outstanding balance, so
-overpayment produces a negative balance everywhere it is displayed. Whether it should be
-refused waits on the balance rules in PRD v2 (the "what the payments cover" questions).
+**Overpayment (superseded 2026-09-25):** there is no balance to exceed. Charges are for
+internal knowledge and move no money (CR-15; the client, Q-64: *"charge has nothing to do
+with the balance and patient payments"*), and the total bill *is* the payments received —
+so a payment larger than the charges is simply a payment. The expected-failure test that
+demanded a refusal encoded a rule the client rejected, and was replaced by one asserting
+that payments are never capped by the charges.
 
 ---
 
@@ -458,12 +456,14 @@ entry uses `total_amount`. This route also skips `recalculatePatientBilling` ent
 
 ## Section 6 — Employees & Salary
 
-### 🟠 #53 — Every employee and salary endpoint admits DOCTOR
-**Where:** all of `app/api/employees/**`
+### ⚪ #53 — Employee and salary endpoints admit DOCTOR — *decided, not a defect*
+**Where:** all of `app/api/employees/**` (`lib/employees/authz.ts`)
 
-The gate is `role !== 'ADMIN' && role !== 'DOCTOR'` while the error text says "Admin
-access required". Only the page middleware keeps non-admins out of `/employees`, so a
-direct API call from a doctor's session succeeds — including salary edits and settlement.
+PRD v2 Q-06 decided it: *"Doctor … keeps payroll."* The salary screen is ADMIN and DOCTOR in
+`middleware.ts`, and it is built on the employee list, so refusing DOCTOR at the API would
+break the doctor's payroll screen. The staff *register* page stays admin-only at the page
+level. The expected-failure test that demanded a 403 was removed (2026-09-25); the passing
+test now cites Q-06.
 
 ---
 
@@ -478,13 +478,14 @@ trimmed.)
 
 ---
 
-### 🟠 #56 — Settling payroll writes no ledger entry
+### ⚪ #56 — Settling payroll writes no ledger entry — *decided, not a defect*
 **Where:** `app/api/employees/salary/settle/route.ts`, `.../settle-all/route.ts`
 
-Doctor fees and referral commissions both post a ledger debit when paid. Salary does not,
-so payroll — usually the largest single outflow — never appears in the daily cash book.
-The finance summary picks it up from `salary_payments` separately, so the two views of
-the same month disagree.
+PRD v2 §3.3 decided it: *"Salary settlement — Admin; stays in Employees."* The ledger is the
+desk's receipts book — patient payments, registration fees and OPD — and since 2026-09-24
+not even doctor fees or commissions write to it. Finances counts salary from
+`salary_payments` (Q-36), so the two views agree by design. The expected-failure test asking
+for a ledger debit was replaced (2026-09-25) by one asserting there is none.
 
 ---
 
@@ -565,6 +566,44 @@ The function checks only that an `Authorization` header is *present* — it neve
 the JWT — and the Next.js route calls it with the **anon key**. Anyone who can reach the
 function can mint presigned upload URLs for the bucket. This one needs fixing in the edge
 function and cannot be exercised from the test suite.
+
+---
+
+## Section 9 — Found by the 2026-09-25 test audit (all resolved)
+
+### ✅ #64 — RESOLVED — the "Handed over by" picker was always empty
+**Where:** `app/api/users/route.ts`, `components/finances/given-by-picker.tsx`
+**Tests:** `tests/api/finances/payout-attribution.test.ts`
+
+Shipped 2026-09-24 reading `users.is_active`, a column `users` does not have (it has
+`status`). The query failed, the picker fell back to an empty list, and the select showed
+"Someone else — type the name below" while the form still sent the signed-in user's id — so
+the screen and the record disagreed, and nobody could pick another user. It had no test;
+the fake client rejects unknown columns, so one would have caught it. Now filters
+`status = 'ACTIVE'`, and the picker always offers the signed-in user so what it shows is
+what it sends. **No payout was recorded while it was broken** (checked on production).
+
+### ✅ #65 — RESOLVED — a settled payout was still partly writable by reception
+**Where:** `app/api/doctor-settlements/[settlementId]/route.ts` (PUT), `app/api/patients/[id]/billing/route.ts` (PATCH)
+**Tests:** `tests/api/finances/payout-attribution.test.ts` (one case per field)
+
+Q-88: once settled, a fee or commission is the admin's alone — *"reception can do nothing,
+not even un-settle"*. Both guards watched only the price and the paid flag. So on a settled
+**commission** reception could change who carried the cash, the notes, mode, reference and
+date; on a settled **fee**, the mode, reference, notes, carrier, type — and the amount paid
+itself, via `settlement_amount`, without the amount stamp. Every field is now compared
+(a resent, unchanged value is not a change), an admin's restated amount keeps
+`settlement_amount`, `total_amount` and `amount_set_by` in step, and an admin's correction
+of the carrier carries its own `given_by_set_by` stamp.
+
+### ✅ #66 — RESOLVED — one payout route still refused reception
+**Where:** `app/api/patients/[id]/settlements/route.ts` (POST, PATCH)
+**Tests:** `tests/api/billing/patient-settlements.test.ts`
+
+Q-19 lets reception price and pay out doctor fees, and `create-manual`, `merge`, `sync`,
+`settle` and the Finances routes all say so through `doctor-fee:write` / `payout:write`.
+This route still checked for ADMIN by hand, and its tests enshrined that. It now uses the
+same capabilities as its siblings.
 
 ---
 

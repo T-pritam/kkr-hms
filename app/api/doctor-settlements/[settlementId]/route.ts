@@ -71,10 +71,30 @@ export async function PUT(
      * While it is unsettled the fee is the desk's: any receptionist or the
      * admin may price it, whoever entered it (client revision, 2026-09-24 —
      * this replaces Q-20's own-row rule). Once it is settled it is the admin's
-     * alone. `amount_set_by` is still written on every change; it is the record
-     * now, not the lock.
+     * alone — Q-88: *"reception can do nothing, not even un-settle"*.
+     *
+     * "Nothing" means every field, not only the price. This guard used to watch
+     * the rate and the paid flag, so reception could still restate a settled
+     * fee's `settlement_amount`, or its mode, reference, notes or carrier.
+     * Fields are compared, not merely present, because a screen may resend
+     * values it did not change.
      */
-    if (currentSettlement.settled === true && (isPricingUpdate || body.settled !== undefined)) {
+    const differs = (field: string, next: unknown) =>
+      next !== undefined && String(next ?? '') !== String(currentSettlement[field] ?? '');
+    const changingPayoutDetails =
+      (body.settlement_amount !== undefined &&
+        Number(body.settlement_amount) !== Number(currentSettlement.settlement_amount ?? currentSettlement.total_amount)) ||
+      (body.payment_method !== '' && differs('payment_method', body.payment_method)) ||
+      (body.transaction_reference !== '' && differs('transaction_reference', body.transaction_reference)) ||
+      (body.settlement_notes !== '' && differs('settlement_notes', body.settlement_notes)) ||
+      differs('given_by', body.given_by === undefined ? undefined : body.given_by?.trim() || null) ||
+      differs('given_by_user_id', body.given_by_user_id) ||
+      differs('settlement_type', body.settlement_type);
+
+    if (
+      currentSettlement.settled === true &&
+      (isPricingUpdate || body.settled !== undefined || changingPayoutDetails)
+    ) {
       const allowed = canAmendPayout(authResult.user, { settled: true, noun: 'doctor fee' });
       if (!allowed.ok) {
         return NextResponse.json({ error: allowed.error, code: allowed.code }, { status: allowed.status });
@@ -201,8 +221,20 @@ export async function PUT(
       }
     }
 
-    if (body.settlement_amount !== undefined) {
-      updateData.settlement_amount = parseFloat(body.settlement_amount);
+    /**
+     * Restating what a settled fee cost. It is the amount, so it carries the
+     * amount stamp, and `total_amount` follows: the two columns disagreeing is
+     * what made the same fee read differently on two screens, and the
+     * migration that repaired that must not be undone one edit at a time.
+     */
+    if (body.settlement_amount !== undefined && !wantsToSettle) {
+      const restated = parseFloat(body.settlement_amount);
+      updateData.settlement_amount = restated;
+      if (currentSettlement.settled === true && body.settled !== false && Number.isFinite(restated)) {
+        updateData.total_amount = restated;
+        updateData.amount_set_by = authResult.user.id;
+        updateData.amount_set_at = updateData.updated_at;
+      }
     }
 
     if (body.payment_method !== undefined && body.payment_method !== '') {
@@ -217,10 +249,18 @@ export async function PUT(
       updateData.settlement_notes = body.settlement_notes;
     }
 
-    // Who physically handled the payout — optional, same convention as
-    // advances' given_by.
-    if (body.given_by !== undefined) {
-      updateData.given_by = body.given_by?.trim() || null;
+    /**
+     * Correcting who carried the cash on a fee already paid. Paying it goes
+     * through `payDoctorFee`, which records the carrier itself; this is the
+     * after-the-fact fix, and like the amount and the status it carries its own
+     * stamp — whoever changed *this* fact. A picked user replaces a typed name.
+     */
+    if (!wantsToSettle && (body.given_by !== undefined || body.given_by_user_id !== undefined)) {
+      const pickedUser = String(body.given_by_user_id ?? '').trim() || null;
+      updateData.given_by_user_id = pickedUser;
+      updateData.given_by = pickedUser ? null : body.given_by?.trim() || null;
+      updateData.given_by_set_by = authResult.user.id;
+      updateData.given_by_set_at = updateData.updated_at;
     }
 
     if (body.settlement_type !== undefined) {

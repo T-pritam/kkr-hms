@@ -363,10 +363,13 @@ describe('GET /api/finances/summary — the Overview, on a cash basis (Q-36)', (
     it('counts every patient payment made in the month, whatever its label', async () => {
       await signInAs('ADMIN')
       aBilling({ id: 'b1' })
+      // All five labels that exist (CR-15). Lab and Medicine were labels until
+      // 2026-09-24; the database now refuses them, so they are not seeded here.
       anInstallment({ patient_billing_id: 'b1', amount: 5000, payment_date: '2026-03-05', kind: 'regular' })
       anInstallment({ patient_billing_id: 'b1', amount: 3000, payment_date: '2026-03-20', kind: 'advance' })
       anInstallment({ patient_billing_id: 'b1', amount: 100, payment_date: '2026-03-20', kind: 'registration' })
-      anInstallment({ patient_billing_id: 'b1', amount: 900, payment_date: '2026-03-21', kind: 'medicine' })
+      anInstallment({ patient_billing_id: 'b1', amount: 600, payment_date: '2026-03-21', kind: 'discharge' })
+      anInstallment({ patient_billing_id: 'b1', amount: 300, payment_date: '2026-03-22', kind: 'misc' })
       anInstallment({ patient_billing_id: 'b1', amount: 9999, payment_date: '2026-02-20' })
 
       const { body } = await summary({ month_year: THIS_MONTH })

@@ -190,7 +190,9 @@ export async function PATCH(
 
     const { data: target } = await supabase
       .from('patient_billing')
-      .select('id, patient_id, referral_settled, referral_commission_set_by, referral_commission_amount')
+      .select(
+        'id, patient_id, referral_settled, referral_commission_set_by, referral_commission_amount, referral_settlement_notes, referral_settlement_given_by, referral_given_by_user_id, referral_settlement_payment_method, referral_transaction_ref, referral_settlement_date'
+      )
       .eq('id', body.billing_id)
       .maybeSingle();
 
@@ -223,13 +225,33 @@ export async function PATCH(
       body.referral_settled !== undefined && body.referral_settled !== target.referral_settled;
 
     /**
+     * Every other fact about the payout: its notes, mode, reference, date and
+     * who carried the cash. Compared rather than checked for presence, because
+     * the dialog resends what it did not change.
+     */
+    const differs = (field: string, next: unknown) =>
+      next !== undefined && String(next ?? '') !== String((target as Record<string, unknown>)[field] ?? '');
+    const changingPayoutDetails =
+      differs('referral_settlement_notes', body.referral_settlement_notes) ||
+      differs('referral_settlement_given_by',
+        body.referral_settlement_given_by === undefined ? undefined : body.referral_settlement_given_by?.trim() || null) ||
+      differs('referral_given_by_user_id', body.referral_given_by_user_id) ||
+      differs('referral_settlement_payment_method', body.referral_settlement_payment_method) ||
+      differs('referral_transaction_ref', body.referral_settlement_transaction_ref) ||
+      differs('referral_settlement_date', body.referral_settlement_date);
+
+    /**
      * While it is unsettled the commission is the desk's — the amount and the
      * referral person both (client revision, 2026-09-24, replacing Q-20). Once
-     * it is settled it is the admin's alone, and the referral person is covered
-     * too: it was writable by anyone, at any time, even after the commission had
-     * been paid to them.
+     * it is settled it is the admin's alone — Q-88: *"reception can do nothing,
+     * not even un-settle"* — and that covers every field. This guard used to
+     * watch only the amount, the person and the paid flag, so reception could
+     * still rewrite who carried a settled commission, or its mode and notes.
      */
-    if (settled && (changingAmount || changingReferralPerson || changingSettledFlag)) {
+    if (
+      settled &&
+      (changingAmount || changingReferralPerson || changingSettledFlag || changingPayoutDetails)
+    ) {
       const allowed = canAmendPayout(authResult.user, { settled: true, noun: 'commission' });
       if (!allowed.ok) {
         return NextResponse.json({ error: allowed.error, code: allowed.code }, { status: allowed.status });

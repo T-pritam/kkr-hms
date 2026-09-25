@@ -22,18 +22,18 @@ export async function GET(request: NextRequest) {
 
     const supabase = await createClient()
 
+    // `users.status` is 'ACTIVE' or 'INACTIVE' — the same test the petty cash
+    // recipients list uses. This first shipped reading an `is_active` column
+    // that `users` does not have, so the query failed and the picker was empty.
     const { data, error } = await supabase
       .from('users')
-      .select('id, username, role, is_active')
+      .select('id, username, role')
+      .eq('status', 'ACTIVE')
       .order('username')
 
     if (error) throw error
 
-    // Filtered here rather than in the query: `is_active` is null on the older
-    // accounts, and `.eq('is_active', true)` would quietly hide every one.
-    const users = (data ?? [])
-      .filter((u: any) => u.is_active !== false)
-      .map((u: any) => ({ id: u.id, username: u.username, role: u.role }))
+    const users = (data ?? []).map((u: any) => ({ id: u.id, username: u.username, role: u.role }))
 
     return NextResponse.json({ users })
   } catch (error: any) {

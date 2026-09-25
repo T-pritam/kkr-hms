@@ -12,6 +12,7 @@ import { describe, it, expect } from 'vitest'
 import { GET as listEntries } from '@/app/api/ledger/entries/route'
 import { POST as closeEntries } from '@/app/api/ledger/close/route'
 import { POST as reopenEntries } from '@/app/api/ledger/reopen/route'
+import { GET as listLedgerUsers } from '@/app/api/ledger/users/route'
 import { call } from '../../helpers/request'
 import { signInAs, signOut } from '../../helpers/auth'
 import { db } from '../../helpers/fake-supabase'
@@ -291,5 +292,53 @@ describe('reopening entries', () => {
     expect((await list()).body.data.find((r: any) => r.id === 't4').can_edit).toBe(false)
     await reopen({ ids: ['t4'], reason: 'correcting it' })
     expect((await list()).body.data.find((r: any) => r.id === 't4').can_edit).toBe(true)
+  })
+})
+
+/**
+ * The names behind the "Added by" filter (Q-22). Reception may filter by who
+ * added a row, but cannot see the user register (§3.2) — so this lists only
+ * people who actually appear in the ledger, and only their name.
+ */
+describe('the ledger log — the "Added by" list', () => {
+  const ledgerUsers = () => call(listLedgerUsers, 'GET', '/api/ledger/users')
+
+  it('needs a session, and shuts out a lab technician', async () => {
+    signOut()
+    expect((await ledgerUsers()).status).toBe(401)
+
+    await signInAs('LAB_TECHNICIAN')
+    expect((await ledgerUsers()).status).toBe(403)
+  })
+
+  it('names everyone who has added a row, once each, by name', async () => {
+    await signInAs('RECEPTIONIST')
+    aBusyDay()
+
+    const { status, body } = await ledgerUsers()
+
+    expect(status).toBe(200)
+    expect(body.data).toEqual([
+      { id: 'u-admin', username: 'admin' },
+      { id: 'u-asha', username: 'asha' },
+      { id: 'u-ravi', username: 'ravi' },
+    ])
+  })
+
+  it('leaves out a user who has never added a row', async () => {
+    await signInAs('RECEPTIONIST')
+    aBusyDay()
+    aUser({ id: 'u-quiet', username: 'quiet', role: 'RECEPTIONIST' })
+
+    const ids = (await ledgerUsers()).body.data.map((u: { id: string }) => u.id)
+    expect(ids).not.toContain('u-quiet')
+  })
+
+  it('returns a name and nothing else — no e-mail, no role', async () => {
+    await signInAs('RECEPTIONIST')
+    aBusyDay()
+
+    const [first] = (await ledgerUsers()).body.data
+    expect(Object.keys(first).sort()).toEqual(['id', 'username'])
   })
 })

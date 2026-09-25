@@ -2,7 +2,7 @@
  * /api/admin/users — user administration (ADMIN only).
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import bcrypt from 'bcryptjs'
 import { GET as listUsers, POST as createUser } from '@/app/api/admin/users/route'
 import {
@@ -17,6 +17,16 @@ import { cookieJar } from '../../helpers/cookie-jar'
 import { db } from '../../helpers/fake-supabase'
 import { aUser } from '../../helpers/seed'
 import { NOW } from '../../setup'
+
+/**
+ * These tests hash passwords for real at bcrypt cost 12 — the cost is part of
+ * what they check. One cost-12 hash takes a few hundred milliseconds on an idle
+ * machine but several seconds while the whole suite hashes in parallel, so the
+ * default 5s timeout failed a different handful of them on each full run. The
+ * longer limit is scoped to this file, where the slowness is the behaviour
+ * under test, rather than raised suite-wide where it could hide real slowness.
+ */
+vi.setConfig({ testTimeout: 30_000 })
 
 const NON_ADMIN_ROLES = ['DOCTOR', 'NURSE', 'RECEPTIONIST'] as const
 

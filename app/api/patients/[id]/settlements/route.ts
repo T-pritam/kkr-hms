@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { payDoctorFee, validatePayout } from '@/lib/billing/payouts';
 import { verifyAuth } from '@/lib/auth/verify';
+import { requireBilling } from '@/lib/billing/authz';
 
 export async function GET(
   request: NextRequest,
@@ -63,26 +64,40 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const authResult = await verifyAuth(request);
-    if (!authResult.isValid || !authResult.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    if (authResult.user.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Only admins can create settlements' }, { status: 403 });
-    }
+    /**
+     * Raising a fee row is desk work: reception prices doctor fees and makes
+     * manual rows (Q-19 a–c), and `create-manual`, `merge` and `sync` already
+     * say so with `doctor-fee:write`. This route was the one still checking for
+     * ADMIN by hand, so the same act was allowed or refused depending on which
+     * URL it arrived at.
+     */
+    const authResult = await requireBilling(request, 'doctor-fee:write');
+    if (authResult.response) return authResult.response;
 
     const supabase = await createClient();
     const { id } = await params;
     const patientId = id;
     const body = await request.json();
 
+    const visitCount = Number(body.visit_count) || 0;
+    const perVisit = Number(body.amount_per_visit) || 0;
+    const now = new Date().toISOString();
+
+    /**
+     * `total_amount` is what the patient's Overview and the pending list read,
+     * and it is a plain column — nothing derives it. This route was the one
+     * write path still leaving it null (BUGS #26), so a fee priced here counted
+     * as nothing. Computed exactly as the pricing route does, and stamped with
+     * who set the amount, like every other pricing path.
+     */
     const settlementData = {
       patient_billing_id: body.patient_billing_id,
       patient_id: patientId,
       doctor_id: body.doctor_id,
-      visit_count: body.visit_count || 0,
-      amount_per_visit: body.amount_per_visit || 0,
+      visit_count: visitCount,
+      amount_per_visit: perVisit,
+      total_amount: Math.floor(perVisit * visitCount),
+      ...(perVisit > 0 ? { amount_set_by: authResult.user.id, amount_set_at: now } : {}),
       created_by: authResult.user.id,
     };
 
@@ -114,14 +129,10 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const authResult = await verifyAuth(request);
-    if (!authResult.isValid || !authResult.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    if (authResult.user.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Only admins can settle payments' }, { status: 403 });
-    }
+    // Paying out is `payout:write` on every other path (Q-19 f): reception may
+    // hand a doctor's fee over as well as an admin.
+    const authResult = await requireBilling(request, 'payout:write');
+    if (authResult.response) return authResult.response;
 
     const supabase = await createClient();
     const body = await request.json();

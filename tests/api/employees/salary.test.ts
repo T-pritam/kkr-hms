@@ -375,17 +375,22 @@ describe('POST /api/employees/salary/settle', () => {
   })
 
   /**
-   * Known defect — see BUGS.md #56. Settling a salary moves real money but writes no
-   * ledger entry, so payroll never appears in the daily cash book — unlike doctor fees and
-   * referral commissions, which both post a debit.
+   * Payroll stays in Employees and writes nothing to the ledger — decided, not
+   * a defect (PRD v2 §3.3: "Salary settlement — Admin; stays in Employees").
+   * The ledger is the desk's receipts book: patient payments, registration fees
+   * and OPD, and since 2026-09-24 not even doctor fees or commissions. Finances
+   * counts salary from the salary row instead (Q-36). This used to be an
+   * expected failure, BUGS #56, asking for the opposite.
    */
-  it.fails('should record the payout in the daily ledger', async () => {
+  it('writes no ledger entry — payroll stays in Employees (§3.3)', async () => {
     await signInAs('ADMIN')
     aSalaryRecord({ id: '1', employee_id: 'e1', month_year: THIS_MONTH, status: 'pending', final_salary: 20000 })
 
-    await settle({ employee_id: 'e1', month_year: THIS_MONTH })
+    const { status } = await settle({ employee_id: 'e1', month_year: THIS_MONTH })
 
-    expect(db.count('daily_ledger_transactions')).toBe(1)
+    expect(status).toBe(200)
+    expect(record('1').status).toBe('settled')
+    expect(db.count('daily_ledger_transactions')).toBe(0)
   })
 })
 

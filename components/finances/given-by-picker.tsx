@@ -65,6 +65,16 @@ export function GivenByPicker({ value, onChange, disabled }: Props) {
 
   const typedName = value.given_by.trim() !== ''
 
+  /**
+   * The signed-in user is always an option, even if the list failed to load.
+   * Otherwise the default — which is them — would be sent while the select
+   * showed "Someone else", and the screen would disagree with the record.
+   */
+  const options =
+    user?.id && !users.some((u) => u.id === user.id)
+      ? [{ id: user.id, username: user.username ?? 'You', role: user.role ?? '' }, ...users]
+      : users
+
   return (
     <div className="space-y-2">
       <label className="block text-sm text-muted">Handed over by</label>
@@ -76,10 +86,11 @@ export function GivenByPicker({ value, onChange, disabled }: Props) {
         className="w-full bg-surface-inset text-foreground rounded-lg px-3 py-2 border border-border disabled:opacity-50"
       >
         <option value="">Someone else — type the name below</option>
-        {users.map((u) => (
+        {options.map((u) => (
           <option key={u.id} value={u.id}>
             {u.username}
-            {u.id === user?.id ? ' (you)' : ''} · {u.role.toLowerCase()}
+            {u.id === user?.id ? ' (you)' : ''}
+            {u.role ? ` · ${u.role.toLowerCase()}` : ''}
           </option>
         ))}
       </select>

@@ -66,8 +66,9 @@ export const BILLING_CAPABILITIES: Record<BillingCapability, UserRole[]> = {
   'charge-sheet:forward': ['ADMIN'],
 
   // The referral person, the commission, and the settled flags. Reception sets
-  // these now (Q-19 e); who may change a *particular* amount is the own-row
-  // rule, on `referral_commission_set_by` (Q-20 = A).
+  // these (Q-19 e). Who may change a *particular* one is no longer the own-row
+  // rule: an unsettled commission is anyone's at the desk, a settled one the
+  // admin's alone (Q-88, replacing Q-20) — see `canAmendPayout`.
   'billing:write': ['ADMIN', 'RECEPTIONIST'],
 
   // What kinds of visit exist. Reception manages these (Q-19 h, Q-72): they are
@@ -91,9 +92,10 @@ export const BILLING_CAPABILITIES: Record<BillingCapability, UserRole[]> = {
   // hospital's money leaving, not a patient's bill.
   'payout:read': ['ADMIN', 'DOCTOR', 'RECEPTIONIST'],
 
-  // Handing the money over — a doctor's fee or a referral commission. Reception
-  // pays these from the day's collections, and the ledger OUT is born Open
-  // until an admin closes it (Q-19 f, Q-71 = A).
+  // Handing the money over — a doctor's fee or a referral commission (Q-19 f).
+  // Nothing reaches the ledger: the admin hands the cash over directly, and the
+  // settlement row, with who paid it and who carried it, is the whole record
+  // (client revision, 2026-09-24).
   'payout:write': ['ADMIN', 'RECEPTIONIST'],
 }
 

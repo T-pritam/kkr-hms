@@ -57,18 +57,15 @@ describe('/api/employees — access control', () => {
   })
 
   /**
-   * Every employee and salary endpoint admits DOCTOR as well as ADMIN, despite the error
-   * text saying "Admin access required". Only the page middleware keeps non-admins out of
-   * /employees, so a direct API call from a doctor's session succeeds. See BUGS.md #53.
+   * A doctor keeps payroll (PRD v2 Q-06: "Doctor … keeps payroll"), and the
+   * salary screen — ADMIN and DOCTOR in `middleware.ts` — is built on this
+   * list. So DOCTOR reading it is the decided rule, not a leak. It used to sit
+   * beside an expected failure demanding a 403 (BUGS #53), which would have
+   * broken the doctor's payroll screen to satisfy it.
    */
-  it('admits DOCTOR to the employee register', async () => {
+  it('admits DOCTOR, who keeps payroll (Q-06)', async () => {
     await signInAs('DOCTOR')
     expect((await list()).status).toBe(200)
-  })
-
-  it.fails('should restrict the employee register to admins', async () => {
-    await signInAs('DOCTOR')
-    expect((await list()).status).toBe(403)
   })
 })
 

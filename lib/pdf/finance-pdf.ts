@@ -387,10 +387,19 @@ export async function generateMonthlyFinancePDF(monthYear: string, summary: any)
     { label: 'Profit Margin',  value: `${summary.profit.profit_margin.toFixed(1)}%`,                accent: C.teal },
   ])
 
+  // The third box was "Billing Records", a count the summary stopped returning
+  // when the Overview moved to a cash basis (CR-10) — so every monthly PDF
+  // printed "undefined" there. The row is about what is still owed, so it now
+  // closes with that total, the same figure as the Finances "Still to pay" card.
+  const stillToPay =
+    summary.pending_settlements.total ??
+    (Number(summary.pending_settlements.doctor_fees) || 0) +
+      (Number(summary.pending_settlements.referral_commissions) || 0)
+
   boxRow(h, [
     { label: 'Pending Dr. Settlements',  value: fmt(summary.pending_settlements.doctor_fees),    accent: C.purple },
     { label: 'Pending Ref. Commissions', value: fmt(summary.pending_settlements.referral_commissions || 0), accent: C.blue },
-    { label: 'Billing Records',          value: String(summary.income.billing_count),            accent: C.navy },
+    { label: 'Still To Pay',             value: fmt(stillToPay),                                  accent: C.navy },
   ])
 
   // Income + Expense tables side by side (half content each)

@@ -10,6 +10,7 @@
 import { describe, it, expect } from 'vitest'
 import { GET as listPettyCash, POST as addPettyCash } from '@/app/api/petty-cash/route'
 import { PUT as editPettyCash, DELETE as removePettyCash } from '@/app/api/petty-cash/[id]/route'
+import { GET as listRecipients } from '@/app/api/petty-cash/recipients/route'
 import { call } from '../../helpers/request'
 import { signInAs, signOut } from '../../helpers/auth'
 import { db } from '../../helpers/fake-supabase'
@@ -233,5 +234,50 @@ describe('petty cash — correcting an entry (Q-12 = A)', () => {
     await signInAs('ADMIN')
     expect((await edit('missing', { amount: 1, reason: 'x' })).status).toBe(404)
     expect((await remove('missing')).status).toBe(404)
+  })
+})
+
+/**
+ * Who a top-up can be handed to (Q-92): *"Given to lists only active
+ * receptionists."* The form used to offer everyone who had ever written a
+ * ledger row — so a receptionist hired last week was missing, and an admin who
+ * once took an OPD receipt was on the list.
+ */
+describe('petty cash — who the float can be given to (Q-92)', () => {
+  const recipients = () => call(listRecipients, 'GET', '/api/petty-cash/recipients')
+
+  it('needs a session', async () => {
+    signOut()
+    expect((await recipients()).status).toBe(401)
+  })
+
+  // Only the admin tops up, so only the admin needs the list.
+  it.each(['RECEPTIONIST', 'DOCTOR', 'NURSE', 'LAB_TECHNICIAN'] as const)('refuses %s', async (role) => {
+    await signInAs(role)
+    expect((await recipients()).status).toBe(403)
+  })
+
+  it('lists active receptionists only, by name', async () => {
+    await signInAs('ADMIN')
+    aUser({ id: 'u-ravi', username: 'ravi', role: 'RECEPTIONIST' })
+    aUser({ id: 'u-asha', username: 'asha', role: 'RECEPTIONIST' })
+    aUser({ id: 'u-left', username: 'left', role: 'RECEPTIONIST', status: 'INACTIVE' })
+    aUser({ id: 'u-admin', username: 'admin', role: 'ADMIN' })
+    aUser({ id: 'u-doc', username: 'drrao', role: 'DOCTOR' })
+
+    const { status, body } = await recipients()
+
+    expect(status).toBe(200)
+    expect(body.data).toEqual([
+      { id: 'u-asha', username: 'asha' },
+      { id: 'u-ravi', username: 'ravi' },
+    ])
+  })
+
+  it('includes a receptionist who has never touched the ledger', async () => {
+    await signInAs('ADMIN')
+    aUser({ id: 'u-new', username: 'newhire', role: 'RECEPTIONIST' })
+
+    expect((await recipients()).body.data).toEqual([{ id: 'u-new', username: 'newhire' }])
   })
 })

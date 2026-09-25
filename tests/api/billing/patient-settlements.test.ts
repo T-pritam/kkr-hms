@@ -49,15 +49,29 @@ describe('patient settlements — authentication and roles', () => {
     expect((await sync('p1', { billing_id: 'b1' })).status).toBe(401)
   })
 
-  it.each(['DOCTOR', 'NURSE', 'RECEPTIONIST'] as const)('refuses %s on settle', async (role) => {
+  /**
+   * Paying out is `payout:write` — admin and reception (Q-19 f) — on every one
+   * of the four routes that can do it. This one used to check for ADMIN by
+   * hand, so reception could pay a fee from Finances but not from here.
+   */
+  it.each(['DOCTOR', 'NURSE', 'LAB_TECHNICIAN'] as const)('refuses %s on settle', async (role) => {
     await signInAs(role)
     aSettlement({ id: 's1', settled: false })
 
-    const settled = await settle('p1', { settlement_id: 's1' })
+    const settled = await settle('p1', { settlement_id: 's1', settlement_amount: 1000, payment_method: 'cash' })
     expect(settled.status).toBe(403)
-    expect(settled.body.error).toBe('Only admins can settle payments')
 
     expect(settlementRow('s1').settled).toBe(false)
+  })
+
+  it('lets reception pay a fee out (Q-19)', async () => {
+    await signInAs('RECEPTIONIST', { userId: 'u-recep' })
+    aSettlement({ id: 's1', settled: false })
+
+    const settled = await settle('p1', { settlement_id: 's1', settlement_amount: 1000, payment_method: 'cash' })
+
+    expect(settled.status).toBe(200)
+    expect(settlementRow('s1')).toMatchObject({ settled: true, settled_by: 'u-recep' })
   })
 
   /**
@@ -76,19 +90,17 @@ describe('patient settlements — authentication and roles', () => {
   })
 
   /**
-   * This route had no role check at all — any signed-in user, reception
-   * included, could create a priced settlement row directly, even though the
-   * UI only ever reaches this feature through create-manual and /sync, both
-   * ADMIN-gated, and even though this same file's PATCH (settle) was already
-   * correctly restricted.
+   * Raising a fee row is `doctor-fee:write`, like `create-manual`, `merge` and
+   * `sync` beside it: admin and reception (Q-19 a–c). A doctor still cannot
+   * price their own fee, which is why DOCTOR is refused.
    */
-  it.each(['DOCTOR', 'NURSE', 'RECEPTIONIST', 'LAB_TECHNICIAN'] as const)(
+  it.each(['DOCTOR', 'NURSE', 'LAB_TECHNICIAN'] as const)(
     'refuses %s creating a settlement directly',
     async (role) => {
       await signInAs(role)
       aDoctor({ id: 'd1' })
 
-      const { status, body } = await create('p1', {
+      const { status } = await create('p1', {
         patient_billing_id: 'b1',
         doctor_id: 'd1',
         visit_count: 3,
@@ -96,10 +108,19 @@ describe('patient settlements — authentication and roles', () => {
       })
 
       expect(status).toBe(403)
-      expect(body.error).toBe('Only admins can create settlements')
       expect(db.count('doctor_visit_settlements')).toBe(0)
     },
   )
+
+  it('lets reception raise a fee row directly (Q-19)', async () => {
+    await signInAs('RECEPTIONIST')
+    aDoctor({ id: 'd1' })
+
+    const { status } = await create('p1', { patient_billing_id: 'b1', doctor_id: 'd1' })
+
+    expect(status).toBe(200)
+    expect(db.count('doctor_visit_settlements')).toBe(1)
+  })
 })
 
 describe('GET /api/patients/[id]/settlements', () => {
@@ -180,18 +201,20 @@ describe('POST /api/patients/[id]/settlements', () => {
   })
 
   /**
-   * Known defect — see BUGS.md #26. total_amount is a plain column in the live schema —
-   * no generated expression, no trigger — and this route never sets it. The row is left
-   * with a null fee even though visits and a per-visit rate were supplied, and the
-   * billing roll-up sums exactly that column.
+   * Was BUGS.md #26, the last path still open: `total_amount` is a plain column
+   * — no generated expression, no trigger — and this route never set it, so a
+   * fee priced here read as ₹0 on the patient's Overview.
    */
-  it.fails('should record total_amount as visits × rate', async () => {
-    await signInAs('ADMIN')
+  it('records total_amount as visits × rate, and who set it', async () => {
+    await signInAs('RECEPTIONIST', { userId: 'u-recep' })
     aDoctor({ id: 'd1' })
 
     await create('p1', { patient_billing_id: 'b1', doctor_id: 'd1', visit_count: 3, amount_per_visit: 1500 })
 
-    expect(Number(db.rows('doctor_visit_settlements')[0].total_amount)).toBe(4500)
+    expect(db.rows('doctor_visit_settlements')[0]).toMatchObject({
+      total_amount: 4500,
+      amount_set_by: 'u-recep',
+    })
   })
 })
 
