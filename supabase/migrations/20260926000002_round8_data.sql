@@ -53,7 +53,7 @@ begin
   loop
     insert into public.record_audit_log (entity_type, entity_id, patient_id, action, changes, summary, actor_name, actor_role)
     values (
-      'patient_charge', deleted.id, deleted.patient_id, 'delete',
+      'patient_charge', deleted.id, deleted.patient_id, 'deleted',
       jsonb_build_object('charge_type', deleted.charge_type, 'amount', deleted.amount, 'qty', deleted.qty, 'charge_date', deleted.charge_date),
       format('Round 8 clean-up: removed %s ₹%s — no payment behind it (client, 26 Sep)', deleted.charge_type, deleted.amount),
       'System (round 8 migration)', 'ADMIN'
