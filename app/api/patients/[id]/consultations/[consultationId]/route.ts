@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { canModify } from '@/lib/authz/ownership';
+import { canModify, isAdmin } from '@/lib/authz/ownership';
 import { requireBilling } from '@/lib/billing/authz';
 
 export async function PATCH(
@@ -31,8 +31,30 @@ export async function PATCH(
       );
     }
 
-    // Your own visit, unless you are the admin (§3.2 row 6).
-    const allowed = canModify(user, { created_by: consultation.created_by });
+    /**
+     * Your own visit, unless you are the admin — and, for the desk, only until
+     * its fee is paid (§3.2 row 6: "Doctor visit · own · locks when its fee is
+     * paid"). DELETE already refused a paid visit; an edit did not, so
+     * reception could move a paid visit to another doctor or purpose, leaving
+     * the fee that paid for it describing visits that no longer match.
+     */
+    let paid = false;
+    if (consultation.settlement_id) {
+      const { data: settlement } = await supabase
+        .from('doctor_visit_settlements')
+        .select('settled, deleted_at')
+        .eq('id', consultation.settlement_id)
+        .maybeSingle();
+      paid = settlement?.settled === true && !settlement?.deleted_at;
+    }
+
+    // Row 6 locks the visit *for the desk*; the admin may still correct it —
+    // the same as a paid fee, which is the admin's alone (Q-88).
+    const allowed = canModify(user, {
+      created_by: consultation.created_by,
+      locked: paid && !isAdmin(user),
+      lockReason: "This visit's fee has been paid. Only an admin can change it now.",
+    });
     if (!allowed.ok) {
       return NextResponse.json({ error: allowed.error, code: allowed.code }, { status: allowed.status });
     }

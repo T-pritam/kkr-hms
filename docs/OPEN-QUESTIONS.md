@@ -4,22 +4,51 @@ Everything still waiting on an answer, in one place. The PRD is [`PRD-v2.md`](PR
 
 **How to answer:** reply by ID, e.g. `Q-90: A`, `Q-91: as proposed`, or free text. After your answers, the PRD is updated and the questions move to its answer log.
 
-_Last updated 2026-09-24 · **0 open** · every CR built_
+_Last updated 2026-09-25 · **2 open** (Q-97, Q-98) · every CR built_
+
+**How the app works today, end to end:** [`APP-FLOW-PRD.md`](APP-FLOW-PRD.md). This file is only what is waiting on you.
 
 ---
 
-## Nothing is waiting on you
+## Waiting on you — round 6 (from the 2026-09-25 test audit)
 
-Rounds 1, 2 and 3 (Q-01 … Q-87) are all answered, and the answers are logged in [`PRD-v2.md` §9](PRD-v2.md#9-open-questions).
+The audit compared every rule in the code and the tests with the decisions in PRD-v2. These two are places where the written rule and the built behaviour disagree, and the decisions so far don't settle which is meant. Nothing is broken either way; I haven't changed either.
 
-The last round settled the patient's money for good:
+### Q-97 — Who may change a doctor's fee schedule rate?
 
-- Money collected separately for lab or medicine is **passed on** to the lab or pharmacy — not the hospital's income (Q-82).
-- A lab or medicine charge marked **Included** is **hospital income, not an expense**; it is recorded for the logs and to see what the patient used (Q-83).
-- A lab or medicine charge can now be **collected now**, **collected later** ("collect ₹x from the patient"), or **included** (Q-87).
-- The pharmacy bill attach stays as a **record only**, for a patient who wants the full bill; it touches no finance figure (Q-84).
+The fee schedule (Doctors ▸ ₹) holds one rate per visit purpose.
 
-So, for one stay: **Net = (total bill − passed on) − doctor fees − referral commission**, admin only.
+- **Today:** any receptionist may change any rate, including one an admin set. The app keeps who first set it and records who changed it last.
+- **PRD-v2 §3.2 row 14 says:** reception may change only its **own** rates.
+- **Why it's unclear:** Q-88 replaced the "whoever set it owns it" lock with an audit trail *for fees and commissions on a patient* — "we collect the data related to person edited/entered". It didn't mention the rate card.
+
+| | Answer |
+|---|---|
+| **A** *(recommended)* | Anyone at the desk may change any rate, as today — the same reasoning as Q-88, and a rate card is never "settled". |
+| **B** | Reception may change only rates it set; an admin's rate is read-only to reception. |
+
+### Q-98 — Should a doctor see Finances?
+
+- **Today:** the doctor's menu shows **Dashboard**, **Finances** and **Admin Panel**, but each page sends the doctor away (the Dashboard to Patients; Finances and the Admin Panel are admin-only). The Finances *data* is readable by a doctor.
+- **Why it's unclear:** Q-05 hid Finances from reception; Q-06 said the doctor "keeps payroll" but said nothing about Finances.
+
+| | Answer |
+|---|---|
+| **A** *(recommended)* | No. Remove Finances, the Admin Panel and the Dashboard from the doctor's menu, and close the Finances data to doctors too. |
+| **B** | Yes, read-only: a doctor opens Finances but cannot add expenses or pay out. The Admin Panel stays admin-only. |
+
+---
+
+## What changed on 2026-09-24 (round 5), in case you read the older notes
+
+The rules below **replace** what earlier rounds said.
+
+- **Lab & medicine** — *Included in the patient's payments* is now the hospital's **expense** (the lab bills us), shown as a clickable **Lab & Medicine** line in Finances ▸ Expenses and a block on the patient's Overview. *Paid directly to the lab* records **nothing at all**. There is no separate lab or medicine payment any more (Q-82, Q-83, Q-86, Q-87 reversed).
+- **Doctor fees and referral commissions write no ledger entry.** The admin hands the money over directly; the fee row records who paid it, who carried the cash and how. Finances counts them as money out on the day they are paid.
+- **Given by** is a user picker on both, and each of the amount, the status and the carrier carries the name of whoever last changed it.
+- Once a fee or commission is **paid**, reception can change nothing on it — every field, not just the amount (Q-88, enforced in full since the 2026-09-25 audit).
+
+For one stay: **Net = total bill − (doctor fees + referral commission + lab & medicine included)**, admin only.
 
 ---
 
@@ -43,17 +72,15 @@ All twelve requirements are done, in three phases on 2026-09-23:
 | | What |
 |---|---|
 | ✅ Live on `main` | **Reqs 9, 11, 12** (CR-11, CR-12, CR-14, CR-15, CR-16) · **reqs 1, 5, 6, 8** (CR-01 permissions on the server, CR-05 one ledger log, CR-06 closing per row, CR-08 the day-based ledger retired) · **reqs 2, 3, 4** (CR-02 petty cash, CR-03 advances at the desk, CR-04 reception pricing and payouts, CR-13 one payout path) |
-| 🟡 On the branch | **Reqs 7, 10** (CR-07 admin expenses are general expenses, CR-10 the Finances Overview on a cash basis) — `feature/v2-ledger-desk-finance`, migration applied |
+| ✅ Live on `main` | **Reqs 7, 10** (CR-07 admin expenses are general expenses, CR-10 the Finances Overview on a cash basis), and rounds 4 and 5 |
 
 Only **CR-17** is still parked, by your own answer to Q-74: a returning patient is registered again for now.
 
 **Round 4 (2026-09-24)** answered six more, from using the app: Q-88 (who may change a fee or
-commission — replaces Q-20), Q-89 (an admin's correction amends the ledger in place), Q-90 (the
+commission — replaces Q-20), Q-89 (an admin's correction amends the ledger in place — moot since 2026-09-24, when payouts left the ledger), Q-90 (the
 doctor visit report lives on each doctor's record), Q-91 (a dead session goes to the login page),
 Q-92 (the petty cash top-up form) and Q-93 (show who is signed in).
 
-**Worth a look when you next use it**, since these change what the screens say:
+**Decided but not built yet** — raise it and it's next:
 
-- The Finances **Overview is cash-basis now**. A doctor fee or commission counts as money out when it is *paid*, not when it is priced — so profit compares like with like for the first time. What is priced and unpaid is listed under **Still to pay** on the Expenses tab.
-- The **ledger no longer takes expenses**. The desk spends from **Petty cash**; the admin records a **general expense**, which now needs a reason and keeps its payment mode and author.
-- An **admin's payout is born Closed**. Correcting a settled amount no longer needs a reopen — the admin edits it and the ledger row follows (Q-89) — but *reversing* one still does, because deleting a debit is a different act from restating it.
+- **A screen for visit purposes** (add, rename, retire, default fee). Q-72 said "visit purposes now", and the server already allows admin and reception to do it, but no page does, so the list is stuck at what was set up at the start.

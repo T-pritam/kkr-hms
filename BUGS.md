@@ -605,6 +605,15 @@ Q-19 lets reception price and pay out doctor fees, and `create-manual`, `merge`,
 This route still checked for ADMIN by hand, and its tests enshrined that. It now uses the
 same capabilities as its siblings.
 
+### ✅ #67 — RESOLVED — a paid doctor visit could still be edited by the desk
+**Where:** `app/api/patients/[id]/consultations/[consultationId]/route.ts` (PATCH)
+**Tests:** `tests/api/patients/consultations.test.ts`
+
+PRD v2 §3.2 row 6: a doctor visit locks for reception once its fee is paid. DELETE enforced
+it; PATCH checked only ownership, so reception could move a paid visit to another doctor or
+purpose, leaving the fee row describing visits that no longer matched. PATCH now refuses the
+desk with 409 `ENTRY_LOCKED`; the admin may still correct it.
+
 ---
 
 ## Observations that are not bugs (documented, not failing)

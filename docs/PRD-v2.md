@@ -6,9 +6,10 @@
 | **Doc type** | Change-set PRD: target behaviour + build tracker. The as-built description of today's app stays in [`PRD.md`](PRD.md) (the baseline). |
 | **Baseline code** | `main` @ `5f07acf` (2026-09-17) |
 | **Requirements source** | Client requirements 1–11 (2026-09-21) and requirement 12, patient money + patient dashboard (2026-09-22, clarified the same day). Each is quoted at the top of its CR. |
-| **Status** | Rounds 1 – 4 answered (2026-09-22 / 24). **Nothing is open** ([`OPEN-QUESTIONS.md`](OPEN-QUESTIONS.md)), and **every CR is built** — CR-01 … CR-19, less CR-17 (dropped, Q-74). |
-| **Built** | Phases 1 and 2 are live on `main`, with their migrations applied. Phase 3 (CR-07, CR-10) is on `feature/v2-ledger-desk-finance`; its migration is applied (§8.4). |
-| **Last updated** | 2026-09-23 |
+| **Status** | Rounds 1 – 5 answered (2026-09-22 / 24); round 6 has **2 open** (Q-97, Q-98, in [`OPEN-QUESTIONS.md`](OPEN-QUESTIONS.md)). **Every CR is built and live** — CR-01 … CR-19, less CR-17 (dropped, Q-74). |
+| **Built** | Everything is live on `main` with its migrations applied, including round 5 (2026-09-24). |
+| **How the app works now** | **[`APP-FLOW-PRD.md`](APP-FLOW-PRD.md)** — the current-state flow map, module by module. **This** document is the decision record: why each rule exists and what the client said. Rules the client reversed on 2026-09-24 are ~~struck through~~ here with what replaced them. |
+| **Last updated** | 2026-09-25 |
 
 ## How to use this doc
 
@@ -73,8 +74,9 @@
  A payment and its ledger entry drift apart             One record: saved, edited, deleted together       [built]
  Charges drive a bill total and a "Balance"             Charges are internal. Total bill = payments received;
    (plus a base package with "included" flags)            expenses = doctor fees + referral commission
+                                                          + lab/medicine marked Included (2026-09-24)
  Payments have no type                                  Every payment labelled: Advance · Regular · Discharge ·
-                                                          Lab · Medicine · Misc · Registration
+                                                          Misc · Registration
  Numbers spread over several patient tabs               Patient Overview tab: total bill, what it costs,
                                                           expenses, net, services used (internal)   [built]
  Doctor pricing, referral commission, payouts: admin    Reception too (own entries only)
@@ -93,10 +95,10 @@
 | [CR-04](#cr-04--reception-doctor-visit-pricing-referral-commission--payouts-req-4) | Reception: doctor pricing, referral commission & payouts | 4 | P2 | CR-01, CR-13 | — | ✅ |
 | [CR-05](#cr-05--ledger-log-all-entries-simple-fetching--ux-req-5) | Ledger log: all entries, simpler fetching & UX | 5 | P0 | CR-01 | — | ✅ |
 | [CR-06](#cr-06--closing-entries-req-6) | Closing: bulk close + "Not closed" tab | 6 | P1 | CR-05 | — | ✅ |
-| [CR-07](#cr-07--admin-expenses-are-general-expenses-req-7) | Admin expenses = general expenses | 7 | P2 | — | deploy | 🟡 |
+| [CR-07](#cr-07--admin-expenses-are-general-expenses-req-7) | Admin expenses = general expenses | 7 | P2 | — | — | ✅ |
 | [CR-08](#cr-08--retire-the-day-based-daily-ledger-req-8) | Retire the day-based ledger (day close, shift settlement) | 8 | P1 | CR-05, CR-06 | — | ✅ |
 | [CR-09](#cr-09--remove-the-base-package-req-9--merged-into-cr-15) | Remove the base package | 9 | — | — | — | → CR-15 |
-| [CR-10](#cr-10--admin-finance-restructure-req-10) | Admin finance restructure (log views) | 10 | P2 | CR-02, CR-05 – CR-07 | deploy | 🟡 |
+| [CR-10](#cr-10--admin-finance-restructure-req-10) | Admin finance restructure (log views) | 10 | P2 | CR-02, CR-05 – CR-07 | — | ✅ |
 | [CR-11](#cr-11--registration-fee-at-registration-req-11) | Registration fee at registration | 11 | **P0** | — | — | ✅ |
 | [CR-12](#cr-12--a-payment-and-its-ledger-entry-stay-one-record) | A payment and its ledger entry stay one record | gap | P0 | — | — | ✅ |
 | [CR-13](#cr-13--one-payout-path) | One payout path for doctor fees & referral commission | gap | P2 | CR-05 | — | ✅ |
@@ -104,8 +106,8 @@
 | [CR-15](#cr-15--patient-money-income-expenses-lab-and-medicine-included-or-not-req-12) | Patient money: charges internal; lab & medicine excluded/included; payment labels; package removed | 12, 9 | P1 | CR-12 | — | ✅ |
 | [CR-16](#cr-16--patient-overview-dashboard-req-12) | Patient Overview (dashboard) | 12 | P1 | CR-15 | — | ✅ |
 | [CR-17](#cr-17--a-new-bill-for-each-stay-q-54) | A new bill for each stay | Q-54 | — | — | dropped for now (Q-74) | ❌ |
-| [CR-18](#cr-18--a-doctors-visits-and-what-was-paid-for-them-q-90) | A doctor's visits and what was paid for them | Q-90 | P2 | CR-13 | deploy | 🟡 |
-| [CR-19](#cr-19--staying-signed-in-and-knowing-who-you-are-q-91-q-93) | Staying signed in, and knowing who you are | Q-91, Q-93 | **P0** | — | deploy | 🟡 |
+| [CR-18](#cr-18--a-doctors-visits-and-what-was-paid-for-them-q-90) | A doctor's visits and what was paid for them | Q-90 | P2 | CR-13 | — | ✅ |
+| [CR-19](#cr-19--staying-signed-in-and-knowing-who-you-are-q-91-q-93) | Staying signed in, and knowing who you are | Q-91, Q-93 | **P0** | — | — | ✅ |
 
 Priorities are from Q-56 and Q-76 ("as proposed"), with CR-11 at P0 from the client. **No CR is waiting on a question**: rounds 1–3 are all answered (§9).
 
@@ -132,13 +134,14 @@ Priorities are from Q-56 and Q-76 ("as proposed"), with CR-11 at P0 from the cli
 |---|---|---|
 | ✅ **Live** | `main` | CR-11, CR-12, CR-14 (registration fee, payment ⇄ ledger, IST dates) · CR-15, CR-16 (patient money, Overview) · **phase 1**: CR-01, CR-05, CR-06, CR-08 · **phase 2**: CR-02, CR-03, CR-04, CR-13 |
 | ✅ **Live** | `main` | …and phase 3: CR-07 admin expenses are general expenses · CR-10 the Finances restructure, on a cash basis |
-| 🟡 **Round 4** | `feature/v2-fixes-round-4` | CR-18 the doctor visit report · CR-19 staying signed in and who is signed in · the Q-88/Q-89 rule change in CR-04 and CR-13 · reception reaching the advance log · the petty cash top-up form |
+| ✅ **Live** | `main` | Round 4: CR-18 the doctor visit report · CR-19 staying signed in and who is signed in · the Q-88 rule change in CR-04 and CR-13 · reception reaching the advance log · the petty cash top-up form |
+| ✅ **Live** | `main` | Round 5 (2026-09-24): lab & medicine become an expense or nothing · payouts leave the ledger · a "given by" user picker, with who changed the amount, the status and the carrier |
 
 **Every change request is built.** What is left is deploying and using it.
 
-- 58 test files pass: 1,695 tests, plus 24 that record still-open bugs
+- 61 test files: 1,800 tests pass, plus 14 that record still-open bugs (2026-09-25 audit — see `APP-FLOW-PRD.md` §12)
 - typecheck clean · `next build` passes
-- BUGS resolved along the way: #19 (half), #21, #33 (gone with Verify), #43, #49, #50, #55
+- BUGS resolved along the way: #19, #21, #26, #33 (gone with Verify), #43, #49, #50, #55, #64, #65, #66, #67; #53 and #56 re-classified as decided behaviour
 
 ---
 
@@ -151,7 +154,7 @@ Priorities are from Q-56 and Q-76 ("as proposed"), with CR-11 at P0 from the cli
 | **Entry** | Any row a person creates: a payment, charge, OPD receipt, expense, advance, price, top-up… |
 | **Owner** | The user who created the entry. A **price** has no owner: see rows 15 and 16 (Q-88 replaced Q-20). |
 | **Open / Closed** | Status of a closable ledger entry. Admin moves entries from Open to Closed in bulk (CR-06). |
-| **Ledger** | The log of money received and paid out: patient payments, registration fees, OPD receipts, doctor and referral payouts. Not day-based. Desk spending isn't in it (Q-07 = A). |
+| **Ledger** | The log of money **received** at the desk: patient payments, registration fees, OPD receipts. Not day-based. Desk spending isn't in it (Q-07 = A), and ~~doctor and referral payouts~~ aren't either since 2026-09-24 — the admin pays those directly. |
 | **Petty cash** | One shared pool of cash the admin gives the desk. Desk expenses and advances come out of it. A log only, with no status. |
 | **Top-up** | Petty cash IN: admin → a receptionist. "Given to" is for information only. |
 | **General expense** | An expense the admin pays. Never petty cash. |
@@ -197,12 +200,12 @@ canModify(user, entry):
 | 14 | Doctor fee schedule rate | own | — |
 | 15 | Doctor fee price on a patient | **any** unsettled fee, whoever entered it (Q-88) | it is **settled** — then admin only, and reception can do nothing at all |
 | 16 | Referral commission, and the referral person | **any** unsettled one, whoever entered it (Q-88) | it is **settled** — then admin only |
-| 17 | Doctor fee / referral payout made by reception | own | Closed (Q-71) |
-| 18 | Lab / medicine included-or-excluded (CR-15) | admin or any receptionist, when saving or later (Q-65) | once **Collected**: its amount and status are fixed until its payment is deleted (Q-79) |
-| 18a | Lab/Medicine payment (a collected charge) | own, but the amount comes from the charge | Closed |
+| 17 | ~~Doctor fee / referral payout made by reception~~ | ~~own~~ | ~~Closed (Q-71)~~ → **retired 2026-09-24**: a payout writes no ledger row, so rows 15 and 16 govern it |
+| 18 | Lab / medicine included-or-not (CR-15) | admin or any receptionist, when saving or **at any time** (Q-65) | **never** — ~~once Collected (Q-79)~~ there is no payment behind it any more (2026-09-24) |
+| 18a | ~~Lab/Medicine payment (a collected charge)~~ | — | **retired 2026-09-24**: there is no lab/medicine payment |
 | 19 | General expense | never (admin's) | — |
 
-**Hidden from reception (Q-05):** the general expenses log · Finances Overview (revenue, profit) · payroll (salary, present days, payslips) · the employee register · the Admin Panel. **Shown:** the ledger (all entries, incl. payouts) · the petty cash log · advances (without salary figures) · the doctor fee schedule.
+**Hidden from reception (Q-05):** the general expenses log · Finances Overview (revenue, profit) · payroll (salary, present days, payslips) · the employee register · the Admin Panel. **Shown:** the ledger (all entries) · the petty cash log · advances (without salary figures) · the doctor fee schedule.
 
 **Other roles (Q-06):** Doctor and Nurse get the same ledger access as reception. Lab technician gets no ledger or payment access. Doctor loses "verify" (closing is admin-only) and keeps payroll. *None of these roles has a login today*; the rules are there for when they do.
 
@@ -219,15 +222,15 @@ canModify(user, entry):
 | Advance paid from petty cash | — | OUT | — | no | Reception |
 | Petty cash top-up | — | IN, "given to …" | Q-69 (bulk line) | no | Admin |
 | General expense | — | — | yes | no | Admin |
-| Doctor fee payout | OUT | — | — | admin: born Closed (Q-25) · reception: Open (Q-71) | Admin, Reception (Q-19) |
-| Referral commission payout | OUT | — | — | as above | Admin, Reception (Q-19) |
-| Lab / Medicine payment (charge **Excluded**, collected now) | IN, label Lab / Medicine | — | — | yes | Reception, Admin (the person collecting) |
+| Doctor fee payout | ~~OUT~~ **— (2026-09-24)** | — | — | — (the fee row is the record) | Admin, Reception (Q-19) |
+| Referral commission payout | ~~OUT~~ **— (2026-09-24)** | — | — | — (the bill is the record) | Admin, Reception (Q-19) |
+| ~~Lab / Medicine payment (charge Excluded, collected now)~~ | — | — | — | — | **retired 2026-09-24**: *Included* is a hospital expense derived from the charge; *paid directly* is not recorded |
 | Advance paid by admin | — | — | — | — | Admin; stays in Employees → Advance log |
 | Salary settlement | — | — | — | — | Admin; stays in Employees |
 
 Balances **[D]**:
 - **Petty cash balance** = Σ top-ups − Σ petty cash OUT. Patient money never enters it (Q-08). It may go negative; the next top-up brings it back (Q-10).
-- **Cash collected, not yet closed** = Σ Open ledger IN paid in cash − Σ Open ledger OUT paid in cash (payouts reception makes from the day's collections, if Q-71 = A). Shown on the Not closed tab.
+- **Cash collected, not yet closed** = Σ Open ledger IN paid in cash (− the 6 legacy expense debits, if any are open). Shown on the Not closed tab. ~~Payouts reception makes from the day's collections (Q-71 = A)~~ no longer touch the ledger (2026-09-24).
 
 ### 3.4 Status of a closable ledger entry (Req 6)
 
@@ -268,7 +271,7 @@ Details, a worked example and the open points are in CR-15.
 Each CR follows the same shape: client text → today → target → code touched → acceptance criteria (tick as built). "Today" describes the code at `5f07acf`.
 
 ### CR-01 — Own-row rule, view-all, closed lock (Req 1)
-**Priority** P0 · **Status** 🟡 built on `feature/v2-ledger-desk-finance` (phase 1), not deployed
+**Priority** P0 · **Status** ✅ live on `main`
 
 > *Admin can do everything. Receptionists can view everything the admin adds, but cannot edit entries created by the admin or by other receptionists. Receptionists can edit their own entries, except entries that are status-based and have been marked closed. Closed entries are not editable by receptionists.*
 
@@ -296,7 +299,7 @@ Each CR follows the same shape: client text → today → target → code touche
 - [ ] AC-01.8 A Lab technician can't record a payment. ✅ *on the branch*
 
 ### CR-02 — Petty cash log (Req 2, 7)
-**Priority** P1 · **Status** 🟡 built on `feature/v2-ledger-desk-finance` (phase 2), not deployed
+**Priority** P1 · **Status** ✅ live on `main`
 
 > *All receptionist expenses (e.g., expenses added in the ledger and employee advances) are paid from petty cash that the admin gives to receptionists. Petty cash is a single shared amount used by all receptionists across shifts. Add a separate petty cash log showing both credits (admin giving cash) and debits (receptionist expenses), like a bank statement: credit/debit, date, and reason. This log has no status. It is only a log, visible to both admin and receptionists. For each credit, record which receptionist it was given to. This is for information only (so others know who received it) and has no other effect.*
 
@@ -327,7 +330,7 @@ Each CR follows the same shape: client text → today → target → code touche
 - [x] AC-02.7 An opening balance can be entered once, ever (a partial unique index, and a 409).
 
 ### CR-03 — Employee advance for reception (Req 3)
-**Priority** P1 · **Status** 🟡 built on `feature/v2-ledger-desk-finance` (phase 2), not deployed
+**Priority** P1 · **Status** ✅ live on `main`
 
 > *Add an Employee Advance section to the receptionist view so receptionists can pay advances to employees. Receptionists must NOT see other employee details such as salary, present days, or remaining amount to settle. Advance details must show which user gave the advance.*
 
@@ -351,7 +354,7 @@ Each CR follows the same shape: client text → today → target → code touche
 - [x] AC-03.5 The owner edits or deletes an advance, the petty cash debit changes with it, and both are locked once the month is settled.
 
 ### CR-04 — Reception: doctor visit pricing, referral commission & payouts (Req 4)
-**Priority** P2 · **Status** 🟡 built on `feature/v2-ledger-desk-finance` (phase 2), not deployed
+**Priority** P2 · **Status** ✅ live on `main`
 
 > *Receptionists can add doctor visit pricing, referral commission, and related data. Rule #1 (permissions) applies here.* The Q-19 answer adds: *"they can add fees to doctor and mark them paid also".*
 
@@ -365,14 +368,14 @@ Each CR follows the same shape: client text → today → target → code touche
 - [P] Store `amount_set_by` on fee rows and `referral_commission_set_by` on the bill. Save the fee schedule one rate at a time, so each rate keeps its owner. Payouts go through the single payout path (CR-13).
 
 **Acceptance criteria**
-- [x] AC-04.1 Reception sets a referral commission and becomes its owner (`referral_commission_set_by`); an admin-set one is read-only to them.
-- [x] AC-04.2 Reception prices a fee row and becomes its owner (`amount_set_by`). A paid fee is locked until it is un-paid.
-- [x] AC-04.3 Admin-set prices are read-only to reception (403 `NOT_YOUR_ENTRY`).
-- [x] AC-04.4 Reception pays a doctor fee. It appears in the Ledger as OUT, Open; an admin's is born Closed.
+- [x] AC-04.1 Reception sets a referral commission; `referral_commission_set_by` records it. ~~An admin-set one is read-only to them~~ → Q-88: any unsettled commission is the desk's.
+- [x] AC-04.2 Reception prices a fee row; `amount_set_by` records it. A paid fee is the admin's alone — every field (Q-88).
+- [x] ~~AC-04.3 Admin-set prices are read-only to reception (403 `NOT_YOUR_ENTRY`).~~ → replaced by Q-88: unsettled = anyone at the desk; settled = admin only (403 `ADMIN_ONLY`).
+- [x] AC-04.4 Reception pays a doctor fee. ~~It appears in the Ledger as OUT, Open~~ → since 2026-09-24 it writes no ledger row; the fee row records who paid, who carried the cash and how.
 - [x] AC-04.5 Q-72: reception manages visit purposes, manual fee rows and merges. Manual *ledger* rows and merging the employee ledgers come later.
 
 ### CR-05 — Ledger log: all entries, simple fetching & UX (Req 5)
-**Priority** P0 · **Status** 🟡 built on `feature/v2-ledger-desk-finance` (phase 1), not deployed
+**Priority** P0 · **Status** ✅ live on `main`
 
 > *The ledger currently shows only the logged-in user's entries. It should show all entries, so others don't have to guess whether a payment was received. The current ledger data fetching and UX are too complex. Simplify them.*
 
@@ -383,9 +386,9 @@ Each CR follows the same shape: client text → today → target → code touche
 
 **Target** (all decided)
 - [D] Everyone with ledger access sees all entries (Q-05, Q-06). The ledger holds:
-  - patient payments, each with its label (Advance, Regular, Discharge, Misc, Registration, and the automatic Lab and Medicine payments: CR-15)
+  - patient payments, each with its label (Advance, Regular, Discharge, Misc, Registration)
   - OPD receipts
-  - doctor, referral and lab/pharmacy payouts
+  - ~~doctor, referral and lab/pharmacy payouts~~ and ~~the automatic Lab and Medicine payments~~ — gone since 2026-09-24
 
   Desk spending isn't in it (Q-07 = A).
 - [D] **Defaults (Q-22):**
@@ -406,7 +409,7 @@ Each CR follows the same shape: client text → today → target → code touche
 - [x] AC-05.6 A payment added on a patient's Payments tab shows up for every user without a reload (one realtime subscription).
 
 ### CR-06 — Closing entries (Req 6)
-**Priority** P1 · **Status** 🟡 built on `feature/v2-ledger-desk-finance` (phase 1), not deployed
+**Priority** P1 · **Status** ✅ live on `main`
 
 > *Remove the per-user, per-day "day close" done by the admin. Instead, list all relevant rows with full details. The admin selects rows in bulk and marks them closed. No per-user or per-day grouping. Add a separate tab showing rows that are not yet marked closed. The current approach is too complex to manage.*
 
@@ -435,7 +438,7 @@ Each CR follows the same shape: client text → today → target → code touche
 - [x] AC-06.6 The go-live migration marked rows as agreed in Q-29: on production, 15 closed (14 verified + the one closed day) and 17 open.
 
 ### CR-07 — Admin expenses are general expenses (Req 7)
-**Priority** P2 · **Status** 🟡 built on `feature/v2-ledger-desk-finance` (phase 3), not deployed
+**Priority** P2 · **Status** ✅ live on `main`
 
 > *Admin expenses are general expenses and are NOT related to petty cash. Petty cash applies to receptionists only.*
 
@@ -453,7 +456,7 @@ Each CR follows the same shape: client text → today → target → code touche
 - [x] AC-07.3 Q-69 = A: petty cash reaches the Overview's expense breakdown as one line a month, "Petty cash spent", linking to the log.
 
 ### CR-08 — Retire the day-based daily ledger (Req 8)
-**Priority** P1 · **Status** 🟡 built on `feature/v2-ledger-desk-finance` (phase 1), not deployed
+**Priority** P1 · **Status** ✅ live on `main`
 
 > *Fix the daily ledger: it should no longer be day-based, per point 6.*
 
@@ -498,7 +501,7 @@ Decided for the removal (all in CR-15):
 - **Q-35:** the patient-facing PDF is revisited in Q-67, since charges are now internal.
 
 ### CR-10 — Admin finance restructure (Req 10)
-**Priority** P2 · **Status** 🟡 built on `feature/v2-ledger-desk-finance` (phase 3), not deployed
+**Priority** P2 · **Status** ✅ live on `main`
 
 > *Given the changes above, the admin finance section and its sub-sections will change significantly. Remove the daily ledger view. Instead, show log-style views for ledger, petty cash, and expenses.*
 
@@ -506,7 +509,7 @@ Decided for the removal (all in CR-15):
 - [D] No daily ledger view.
 - [D] **Navigation (Q-38 = A):** Ledger, Petty cash and Employee Advance are menu items shared with reception. Finances keeps Overview · Expenses · Settlements.
 - [D] **Overview (Q-36), cash basis:**
-  - **Money in** = patient payments (all labels, incl. registration and the automatic lab/medicine payments) + OPD receipts.
+  - **Money in** = patient payments (all labels, incl. registration) + OPD receipts.
   - **Money out** = general expenses + desk (petty cash) expenses + salary for settled months + doctor and referral payouts actually made (read from the settlement rows, not the ledger) + **lab and medicine marked Included** + the frozen legacy ledger expenses.
   - One deliberate exception to the cash basis: a lab/medicine amount counts from the day the charge is dated, which may be before the lab is paid. The patient's money has already come in, so the obligation is real and belongs beside it.
   - Advances count once, inside salary. Top-ups aren't expenses.
@@ -532,7 +535,7 @@ Decided for the removal (all in CR-15):
 | Tests | `tests/api/finances/general-expenses.test.ts` (15) and the Overview rewritten figure by figure |
 
 ### CR-11 — Registration fee at registration (Req 11)
-**Priority** **P0** · **Status** 🟡 built on the branch · deploy per §8.4
+**Priority** **P0** · **Status** ✅ live on `main`
 
 > *The registration fee is set in the registration catalogue. When a patient is admitted or created, auto-fill this amount and show a checkbox to mark it as collected, with a payment mode selection (cash or UPI). Record it in the ledger as a payment/installment received. Registration fee is income; all other charges are for services used.*
 
@@ -565,7 +568,7 @@ Decided for the removal (all in CR-15):
 - [ ] AC-11.8 Checked on production after deploy (§8.4).
 
 ### CR-12 — A payment and its ledger entry stay one record
-**From gaps G-01 … G-08** · **Priority** P0 · **Status** 🟡 built on the branch · deploy per §8.4
+**From gaps G-01 … G-08** · **Priority** P0 · **Status** ✅ live on `main`
 
 **Decided:** Q-48 = yes.
 
@@ -577,7 +580,7 @@ Decided for the removal (all in CR-15):
 - `patient` and `registration` are no longer ledger sources a user can pick.
 - `payment:write` capability: Admin, Reception, Doctor and Nurse, but not Lab technician (G-08, for payments).
 
-**Labels (CR-15):** built on `feature/v2-patient-money` with a follow-up migration (`20260923000001`) rather than by amending `20260922000001`. `kind` now holds the label (regular, advance, discharge, misc, lab, medicine, registration), and existing rows become `regular`.
+**Labels (CR-15):** built on `feature/v2-patient-money` with a follow-up migration (`20260923000001`) rather than by amending `20260922000001`. `kind` now holds the label (regular, advance, discharge, misc, registration — ~~lab, medicine~~ removed 2026-09-24), and existing rows become `regular`.
 
 **Acceptance criteria**
 - [x] AC-12.1 Changing a payment from ₹5,000 to ₹500 makes its ledger row ₹500 too; mode, reference, date and remarks follow.
@@ -587,7 +590,7 @@ Decided for the removal (all in CR-15):
 - [ ] AC-12.5 Checked on production after deploy (§8.4).
 
 ### CR-13 — One payout path
-**From gaps G-09 … G-12** · **Priority** P2 · **Status** 🟡 built on `feature/v2-ledger-desk-finance` (phase 2), not deployed
+**From gaps G-09 … G-12** · **Priority** P2 · **Status** ✅ live on `main`
 
 - [D] ~~Q-37 = B: whichever screen a doctor fee or referral commission is paid from, it writes exactly one ledger OUT.~~ **Reversed 2026-09-24:** a payout writes **no ledger entry at all**. The client: *"they take money directly from the admin and handover to the concerned person directly so there is no ledger entry required (so ledger has no out payment)."* The ledger is a receipts book — money in, plus 6 frozen legacy expense debits. The **settlement row is the record**, and Finances counts money out by reading those rows. One path is still one path: every screen goes through `lib/billing/payouts.ts`.
 - [D] Because nothing else records a payout now, each row carries **who last changed each of the three things that matter** — the amount, the status (paid / not paid), and who handed the money over. The client, on being shown a vaguer "priced by / edited by" pair: *"keep the name who changed 3 of the most important fields like amount, status and given by only"*.
@@ -595,15 +598,15 @@ Decided for the removal (all in CR-15):
 - Un-paying is now just un-paying: with no ledger row there is nothing to reopen first, so the `ENTRY_LOCKED` refusal is gone — it used to make an admin reopen a closed ledger entry before reversing their own payout.
 - [D] Q-37 (b): paying a different amount than priced updates the fee total to the amount paid.
 - [D] Reception can pay out too (Q-19).
-- [D] Doctor fees and the referral commission are always the patient's expenses, paid from the patient's money: a ledger OUT "for sure" (clarification, point 2).
-- [D] Q-81: paying one writes a ledger OUT (a), the unpaid ones show in the Expenses tab as pending (b), and a patient's figures count them as soon as they're priced (c).
-- [D] Q-71 = A: reception pays from the day's collections, and the OUT is born Open (closed at ⑦).
+- [D] Doctor fees and the referral commission are always the patient's expenses, paid from the patient's money (clarification, point 2). ~~A ledger OUT "for sure"~~ → no ledger entry (2026-09-24).
+- [D] Q-81: ~~paying one writes a ledger OUT (a)~~ paying one marks the row paid and Finances counts it from the row (a, revised 2026-09-24); the unpaid ones show in the Expenses tab as pending (b); a patient's figures count them as soon as they're priced (c).
+- [D] ~~Q-71 = A: reception pays from the day's collections, and the OUT is born Open (closed at ⑦).~~ → moot since 2026-09-24: the admin hands the money over directly.
 
 **Acceptance criteria**
-- [x] AC-13.1 Paying from the patient tab creates a ledger OUT — it created none before.
-- [x] AC-13.2 Un-paying removes that ledger OUT, unless it is already closed (then the admin reopens it first).
+- [x] AC-13.1 Paying from any screen goes through the one payout path (`lib/billing/payouts.ts`). ~~It creates a ledger OUT~~ → none since 2026-09-24.
+- [x] AC-13.2 Un-paying reverses the payout on the row and records who did it. ~~Removes the ledger OUT, unless closed~~ → there is no ledger row to remove.
 - [x] AC-13.3 Paying ₹2,500 against a priced ₹3,000 leaves the fee total at ₹2,500, and the bill recalculates.
-- [x] AC-13.4 Q-71 = A: a payout by reception comes from the day's collections and is born Open.
+- [x] ~~AC-13.4 Q-71 = A: a payout by reception comes from the day's collections and is born Open.~~ → moot (2026-09-24).
 
 **What phase 2 built** (CR-02, CR-03, CR-04, CR-13 — branch `feature/v2-ledger-desk-finance`)
 
@@ -617,14 +620,14 @@ Decided for the removal (all in CR-15):
 | Tests | `tests/api/petty-cash/petty-cash.test.ts` (21) and `tests/api/employees/advance-from-desk.test.ts` (14), plus the permission and payout tests updated across billing, finances, fee schedule and employees |
 
 ### CR-14 — India (IST) dates everywhere
-**From gap G-30** · **Priority** P1 · **Status** 🟡 built on the branch
+**From gap G-30** · **Priority** P1 · **Status** ✅ live on `main`
 
 **Decided:** Q-49 = yes. **Built:** `lib/dates/ist.ts`. Every "today" and "this month" default that used the UTC date now uses Asia/Kolkata: 32 call sites across the payments, ledger, finance, payroll, charge, patient and pharmacy code, plus the two form helpers that used the browser's date. The patients report's "last month" range no longer starts a day early. Tests: `tests/unit/ist-date.test.ts`.
 
 - [x] AC-14.1 At 01:30 IST, every form and API defaults to that day's IST date.
 
 ### CR-15 — Patient money: income, expenses, lab and medicine included or not (Req 12)
-**Priority** P1 · **Status** 🟡 built on `feature/v2-patient-money`, not deployed (§8.4) · every question answered (Q-78 – Q-87, §9.1)
+**Priority** P1 · **Status** ✅ live on `main` · every question answered (Q-78 – Q-87, §9.1)
 
 > Client, 2026-09-22, clarification (verbatim):
 > 1. *"Total patient bill: (currentl flow no one pre-decided) admin decided bit by bit and ask the receptionist to take the amount so and so .so the patient total bill = total payment + regt fee(if included then yes or else no)."*
@@ -650,12 +653,11 @@ Decided for the removal (all in CR-15):
    - **[D] Q-83, reversed 2026-09-24.** A lab or medicine charge marked **Included** *is* an expense. The patient's regular payments covered it, and the lab or pharmacy bills the hospital, so the money is the hospital's to pay out. It's worked out from the charges, never stored: Finances → Expenses gains a **Lab & medicine** line, clickable, listing each patient behind it. The same amounts show on the patient's Overview in a block admin *and reception* can change at any time.
    - **[D] Q-82, reversed 2026-09-24.** An amount the patient **paid the lab directly** is **not recorded at all** — no charge, no payment, no ledger row. The hospital never handled that money. The save dialog says so before the charge is discarded.
    - Gone with the reversal: the Lab and Medicine payment labels, the `to_collect` and `collected` charge states, the whole *Collect now* flow and `collected_installment_id`.
-5. **Only lab and medicine charges ask** "included or not?" (point 3):
-   - The question is asked when the charge is saved, as an alert, defaulting to **Excluded** (Q-59), with three answers (Q-87):
-   - **Excluded — collect now:** the desk takes the amount there and then. The app adds a separate payment tagged **Lab** or **Medicine**, with an automatic note, and it shows in the Ledger as "12/26 Ramesh Kumar (Medicine)".
-   - **Excluded — collect later:** nothing is collected yet. The charge reads *"Excluded — collect ₹9,000 from the patient"* until someone uses **Collect now** (Q-87).
-   - **Included:** nothing extra is collected; the regular payments already cover it.
-   - A charge saved without an answer (an older client, or the API) keeps **no status** and asks nothing; it can be decided at any time from the Charges tab (Q-87).
+5. **Only lab and medicine charges ask** "included or not?" (point 3), when the charge is saved, as an alert — **two answers since 2026-09-24**:
+   - **Included in the patient's payments:** nothing extra is collected; the charge is saved and the amount is the hospital's **expense** (the lab bills us).
+   - **Paid directly to the lab / pharmacy:** **nothing is saved at all**; the dialog says so.
+   - ~~Excluded — collect now (a separate Lab/Medicine payment) · Excluded — collect later~~ — retired with the separate payment (Q-59's "default Excluded" and Q-87's third answer went with them).
+   - A charge saved without an answer (an older client, or a forwarded quote) keeps **no status** — *not decided*, nobody's expense yet — and can be decided at any time from the Charges tab or the Overview (Q-87).
 6. **Which charges:**
    - **Lab** = the catalogue's new **Lab** category (the "Lab Test" item moved there).
    - **Medicine** = the **Pharmacy** category ("Medication").
@@ -673,8 +675,8 @@ Decided for the removal (all in CR-15):
 | Medicine ₹9,000, **paid directly to the pharmacy** | — | — | — | — *(nothing is recorded at all, Q-82)* |
 | Lab ₹3,000, **Included**: covered by the payments above | 3,000 | — | 3,000 *(the hospital owes the lab, Q-83)* | — |
 | Discharge payment | 5,000 | 5,000 | — | IN · "… (Discharge)" |
-| Doctor fees (Dr Rao) | 6,000 | — | 6,000 | OUT when paid |
-| Referral commission | 2,000 | — | 2,000 | OUT when paid |
+| Doctor fees (Dr Rao) | 6,000 | — | 6,000 | — *(paid by the admin directly)* |
+| Referral commission | 2,000 | — | 2,000 | — *(paid by the admin directly)* |
 | **Stay totals** | | **Total bill 30,100** | **Expenses 11,000** | |
 
 ```
@@ -702,7 +704,7 @@ Total bill       30,100   (every payment is the hospital's; nothing is passed on
 - ~~**Q-83:** an **Included** amount is **hospital income, not an expense**~~ → it **is** an expense: the patient's payments covered it and the lab bills the hospital.
 - ~~**Q-87:** a third answer, **Excluded — collect later**~~ → gone with the separate payment; a charge is Included or not yet decided.
 - **Q-84:** the pharmacy bill can still be attached, as a **record only** for a patient who wants the full bill; it touches no finance figure. The 2 bills already attached are left as they are.
-- **Q-85 / Q-86:** as proposed (X-Ray, CT and MRI stay the hospital's own; forwarded lines arrive "To collect").
+- **Q-85:** as proposed (X-Ray, CT and MRI stay the hospital's own). **Q-86:** ~~forwarded lines arrive "To collect"~~ → they arrive *not decided* (2026-09-24).
 - **Q-78, Q-79, Q-80:** as built. A charge with no status still asks nothing and can be decided later — that half of Q-87 survives.
 
 **Acceptance criteria**
@@ -717,7 +719,7 @@ Total bill       30,100   (every payment is the hospital's; nothing is passed on
 - [ ] AC-15.7 Checked on production after deploy (§8.4).
 
 ### CR-16 — Patient Overview (dashboard) (Req 12)
-**Priority** P1 · **Status** 🟡 built on `feature/v2-patient-money`, not deployed (§8.4)
+**Priority** P1 · **Status** ✅ live on `main`
 
 > *"in patient details make a dashboard like view which gonna show all the stats and numbers regarding the patient"*
 
@@ -757,7 +759,7 @@ Total bill       30,100   (every payment is the hospital's; nothing is passed on
 - [ ] AC-16.5 Checked on production after deploy (§8.4).
 
 ### CR-18 — A doctor's visits and what was paid for them (Q-90)
-**Priority** P2 · **Status** 🟡 built on `feature/v2-fixes-round-4`, not deployed
+**Priority** P2 · **Status** ✅ live on `main`
 
 > *"Doctor wise visit with detail like patientId/name, date and payment related data like date, provided by and all. Able to see and download if needed."*
 
@@ -783,7 +785,7 @@ Total bill       30,100   (every payment is the hospital's; nothing is passed on
 - [ ] AC-18.6 Checked on production after deploy.
 
 ### CR-19 — Staying signed in, and knowing who you are (Q-91, Q-93)
-**Priority** P0 · **Status** 🟡 built on `feature/v2-fixes-round-4`, not deployed
+**Priority** P0 · **Status** ✅ live on `main`
 
 > *"If we leave the website idle for sometime then all the api and buttons on click not getting data... we need to do a refresh to bring back the app normal condition."* and *"Get the logged in user name and role — it is hard to tell now who is logged in and where."*
 
@@ -975,7 +977,7 @@ Run against project `bmbbifxkjqmdqriootdw` ("HMS - Production") with `SELECT` st
 
 ## 6. Happy path — registration → charges → payment → close
 
-This is the target after v2, using the money model settled on 2026-09-22/23 (CR-15). 🟡 marks a step built on the branch. Nothing here waits on a question.
+This was the target after v2, using the money model of 2026-09-22/23. **Steps ③ and ⑧ changed on 2026-09-24** (marked below); the current journey, step by step, is [`APP-FLOW-PRD.md` §3](APP-FLOW-PRD.md#3-the-core-journey-one-patient-admission-to-discharge).
 
 ```
  RECEPTION (desk)                          WHAT GETS WRITTEN                                           ADMIN
@@ -990,13 +992,9 @@ This is the target after v2, using the money model settled on 2026-09-22/23 (CR-
     Sync · price doctor fees ────────────► fee rows   = the patient's EXPENSE (paid from the patient's money)
     set referral commission ─────────────► commission = the patient's EXPENSE
       │
- ③ Medicine / lab charge 🟡 ─────────────► charge; on Save the app asks (alert), default EXCLUDED
-      Excluded: collect now ─────────────► separate payment tagged Medicine / Lab + ledger IN   OPEN
-                                            "12/26 Ramesh Kumar (Medicine)", note automatic         🟡
-                                            the money is PASSED ON to the lab / pharmacy      (Q-82)
-      Excluded: collect later ──────────►  nothing collected yet: "collect ₹x from the patient" (Q-87)
-      Included in payments ──────────────► nothing collected: the regular payments cover it,
-                                            and that money is the hospital's INCOME            (Q-83)
+ ③ Medicine / lab charge ────────────────► on Save the app asks (alert) — REVISED 2026-09-24:
+      Included in payments ──────────────► charge saved; the hospital owes the lab → EXPENSE   (Q-83)
+      Paid directly to the lab ──────────► NOTHING is recorded                                (Q-82)
       │
  ④ Take payments as admin says ──────────► payment (Advance / Regular / Discharge / Misc) + ledger IN   OPEN
     ("take ₹X now"; nothing pre-decided)    "12/26 Ramesh Kumar (Advance)"                         🟡
@@ -1008,8 +1006,8 @@ This is the target after v2, using the money model settled on 2026-09-22/23 (CR-
                                             OPEN ──► CLOSED (by, when, batch note)            sees the cash / UPI total
                                             🔒 payments lock, and so do their charges' ticks  ▸ "Mark closed"
       │
- ⑧ Pay doctor fee / referral ────────────► ledger OUT · payout marked paid 🔒         ◄── or admin pays:
-    (from the day's collections, Q-71)      reception's payout: OPEN → closed at ⑦          born CLOSED
+ ⑧ Pay doctor fee / referral ────────────► payout marked paid 🔒 (who paid, who carried it, how)
+    — REVISED 2026-09-24                    NO ledger row: the admin hands the money over directly
       │
  ⑨ Discharge (case sheet final) ─────────► status Discharged · charges lock for reception (Q-03 = B)
 ```
@@ -1024,13 +1022,13 @@ This is the target after v2, using the money model settled on 2026-09-22/23 (CR-
 | ② | Doctor visit | Reception | `patient_consultations` | — | — | its fee is paid |
 | ② | Doctor fee price / referral commission | Reception or Admin | fee rows / `patient_billing` | expense | — | paid (⑧) |
 | ② | Other charges | Reception | `patient_charges` | none (internal) | — | the patient is Discharged |
-| ③ | Lab / medicine charge (included / excluded) 🟡 | Reception | `patient_charges` | none (internal); included = income (Q-83) | — | collected: fixed until its payment is deleted |
+| ③ | Lab / medicine charge (included / not decided) | Reception | `patient_charges` | included = the hospital's **expense** (Q-83, revised) | — | never locks; admin or reception may change it any time |
 | ③ | ~~Lab/Medicine payment (excluded, collected now)~~ **removed 2026-09-24** — there is no separate lab/medicine payment | — | — | — | — | — |
 | ④ | Payment + ledger IN 🟡 | Reception | installments + ledger | income | ⑦ | ⑦ |
 | ⑤ | Desk expense / advance | Reception | petty cash (+ `advances`) | hospital spending | never | any time / month settled |
 | ⑥ | Top-up | Admin | petty cash | internal transfer | — | never (admin's) |
-| ⑧ | Payout by reception | Reception | ledger OUT + fee row | expense paid | ⑦ | ⑦ |
-| ⑧ | Payout by admin | Admin | ledger OUT + fee row | expense paid | born Closed | never (admin's) |
+| ⑧ | Payout by reception | Reception | fee row / bill only (no ledger, 2026-09-24) | expense paid | — | it is paid — then admin only (Q-88) |
+| ⑧ | Payout by admin | Admin | fee row / bill only | expense paid | — | never (admin's) |
 
 ---
 
@@ -1071,7 +1069,8 @@ Everything not marked 🟡 is **[P]**.
 | `advances`: `petty_cash_entry_id`; "given by" = `created_by` user | CR-03 | 🟡 |
 | `expenses`: `created_by`, `updated_by`, `updated_at`, `payment_mode` | CR-07 | 🟡 |
 | `doctor_visit_settlements.amount_set_by` + `ledger_transaction_id`, `patient_billing.referral_commission_set_by` + `referral_ledger_transaction_id` | CR-04, CR-13 | 🟡 |
-| 🟡 `patient_charges.lab_medicine_status` (included / to_collect / collected) + `collected_installment_id`; installment `kind` becomes the payment label (regular / advance / discharge / misc / lab / medicine / registration; old rows → regular); a **Lab** catalogue category; the base package turned into a charge line and its flags cleared; `total_charges` = charges only | CR-15 | 🟡 |
+| `patient_charges.lab_medicine_status` — ~~included / to_collect / collected + `collected_installment_id`~~ → **included or NULL** (`20260925000002`); installment `kind` = the payment label (regular / advance / discharge / misc / registration); a **Lab** catalogue category; the base package turned into a charge line and its flags cleared; `total_charges` = charges only | CR-15 | ✅ |
+| Round 5: `doctor_visit_settlements.given_by_user_id`, `given_by_set_by/at`, `amount_set_at`, `status_set_by/at`; the same six on `patient_billing` for the commission; payout debits removed and refused by `dlt_no_payout_debits_check`; a settled fee must carry its date and amount | CR-13 | ✅ |
 | `daily_ledger_closures`, `daily_ledger_shift_settlements`: frozen, read-only | CR-08 | ✅ |
 
 ### 8.2 APIs
@@ -1085,8 +1084,8 @@ Everything not marked 🟡 is **[P]**.
 | `GET /api/ledger/entries` · `POST /api/ledger/close` · `POST /api/ledger/reopen` | The Finances Transactions fetch |
 | `GET/POST /api/petty-cash` · `PUT/DELETE /api/petty-cash/[id]` | |
 | Reception-safe employee list and advance routes | |
-| 🟡 `GET /api/patients/[id]/overview?billing_id=` — the stay, the money (total bill by label, passed on, hospital income, expenses, net for an admin), lab & medicine by status, services used, activity | |
-| 🟡 Charges API takes `lab_medicine: { choice, payment_method, transaction_reference }` · 🟡 `POST …/charges/[chargeId]/lab-medicine` (collect / include / to_collect) · 🟡 installments take `kind` (the label) | |
+| `GET /api/patients/[id]/overview?billing_id=` — the stay, the money (total bill by label, expenses incl. lab & medicine, net for an admin), lab & medicine (included / not decided), services used, activity | |
+| Charges API takes `lab_medicine: { choice: 'included' \| 'direct' }` (`direct` writes nothing) · `POST …/charges/[chargeId]/lab-medicine` (include / clear) · installments take `kind` (the label) · `GET /api/finances/lab-medicine?month=` (the drill-down) · `GET /api/users` (the given-by picker) | |
 
 ### 8.3 Data migration still to write
 
@@ -1096,7 +1095,7 @@ Everything not marked 🟡 is **[P]**.
 
 Already written: the legacy package line and the payment labels (`20260923000001`, 🟡).
 
-### 8.4 Deploying what's built (CR-11, CR-12, CR-14, CR-15, CR-16)
+### 8.4 Deploying what's built (CR-11, CR-12, CR-14, CR-15, CR-16) — *historical: the 2026-09-23 deploy; the smoke tests below describe the rules of that day*
 
 Two branches, the second stacked on the first:
 - `feature/v2-registration-fee-payments`: CR-11, CR-12, CR-14.
@@ -1147,13 +1146,13 @@ Six things found in use rather than in the spec. Two were outright bugs.
 | Q | Asked | Answer | Recorded in |
 |---|---|---|---|
 | Q-88 | Who may change a doctor fee or a referral commission? | **Replaces Q-20.** Unsettled: any receptionist or admin, whoever entered it — *"we collect the data related to person edited/entered and person marking it done"*, so the audit trail replaces the ownership lock. Settled: admin only; reception can do nothing, not even un-settle | §3.2 rows 15-16, CR-04, CR-13 |
-| Q-89 | When an admin changes a **settled** amount, what happens to the ledger OUT? | Adjust the existing row in place — one action, nothing to reopen | CR-13 |
+| Q-89 | When an admin changes a **settled** amount, what happens to the ledger OUT? | Adjust the existing row in place — one action, nothing to reopen. **Moot since 2026-09-24:** a payout has no ledger row | CR-13 |
 | Q-90 | Where does the doctor-wise visit report live, and who sees it? | On each doctor's own record, from the Doctors list. Admin, doctor and reception — the same people who price and pay the fees | CR-18 |
 | Q-91 | When the session has really ended (7 days), what happens? | Send them to the login page, remembering where they were | CR-19 |
 | Q-92 | The petty cash top-up form | Default the reason to "Weekly float"; "Given to" lists **only** active receptionists | CR-02 |
 | Q-93 | Who is signed in? | Show the name and role in the sidebar — *"it is hard to tell now who is logged in and where"* | CR-19 |
 | Q-94 | Sync Visits | Reception gets it too — without it the desk can price a fee but never raise one | CR-04 |
-| Q-95 | A doctor fee settled from the patient's Billing tab wrote no ledger OUT | *"Doctor fee and referral comes as directly deducted in the finances, as this is not provided in the form of petty cash, and both admin and reception can do all the things."* So every way of settling one goes through the payout path and books the debit | CR-13 |
+| Q-95 | A doctor fee settled from the patient's Billing tab wrote no ledger OUT | *"Doctor fee and referral comes as directly deducted in the finances, as this is not provided in the form of petty cash, and both admin and reception can do all the things."* So every way of settling one goes through the payout path. ~~and books the debit~~ → no debit since 2026-09-24 | CR-13 |
 | Q-96 | The doctor form | Drop **designation** and **specialist**; make **department** required. Existing values stay on the record | CR-04 |
 
 ### 9.1 Round 3 — answers received 2026-09-23
@@ -1186,9 +1185,9 @@ Three points were checked back with you the same day, because the answers could 
 |---|---|---|---|
 | Q-57 | Confirm the model | As proposed; the include/exclude meaning was then corrected by you (CR-15) | CR-15 |
 | Q-58 | Set per stay or per charge | As proposed: per **charge**, and only lab and medicine | CR-15 |
-| Q-59 | Default before deciding | "Mark it as **excluded** by default and ask at the time of save as an alert" | CR-15 (built) |
+| Q-59 | Default before deciding | "Mark it as **excluded** by default and ask at the time of save as an alert" → the alert stays; ~~default Excluded~~ superseded 2026-09-24 (two answers, Included first) | CR-15 (built) |
 | Q-60 | Who collects | "All the amount comes by desk"; the desk distributes it | CR-15 |
-| Q-61 | Paying the lab/pharmacy for included amounts | As proposed (**A**: pending payouts, ledger OUT when paid) → excluded ones: Q-83 | CR-15 |
+| Q-61 | Paying the lab/pharmacy for included amounts | As proposed (**A**) → superseded by Q-83 (revised 2026-09-24): an included amount is the hospital's expense, derived from the charge, nothing in the ledger | CR-15 |
 | Q-62 | Which charges are lab | Like medicine: a charge with a typed amount, default excluded → the **Lab** category (built); X-Ray/CT/MRI: Q-85 | CR-15 (built) |
 | Q-63 | Which charges are medicine | "No SmartPharma bill; place the amount directly" → the **Pharmacy** category (built); the attach button: Q-84 | CR-15 (built) |
 | Q-64 | Deals vs charges | **C**: charges have nothing to do with the balance; they're for the patient bill and knowledge | CR-15 (built) |
@@ -1198,7 +1197,7 @@ Three points were checked back with you the same day, because the answers could 
 | Q-68 | "Drop" | As proposed: remove the base package | CR-15 (built) |
 | Q-69 | Petty cash in the Expenses log | **A**: one automatic line per month, "Petty cash spent" | CR-07, CR-10 |
 | Q-70 | Petty cash edit history | As proposed (yes) | CR-02 |
-| Q-71 | Reception payouts' money | As proposed (**A**: from the day's collections, a Ledger OUT born Open) | CR-04, CR-13 |
+| Q-71 | Reception payouts' money | As proposed (**A**: from the day's collections, a Ledger OUT born Open) → **moot since 2026-09-24**: the admin hands payouts over directly | CR-04, CR-13 |
 | Q-72 | Missing screens | As proposed: visit purposes now; manual rows and merge later | CR-04 |
 | Q-73 | Refunds / receipts | As proposed: not now | — |
 | Q-74 | Readmission | "Consider it as new patient admission for now" → register them again; CR-17 dropped for now | CR-17 |
@@ -1302,3 +1301,4 @@ The baseline `PRD.md` §10 questions were carried into round 1: Q1 → Q-37 · Q
 | 2026-09-24 | Round 4, continued: reception gets **Sync Visits** (Q-94), so it can raise a fee row as well as price one. The doctor fee settled from the patient's Billing tab now **books its ledger debit** (Q-95) — it set the flags and wrote nothing, so a fee paid there was money gone with no debit behind it, while the same payout from Finances booked one. And the doctor form drops designation and specialist and requires a department (Q-96) | Claude |
 | 2026-09-24 | **Round 5** on `feature/v2-lab-medicine-expense`, reversing two shipped rules and building one proposal. (1) **Lab & medicine** stop involving payments: *Included* is now the hospital's **expense**, derived from the charges and never stored, shown as a clickable line in Finances → Expenses with the patients behind it and as an editable block on the patient's Overview (admin *and* reception, at any time); *paid directly to the lab* records **nothing at all** (Q-82, Q-83, Q-86, Q-87 reversed). (2) **Payouts leave the ledger** — *"they take money directly from the admin and handover to the concerned person directly so there is no ledger entry required"* — so money out reads the settlement rows instead, which also picks up the payouts the patient's Billing tab never booked (Q-37/CR-13 reversed). (3) **Given by** becomes a real user picker on both payouts, with the name against each of the amount, the status and who carried the cash. Migration `20260925000001` applied to production: 4 payout debits (₹16,000) removed, the 1 lab payment relabelled Regular and its charge marked Included, every settled fee made to agree with itself. `20260925000002` narrows the schema after deploy | Claude |
 | 2026-09-24 | **Round 5 deployed.** `feature/v2-lab-medicine-expense` merged to `main` (`9cb4334`) and live on Vercel at `admin.kkrhospitals.in`; verified by the two new routes answering 401 rather than 404. Migration `20260925000002` then applied, after the deploy and after re-checking all six preconditions: the payment labels narrowed to regular/advance/discharge/misc/registration, `lab_medicine_status` narrowed to included-or-NULL, `collected_installment_id` dropped, and three new CHECKs — a settled fee must carry its date and amount, a settled commission its date, and the ledger refuses a `doctor_settlement` or `referral_commission` debit outright, so no stray caller can reintroduce the disagreement this round removed. September money out now reads: doctor fees ₹8,000 · commissions ₹7,000 · lab & medicine ₹800 · legacy ledger ₹500 | Claude |
+| 2026-09-25 | **Test audit and the flow PRD.** Every test checked against the decided rules: three expected-failure tests encoded rules the client had decided against (an "outstanding balance" check, payroll in the ledger, refusing the doctor's payroll list) and were replaced; writing the missing tests for v2 routes exposed six defects, all fixed and pinned — the Given-by picker was empty in production (a missing column), a paid fee or commission was still partly editable by reception (Q-88), one payout route refused reception (Q-19), a fee raised through it counted as ₹0, the monthly Finance PDF printed "undefined", and reception could still edit a paid doctor visit (§3.2 row 6). 61 files, 1,800 passing, 14 expected failures (open defects). Two questions raised where the written rule and the build disagree: **Q-97** (who may change a fee-schedule rate) and **Q-98** (should a doctor see Finances). New: [`APP-FLOW-PRD.md`](APP-FLOW-PRD.md), the current-state flow map; this document now marks the 2026-09-24 reversals inline | Claude |

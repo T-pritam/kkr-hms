@@ -399,6 +399,67 @@ describe('PATCH /api/patients/[id]/consultations/[consultationId]', () => {
   })
 })
 
+/**
+ * PRD v2 §3.2 row 6: a doctor visit is its creator's, and it **locks for the
+ * desk once its fee is paid**. Delete already refused a paid visit; an edit
+ * checked nothing, so reception could move a visit that had been paid for to
+ * another doctor or purpose and leave the fee describing visits that no longer
+ * match. The admin can still correct one — a paid fee is the admin's alone
+ * (Q-88), and so is the visit behind it.
+ */
+describe('PATCH — a visit whose fee is paid (§3.2 row 6)', () => {
+  function aPaidVisit(createdBy: string) {
+    aDoctor({ id: 'd1' })
+    aDoctor({ id: 'd2' })
+    aSettlement({ id: 's1', patient_id: 'p1', doctor_id: 'd1', settled: true })
+    aConsultation({ id: 'c1', patient_id: 'p1', doctor_id: 'd1', settlement_id: 's1', created_by: createdBy, notes: 'first' })
+  }
+
+  it('refuses the desk, even on its own visit', async () => {
+    await signInAs('RECEPTIONIST', { userId: 'u-recep' })
+    aPaidVisit('u-recep')
+
+    const { status, body } = await edit('p1', 'c1', { doctor_id: 'd2' })
+
+    expect(status).toBe(409)
+    expect(body.code).toBe('ENTRY_LOCKED')
+    expect(db.find('patient_consultations', (r) => r.id === 'c1')!.doctor_id).toBe('d1')
+  })
+
+  it('refuses even a notes-only edit from the desk', async () => {
+    await signInAs('RECEPTIONIST', { userId: 'u-recep' })
+    aPaidVisit('u-recep')
+
+    expect((await edit('p1', 'c1', { notes: 'changed' })).status).toBe(409)
+  })
+
+  it('lets the admin correct it', async () => {
+    await signInAs('ADMIN', { userId: 'u-admin' })
+    aPaidVisit('u-recep')
+
+    expect((await edit('p1', 'c1', { notes: 'corrected' })).status).toBe(200)
+    expect(db.find('patient_consultations', (r) => r.id === 'c1')!.notes).toBe('corrected')
+  })
+
+  it('does not lock a visit whose fee is priced but unpaid', async () => {
+    await signInAs('RECEPTIONIST', { userId: 'u-recep' })
+    aDoctor({ id: 'd1' })
+    aSettlement({ id: 's1', patient_id: 'p1', doctor_id: 'd1', settled: false })
+    aConsultation({ id: 'c1', patient_id: 'p1', doctor_id: 'd1', settlement_id: 's1', created_by: 'u-recep' })
+
+    expect((await edit('p1', 'c1', { notes: 'fine' })).status).toBe(200)
+  })
+
+  it('ignores a paid fee that was itself deleted', async () => {
+    await signInAs('RECEPTIONIST', { userId: 'u-recep' })
+    aDoctor({ id: 'd1' })
+    aSettlement({ id: 's1', patient_id: 'p1', doctor_id: 'd1', settled: true, deleted_at: '2026-03-01T00:00:00.000Z' })
+    aConsultation({ id: 'c1', patient_id: 'p1', doctor_id: 'd1', settlement_id: 's1', created_by: 'u-recep' })
+
+    expect((await edit('p1', 'c1', { notes: 'fine' })).status).toBe(200)
+  })
+})
+
 describe('DELETE /api/patients/[id]/consultations/[consultationId]', () => {
   it('returns 404 for an unknown consultation', async () => {
     await signInAs('ADMIN', { seedUser: true })
