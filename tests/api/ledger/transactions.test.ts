@@ -162,16 +162,17 @@ describe('POST /api/ledger/transactions — creation', () => {
     })
   })
 
-  // Q-25 = A: the admin is the one who would close it anyway.
-  it('stores an admin entry as Closed, credited to them', async () => {
+  // Client, 26 Sep (Q-25 = A reversed): the admin's entries start Open too,
+  // and are closed with everything else.
+  it('stores an admin entry as Open, like everyone else\'s', async () => {
     await signInAs('ADMIN', { userId: 'u-admin' })
 
     expect((await create(validTransaction)).status).toBe(201)
 
     const row = db.rows('daily_ledger_transactions')[0]
-    expect(row.status).toBe('closed')
-    expect(row.closed_by).toBe('u-admin')
-    expect(row.closed_at).toBeTruthy()
+    expect(row.status).toBe('open')
+    expect(row.closed_by).toBeNull()
+    expect(row.closed_at).toBeNull()
   })
 
   it('refuses a lab technician, who has no business in the money log', async () => {

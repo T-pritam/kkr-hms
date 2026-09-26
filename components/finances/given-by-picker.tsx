@@ -85,7 +85,7 @@ export function GivenByPicker({ value, onChange, disabled }: Props) {
         onChange={(e) => onChange({ given_by_user_id: e.target.value || null, given_by: '' })}
         className="w-full bg-surface-inset text-foreground rounded-lg px-3 py-2 border border-border disabled:opacity-50"
       >
-        <option value="">Someone else — type the name below</option>
+        <option value="">Someone else…</option>
         {options.map((u) => (
           <option key={u.id} value={u.id}>
             {u.username}
@@ -94,14 +94,17 @@ export function GivenByPicker({ value, onChange, disabled }: Props) {
           </option>
         ))}
       </select>
-      <input
-        aria-label="Handed over by (name)"
-        placeholder="…or a name, for someone with no login"
-        value={value.given_by}
-        disabled={disabled}
-        onChange={(e) => onChange({ given_by_user_id: null, given_by: e.target.value })}
-        className="w-full bg-surface-inset text-foreground rounded-lg px-3 py-2 border border-border disabled:opacity-50"
-      />
+      {/* Only for "Someone else": a person with no login, typed by name. */}
+      {!value.given_by_user_id && (
+        <input
+          aria-label="Handed over by (name)"
+          placeholder="Name of the person who handed it over"
+          value={value.given_by}
+          disabled={disabled}
+          onChange={(e) => onChange({ given_by_user_id: null, given_by: e.target.value })}
+          className="w-full bg-surface-inset text-foreground rounded-lg px-3 py-2 border border-border disabled:opacity-50"
+        />
+      )}
     </div>
   )
 }

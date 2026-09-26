@@ -13,6 +13,7 @@ import { AttachmentList } from './attachment-list'
 import { DISCHARGE_CONDITIONS } from '@/lib/case-sheet/constants'
 import type { CaseSheet, FieldErrors } from '@/lib/case-sheet/types'
 import { AlertCircle, CheckCircle2, Save } from 'lucide-react'
+import { TimeInput } from '@/components/ui/time-input'
 
 /**
  * The case sheet editor.
@@ -326,11 +327,10 @@ export function CaseSheetEditorModal({
               />
             </Field>
             <Field id="discharge_time" label="Discharge time" error={fieldErrors.discharge_time}>
-              <Input
+              <TimeInput
                 id="discharge_time"
-                type="time"
                 value={form.discharge_time}
-                onChange={e => set({ discharge_time: e.target.value })}
+                onChange={value => set({ discharge_time: value })}
                 disabled={saving}
               />
             </Field>

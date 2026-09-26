@@ -244,7 +244,7 @@ This is the path most of the app exists to serve. Each step names who does it, w
 | Block | Shows |
 |---|---|
 | This stay | patient ID, name, age/sex, status · joined date and days in hospital (or discharge date) · referral person · registration fee status |
-| Money | **Total received** as **"₹x Payments + ₹y Registration fee + ₹z Lab tests = ₹A"**, and by label · **Expenses of this patient** (doctor fees by doctor, paid/pending · referral commission · **medicine**) · **Net = total − expenses** *(admin only)* |
+| Money | **Payments received** (x) as the headline figure, then **"₹x Payments + ₹y Registration fee + ₹z Lab tests = ₹A in all"** with x in large type — x is the main amount; registration and lab come in on their own — and payments by label · **Expenses of this patient** (doctor fees by doctor, paid/pending · referral commission · **medicine**) · **Net = total − expenses** *(admin only)* |
 | Services used | charges by category with their total, marked *for reference — not billed against* |
 | Activity | counts of visits, charges, payments, lab orders and pharmacy bills; last payment date; case sheet status |
 
@@ -253,7 +253,7 @@ Reception sees everything except **Net** [Q-66]. The "Lab & medicine" block is g
 ### 4.4 Doctor visits
 
 **Who:** A D N R record; the creator or an admin edits/deletes.
-**Flow:** Patient ▸ Doctor visits ▸ Add visit: doctor (active doctors only), **visit purpose** (consultation, ward round…, required), date and time (IST), notes. A visit cannot be dated — or edited to a date — before the patient joined.
+**Flow:** Patient ▸ Doctor visits ▸ Add visit: doctor (active doctors only), **visit purpose** (consultation, ward round…, required), date (today by default) and time (IST, **12-hour: hour · minute · AM/PM**, the current time by default — the same on every computer, whatever its own clock format), notes. A visit cannot be dated — or edited to a date — before the patient joined.
 
 - Visits are numbered per doctor for the patient (visit 1, 2, 3 with Dr Rao).
 - **A visit locks for the desk once its doctor fee is paid** [§3.2 row 6]: reception cannot edit or delete it after the money has gone. The admin may still correct it, but can delete it only after un-paying the fee.
@@ -335,7 +335,7 @@ The patient's **total bill** is the sum of these payments.
 
 1. **Sync visits** (Billing & settlement tab) creates or refreshes one row per doctor × purpose from the visits on the bill. Running it twice changes nothing. A settled row is left alone; visits recorded after it was paid go on a new row. Deleting a visit shrinks its unpaid row.
 2. **Price** it: per visit or as a total, typed by the desk each time. There is no rate card: the same doctor charges differently for a consultation and a surgery, and per procedure, so the doctor fee schedule was dropped [Q-97, 2026-09-25]. The visit form collects no fee either — what a visit costs is decided here, not when it is recorded.
-3. **Pay** it — from the patient's Billing tab, or in bulk from **Finances ▸ Settlements** (each selected fee is paid at its own total; one explicit amount is only allowed for a single fee). Paying less than the price makes the amount paid the new total [Q-37 b].
+3. **Pay** it — from the patient's Billing tab, in **one short form**: per visit × visits = total (or type the total), paid by, a reference for non-cash, handed over by, an optional note, **Pay ₹X**. The price is saved first if it changed; what is paid is the fee [2026-09-26]. Or in bulk from **Finances ▸ Settlements** (each selected fee is paid at its own total; one explicit amount is only allowed for a single fee). Paying less than the price makes the amount paid the new total [Q-37 b].
 4. **Nothing is written to the ledger.** The admin hands the cash to the doctor directly, so the ledger never sees it [client revision 2026-09-24]. The fee row is the whole record, and Finances counts it as money out on the day it was paid.
 5. **Who may change it** [Q-88]:
    - **Unpaid:** anyone at the desk (any receptionist, or the admin), whoever entered it.
@@ -381,7 +381,7 @@ The patient's **total bill** is the sum of these payments.
 
 ```
  created ──► OPEN ─── admin: Not closed tab ▸ tick rows ▸ "Mark closed" ───► CLOSED 🔒
-   (admin-created rows are born CLOSED)   selection bar: "12 rows · cash ₹8,400 · UPI ₹3,900"
+   (every row, the admin's too)           selection bar: "12 rows · cash ₹8,400 · UPI ₹3,900"
                                           optional note + amount actually counted
                ▲                                                                │
                └──────────── admin: Reopen (a reason is required, kept on the row) ┘
@@ -670,7 +670,7 @@ BILL (one/stay)    registration fee:  pending ──► collected   ·   waived 
                                           ▲──── payment deleted ────┘
 
 PAYMENT + LEDGER   Open ──(admin: Mark closed)──► Closed 🔒 ──(admin: reopen + reason)──► Open
-                   admin-created rows are born Closed
+                   every row is born Open, the admin's included (2026-09-26)
 
 LAB / REG CHARGE   exists only with its payment: written, changed and removed with it;
   LINE               read-only in Charges ("From payment")

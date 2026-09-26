@@ -168,10 +168,12 @@ export default function OverviewTab({ patientId, billingId, onCreateBilling }: P
       {/* Money */}
       <Section title="Money">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* x — the main amount (client, 26 Sep): what the patient paid for
+              the stay. Registration and lab come in on their own. */}
           <Card
-            label="Total received from the patient"
-            value={inr(breakdown.total)}
-            hint="Payments + registration fee + lab tests"
+            label="Payments received"
+            value={inr(breakdown.payments)}
+            hint={`+ ${inr(breakdown.registration)} registration + ${inr(breakdown.lab)} lab = ${inr(breakdown.total)} in all`}
             tone="good"
           />
           <Card
@@ -184,23 +186,28 @@ export default function OverviewTab({ patientId, billingId, onCreateBilling }: P
           )}
         </div>
 
-        {/* The client's own reading of the total (round 8): x + y + z = A. */}
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-surface-inset px-4 py-3 text-sm">
-          {[
-            ['Payments', breakdown.payments],
-            ['Registration fee', breakdown.registration],
-            ['Lab tests', breakdown.lab],
-          ].map(([label, amount], i) => (
-            <span key={String(label)} className="flex items-center gap-2">
-              {i > 0 && <span className="text-muted">+</span>}
-              <span>
-                <span className="font-semibold text-foreground">{inr(amount)}</span>{' '}
-                <span className="text-muted">{label}</span>
-              </span>
-            </span>
-          ))}
+        {/* The client's own reading of the total: x + y + z = A, with x — the
+            payments, the main amount — the largest. */}
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-lg bg-surface-inset px-4 py-3">
+          <span>
+            <span className="text-3xl font-bold text-success-text">{inr(breakdown.payments)}</span>{' '}
+            <span className="text-sm text-muted">Payments</span>
+          </span>
+          <span className="text-muted">+</span>
+          <span className="text-sm">
+            <span className="font-semibold text-foreground">{inr(breakdown.registration)}</span>{' '}
+            <span className="text-muted">Registration fee</span>
+          </span>
+          <span className="text-muted">+</span>
+          <span className="text-sm">
+            <span className="font-semibold text-foreground">{inr(breakdown.lab)}</span>{' '}
+            <span className="text-muted">Lab tests</span>
+          </span>
           <span className="text-muted">=</span>
-          <span className="font-bold text-success-text">{inr(breakdown.total)}</span>
+          <span className="text-sm">
+            <span className="font-semibold text-foreground">{inr(breakdown.total)}</span>{' '}
+            <span className="text-muted">in all</span>
+          </span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">

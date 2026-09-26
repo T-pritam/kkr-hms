@@ -70,7 +70,7 @@ export default function BillingSettlementTab({
     total_amount: 0,
     visit_count: 0,
   });
-  const [settlePricingComplete, setSettlePricingComplete] = useState(false);
+  const [showSettleNote, setShowSettleNote] = useState(false);
   const [showSettleReferralModal, setShowSettleReferralModal] = useState(false);
   const [settleReferralData, setSettleReferralData] = useState({
     payment_method: 'cash',
@@ -159,7 +159,7 @@ export default function BillingSettlementTab({
       total_amount: totalAmount,
       visit_count: settlement.visit_count || 0,
     });
-    setSettlePricingComplete(false);
+    setShowSettleNote(false);
     setSettleData({
       settlement_id: settlement.id,
       settlement_amount: totalAmount,
@@ -268,42 +268,6 @@ export default function BillingSettlementTab({
     }
   };
 
-  const handleConfirmSettlePricing = async () => {
-    if (settlePricingData.visit_count <= 0 || settlePricingData.amount_per_visit <= 0 || settlePricingData.total_amount <= 0) {
-      alert('Please fill in all pricing details');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      // No visit_count: it comes from the visits actually linked to this
-      // settlement, not from this form — the API derives it from the row's own
-      // stored count and rejects a submitted one for a purpose-linked settlement.
-      const response = await fetch(`/api/doctor-settlements/${settleData.settlement_id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          pricing_mode: settlePricingData.pricing_mode,
-          amount_per_visit: settlePricingData.amount_per_visit,
-          total_amount: settlePricingData.total_amount,
-        }),
-      });
-
-      if (response.ok) {
-        setSettleData(prev => ({ ...prev, settlement_amount: settlePricingData.total_amount }));
-        setSettlePricingComplete(true);
-      } else {
-        const error = await response.json();
-        alert(error.error || 'Failed to save pricing');
-      }
-    } catch (error) {
-      console.error('Error saving pricing:', error);
-      alert('Failed to save pricing');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleUpdateSettlement = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingSettlement) return;
@@ -349,20 +313,49 @@ export default function BillingSettlementTab({
     }
   };
 
-  const handleMarkAsSettled = async () => {
+  /**
+   * One step (client, 26 Sep): save the price if it changed, then pay the fee
+   * in full. What is paid is the fee — the separate "settlement amount" that
+   * had to match it is gone.
+   */
+  const handlePayDoctorFee = async () => {
     if (!settleData.settlement_id) return;
+    const { amount_per_visit, total_amount, visit_count, pricing_mode } = settlePricingData;
+    if (visit_count <= 0 || amount_per_visit <= 0 || total_amount <= 0) {
+      alert('Enter the fee first');
+      return;
+    }
 
     setLoading(true);
-
     try {
+      const stored = settlements.find(s => s.id === settleData.settlement_id);
+      const priceChanged =
+        !stored ||
+        Number(stored.total_amount) !== total_amount ||
+        Number(stored.amount_per_visit) !== amount_per_visit;
+
+      if (priceChanged) {
+        // No visit_count: the API derives it from the visits linked to the row.
+        const priced = await fetch(`/api/doctor-settlements/${settleData.settlement_id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pricing_mode, amount_per_visit, total_amount }),
+        });
+        if (!priced.ok) {
+          const error = await priced.json().catch(() => ({}));
+          alert(error.error || 'Failed to save the fee');
+          return;
+        }
+      }
+
       const response = await fetch(`/api/doctor-settlements/${settleData.settlement_id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           settled: true,
-          settlement_amount: settleData.settlement_amount,
+          settlement_amount: total_amount,
           payment_method: settleData.payment_method,
-          transaction_reference: settleData.transaction_reference,
+          transaction_reference: settleData.payment_method === 'cash' ? '' : settleData.transaction_reference,
           settlement_notes: settleData.settlement_notes,
           given_by: settleData.given_by,
           given_by_user_id: settleData.given_by_user_id,
@@ -373,23 +366,17 @@ export default function BillingSettlementTab({
         await fetchSettlements();
         onBillingUpdate();
         setShowSettleModal(false);
-        setSettleData({
-          settlement_id: '',
-          settlement_amount: 0,
-          payment_method: 'cash',
-          transaction_reference: '',
-          settlement_notes: '',
-          settlement_type: 'regular',
-          given_by: '',
-    given_by_user_id: null as string | null,
-        });
+        setShowSettleNote(false);
+        setSettleData({ settlement_id: '', settlement_amount: 0, payment_method: 'cash', transaction_reference: '', settlement_notes: '', settlement_type: 'regular', given_by: '', given_by_user_id: null });
       } else {
-        const error = await response.json();
-        alert(error.error || 'Failed to settle payment');
+        const error = await response.json().catch(() => ({}));
+        alert(error.error || 'Failed to pay the fee');
+        // The price may already be saved; show it.
+        if (priceChanged) await fetchSettlements();
       }
     } catch (error) {
-      console.error('Error settling payment:', error);
-      alert('Failed to settle payment');
+      console.error('Error paying the doctor fee:', error);
+      alert('Failed to pay the fee');
     } finally {
       setLoading(false);
     }
@@ -785,253 +772,148 @@ export default function BillingSettlementTab({
       </div>
 
       {/* Mark as Settled Modal */}
-      {showSettleModal && settleData.settlement_id && (
-        <div className="fixed inset-0 bg-overlay flex items-end sm:items-center justify-center z-50 sm:p-4">
-          <div className="bg-surface-hover rounded-t-2xl sm:rounded-lg p-4 sm:p-6 w-full sm:max-w-2xl space-y-4 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h4 className="text-xl font-semibold text-foreground">
-                {!settlePricingComplete ? 'Set Consultation Fee' : 'Complete Settlement'}
-              </h4>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowSettleModal(false);
-                  setSettlePricingComplete(false);
-                  setSettleData({
-                    settlement_id: '',
-                    settlement_amount: 0,
-                    payment_method: 'cash',
-                    transaction_reference: '',
-                    settlement_notes: '',
-                    settlement_type: 'regular',
-                    given_by: '',
-    given_by_user_id: null as string | null,
-                  });
-                }}
-                className="text-muted hover:text-foreground"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {!settlePricingComplete ? (
-              <div className="space-y-4">
-                <h5 className="text-lg font-semibold text-foreground">Add Consultation Fee</h5>
-
-                {settlements.find(s => s.id === settleData.settlement_id) && (
-                  <div className="bg-surface-inset rounded-lg p-4">
-                    <p className="text-muted text-sm mb-1">Doctor</p>
-                    <p className="text-foreground font-medium">
-                      {settlements.find(s => s.id === settleData.settlement_id)?.doctor?.name}
-                    </p>
-                  </div>
-                )}
-
+      {showSettleModal && settleData.settlement_id && (() => {
+        /**
+         * Pay a doctor's fee — one small form (client, 26 Sep). It used to be
+         * two steps: price, confirm, then pay, with the price summary shown
+         * twice and a "settlement amount" that had to equal the total anyway.
+         * Now the fee is what is paid; the price is saved first only if it
+         * changed.
+         */
+        const row = settlements.find(s => s.id === settleData.settlement_id);
+        const visits = settlePricingData.visit_count || 0;
+        const total = settlePricingData.total_amount || 0;
+        const needsReference = settleData.payment_method !== 'cash';
+        const close = () => {
+          setShowSettleModal(false);
+          setShowSettleNote(false);
+          setSettleData({ settlement_id: '', settlement_amount: 0, payment_method: 'cash', transaction_reference: '', settlement_notes: '', settlement_type: 'regular', given_by: '', given_by_user_id: null });
+        };
+        return (
+          <div className="fixed inset-0 bg-overlay flex items-end sm:items-center justify-center z-50 sm:p-4">
+            <form
+              onSubmit={e => { e.preventDefault(); void handlePayDoctorFee(); }}
+              className="bg-surface-hover rounded-t-2xl sm:rounded-lg p-4 sm:p-6 w-full sm:max-w-md space-y-4 max-h-[95vh] overflow-y-auto"
+            >
+              <div className="flex items-start justify-between gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-muted mb-2">Pricing Mode</label>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleSettlePricingModeChange('per_visit')}
-                      className={`flex-1 py-2 px-3 rounded-lg font-medium transition-colors ${settlePricingData.pricing_mode === 'per_visit' ? 'bg-info text-foreground' : 'bg-surface-inset text-foreground hover:bg-surface-hover'}`}
-                    >
-                      Price per Visit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleSettlePricingModeChange('total')}
-                      className={`flex-1 py-2 px-3 rounded-lg font-medium transition-colors ${settlePricingData.pricing_mode === 'total' ? 'bg-info text-foreground' : 'bg-surface-inset text-foreground hover:bg-surface-hover'}`}
-                    >
-                      Total Price
-                    </button>
-                  </div>
+                  <h4 className="text-lg font-semibold text-foreground">Pay {row?.doctor?.name || 'the doctor'}</h4>
+                  <p className="text-sm text-muted">{visits} visit{visits === 1 ? '' : 's'}</p>
                 </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-muted mb-2">Visit Count *</label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    required
-                    readOnly
-                    value={settlePricingData.visit_count}
-                    className={numInputClass}
-                  />
-                </div>
-
-                {settlePricingData.pricing_mode === 'per_visit' ? (
-                  <div>
-                    <label className="block text-sm font-medium text-muted mb-2">Amount Per Visit (₹) *</label>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      required
-                      value={settlePricingData.amount_per_visit}
-                      onFocus={e => e.target.select()}
-                      onChange={e => {
-                        if (/^\d*$/.test(e.target.value))
-                          handleSettlePriceChange('amount_per_visit', parseInt(e.target.value) || 0);
-                      }}
-                      className={numInputClass}
-                    />
-                  </div>
-                ) : (
-                  <div>
-                    <label className="block text-sm font-medium text-muted mb-2">Total Amount (₹) *</label>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      required
-                      value={settlePricingData.total_amount}
-                      onFocus={e => e.target.select()}
-                      onChange={e => {
-                        if (/^\d*$/.test(e.target.value))
-                          handleSettlePriceChange('total_amount', parseInt(e.target.value) || 0);
-                      }}
-                      className={numInputClass}
-                    />
-                  </div>
-                )}
-
-                <div className="bg-info rounded-lg p-3 space-y-1">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-info-foreground">Price per Visit:</span>
-                    <span className="text-foreground font-medium">₹{settlePricingData.amount_per_visit}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-info-foreground">Total Amount:</span>
-                    <span className="text-foreground font-bold text-lg">₹{settlePricingData.total_amount}</span>
-                  </div>
-                </div>
-
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={handleConfirmSettlePricing}
-                    disabled={loading}
-                    className="flex-1 bg-success hover:bg-success-hover text-foreground px-6 py-2 rounded-lg transition-colors disabled:opacity-50"
-                  >
-                    {loading ? 'Saving...' : 'Confirm & Continue to Settlement'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowSettleModal(false);
-                      setSettlePricingComplete(false);
-                      setSettleData({ settlement_id: '', settlement_amount: 0, payment_method: 'cash', transaction_reference: '', settlement_notes: '', settlement_type: 'regular', given_by: '', given_by_user_id: null });
-                    }}
-                    className="bg-surface-inset hover:bg-surface-inset text-foreground px-6 py-2 rounded-lg transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
+                <button type="button" onClick={close} className="text-muted hover:text-foreground" aria-label="Close">
+                  <X className="h-5 w-5" />
+                </button>
               </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="bg-surface-inset rounded-lg p-4 space-y-2">
-                  <h5 className="text-lg font-semibold text-foreground mb-3">Consultation Fee Summary</h5>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted">Price per Visit:</span>
-                    <span className="text-foreground font-medium">₹{settlePricingData.amount_per_visit}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted">Visit Count:</span>
-                    <span className="text-foreground font-medium">{settlePricingData.visit_count}</span>
-                  </div>
-                  <div className="border-t border-border pt-2 mt-2 flex justify-between">
-                    <span className="text-foreground font-semibold">Total Amount:</span>
-                    <span className="text-info font-bold text-lg">₹{settlePricingData.total_amount}</span>
-                  </div>
-                </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-muted mb-2">Settlement Amount (₹) *</label>
+              {/* The fee: per visit × visits, or a total typed straight in. */}
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <label htmlFor="settle-amount" className="text-sm text-muted w-20 shrink-0">
+                    {settlePricingData.pricing_mode === 'per_visit' ? 'Per visit' : 'Total'}
+                  </label>
                   <input
+                    id="settle-amount"
                     type="text"
                     inputMode="numeric"
                     required
-                    value={settleData.settlement_amount}
+                    autoFocus
+                    value={settlePricingData.pricing_mode === 'per_visit' ? settlePricingData.amount_per_visit : settlePricingData.total_amount}
                     onFocus={e => e.target.select()}
                     onChange={e => {
-                      if (/^\d*$/.test(e.target.value))
-                        setSettleData({ ...settleData, settlement_amount: parseInt(e.target.value) || 0 });
+                      if (!/^\d*$/.test(e.target.value)) return;
+                      const n = parseInt(e.target.value) || 0;
+                      handleSettlePriceChange(settlePricingData.pricing_mode === 'per_visit' ? 'amount_per_visit' : 'total_amount', n);
                     }}
-                    className={numInputClass}
+                    className={`${numInputClass} w-28`}
                   />
-                  <p className="text-xs text-muted mt-1">Should match total amount: ₹{settlePricingData.total_amount}</p>
+                  {settlePricingData.pricing_mode === 'per_visit' ? (
+                    <span className="text-sm text-muted whitespace-nowrap">× {visits} = <span className="font-semibold text-foreground">₹{total.toLocaleString('en-IN')}</span></span>
+                  ) : (
+                    <span className="text-sm text-muted whitespace-nowrap">for {visits} visit{visits === 1 ? '' : 's'}</span>
+                  )}
                 </div>
+                <button
+                  type="button"
+                  onClick={() => handleSettlePricingModeChange(settlePricingData.pricing_mode === 'per_visit' ? 'total' : 'per_visit')}
+                  className="text-xs text-info hover:underline pl-[5.5rem]"
+                >
+                  {settlePricingData.pricing_mode === 'per_visit' ? 'or type the total instead' : 'or price it per visit'}
+                </button>
+              </div>
 
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-muted mb-2">Payment Method *</label>
+                  <label htmlFor="settle-mode" className="block text-sm text-muted mb-1">Paid by</label>
                   <select
+                    id="settle-mode"
                     required
                     value={settleData.payment_method}
                     onChange={e => setSettleData({ ...settleData, payment_method: e.target.value })}
                     className={numInputClass}
                   >
-                    <option value="cash">CASH</option>
+                    <option value="cash">Cash</option>
                     <option value="upi">UPI</option>
-                    <option value="card">CARD</option>
-                    <option value="bank_transfer">BANK TRANSFER</option>
-                    <option value="cheque">CHEQUE</option>
+                    <option value="card">Card</option>
+                    <option value="bank_transfer">Bank transfer</option>
+                    <option value="cheque">Cheque</option>
                   </select>
                 </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-muted mb-2">Transaction Reference</label>
-                  <input
-                    type="text"
-                    value={settleData.transaction_reference}
-                    onChange={e => setSettleData({ ...settleData, transaction_reference: e.target.value })}
-                    className={numInputClass}
-                  />
-                </div>
-
-                {/* A picked user is a record; the free-text box under it is for
-                    someone with no login. Defaults to whoever is paying. */}
-                <GivenByPicker
-                  value={{ given_by_user_id: settleData.given_by_user_id, given_by: settleData.given_by }}
-                  onChange={next =>
-                    setSettleData({
-                      ...settleData,
-                      given_by_user_id: next.given_by_user_id,
-                      given_by: next.given_by,
-                    })
-                  }
-                />
-
-                <div>
-                  <label className="block text-sm font-medium text-muted mb-2">Notes</label>
-                  <textarea
-                    rows={2}
-                    value={settleData.settlement_notes}
-                    onChange={e => setSettleData({ ...settleData, settlement_notes: e.target.value })}
-                    className={numInputClass}
-                  />
-                </div>
-
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={handleMarkAsSettled}
-                    disabled={loading}
-                    className="flex-1 bg-success hover:bg-success-hover text-foreground px-6 py-2 rounded-lg transition-colors disabled:opacity-50"
-                  >
-                    {loading ? 'Processing...' : 'Mark as Settled'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSettlePricingComplete(false)}
-                    className="bg-surface-inset hover:bg-surface-inset text-foreground px-6 py-2 rounded-lg transition-colors"
-                  >
-                    Back
-                  </button>
-                </div>
+                {needsReference && (
+                  <div>
+                    <label htmlFor="settle-ref" className="block text-sm text-muted mb-1">
+                      Reference{settleData.payment_method === 'upi' ? ' *' : ''}
+                    </label>
+                    <input
+                      id="settle-ref"
+                      type="text"
+                      required={settleData.payment_method === 'upi'}
+                      value={settleData.transaction_reference}
+                      onChange={e => setSettleData({ ...settleData, transaction_reference: e.target.value })}
+                      className={numInputClass}
+                    />
+                  </div>
+                )}
               </div>
-            )}
+
+              {/* A picked user is a record; a typed name is for someone with no
+                  login. Defaults to whoever is paying. */}
+              <GivenByPicker
+                value={{ given_by_user_id: settleData.given_by_user_id, given_by: settleData.given_by }}
+                onChange={next =>
+                  setSettleData({ ...settleData, given_by_user_id: next.given_by_user_id, given_by: next.given_by })
+                }
+              />
+
+              {showSettleNote ? (
+                <textarea
+                  rows={2}
+                  placeholder="Note"
+                  value={settleData.settlement_notes}
+                  onChange={e => setSettleData({ ...settleData, settlement_notes: e.target.value })}
+                  className={numInputClass}
+                />
+              ) : (
+                <button type="button" onClick={() => setShowSettleNote(true)} className="text-sm text-info hover:underline">
+                  + Add a note
+                </button>
+              )}
+
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="submit"
+                  disabled={loading || total <= 0}
+                  className="flex-1 bg-success hover:bg-success-hover text-foreground px-6 py-2 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {loading ? 'Paying…' : `Pay ₹${total.toLocaleString('en-IN')}`}
+                </button>
+                <button type="button" onClick={close} className="bg-surface-inset text-foreground px-6 py-2 rounded-lg">
+                  Cancel
+                </button>
+              </div>
+            </form>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Edit Settlement Modal */}
       {editingSettlement && (

@@ -10,6 +10,7 @@ import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { DoctorSelect } from '@/components/patients/doctor-select'
 import { istFields, istNowFields, parseStoredInstant, toISTInstant } from '@/lib/consultations/ist'
+import { TimeInput } from '@/components/ui/time-input'
 
 /**
  * Adding and editing a doctor consultation.
@@ -134,10 +135,18 @@ export function ConsultationFormModal({
         notes: consultation.notes || '',
       })
     } else {
-      // Today, on the same IST clock the timestamp will be written against.
-      setForm({ ...EMPTY, ...istNowFields() })
+      // Today and now, on the same IST clock the timestamp will be written
+      // against. (This spread the helper's { date, time } straight in, which
+      // set no form field at all: every new visit opened blank, and one saved
+      // without a time was stored at midnight. Fixed 2026-09-26.)
+      // A patient discharged before today gets no date: the desk picks one inside
+      // the stay, rather than the form offering a day after discharge.
+      const now = istNowFields()
+      const discharge = dateValue(dischargeDate)
+      const date = discharge && now.date > discharge ? '' : now.date
+      setForm({ ...EMPTY, consultation_date: date, consultation_time: now.time })
     }
-  }, [isOpen, consultation])
+  }, [isOpen, consultation, dischargeDate])
 
   useEffect(() => {
     if (!isOpen) return
@@ -315,11 +324,10 @@ export function ConsultationFormModal({
           </Field>
 
           <Field id="consultation_time" label="Consultation time">
-            <Input
+            <TimeInput
               id="consultation_time"
-              type="time"
               value={form.consultation_time}
-              onChange={e => update('consultation_time', e.target.value)}
+              onChange={value => update('consultation_time', value)}
               disabled={saving}
             />
           </Field>

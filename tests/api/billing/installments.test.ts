@@ -409,6 +409,26 @@ describe('POST /api/patients/[id]/installments — ledger side effect', () => {
   })
 })
 
+/**
+ * Client, 26 Sep: a payment, registration fee or lab test an admin takes on
+ * the patient's page used to close its ledger row on the spot. Every row now
+ * starts Open and waits for "Mark closed", whoever entered it.
+ */
+describe('POST /api/patients/[id]/installments — the ledger row starts Open', () => {
+  it.each(['regular', 'lab', 'registration'] as const)('for an admin taking a %s payment', async (kind) => {
+    await signInAs('ADMIN', { userId: 'u-admin' })
+    aPatient({ id: 'p1', patient_id: '12/26', name: 'Ramesh Kumar' })
+    aBilling({ id: 'b1', patient_id: 'p1', registration_fee_status: 'pending' })
+    aChargeItem({ id: 'lab', name: 'Lab Test', category: 'lab' })
+    aChargeItem({ id: 'reg', name: 'Registration', category: 'registration', is_registration_fee: true })
+
+    const { status } = await create('p1', { patient_billing_id: 'b1', amount: 300, kind })
+
+    expect(status).toBe(200)
+    expect(db.rows('daily_ledger_transactions')[0]).toMatchObject({ status: 'open', closed_at: null, closed_by: null })
+  })
+})
+
 describe('POST /api/patients/[id]/installments — registration fee (PRD v2 CR-11)', () => {
   it('books kind registration under the registration ledger source and marks the fee collected', async () => {
     await signInAs('RECEPTIONIST', { userId: 'u-recep' })

@@ -1139,6 +1139,15 @@ Order matters: the new code writes columns that exist only after the migrations.
 
 This section keeps the **answer log**: round 7 (§9.0b), round 6 (§9.0a), round 4 (§9.0), round 3 (§9.1), round 2 (§9.2), the questions closed by your clarification (§9.3), and round 1 (§9.4).
 
+### 9.0d Round 9 — answered 2026-09-26
+
+| # | Asked / reported | Decision | Recorded in |
+|---|---|---|---|
+| 1 | *"If admin does anything in the patient tab like reg fee or lab or payment received, it gets closed status directly — make it open like the receptionist"* | **Every ledger row is born Open, the admin's included** (Q-25 = A reversed). Asked about the two rows already closed that way (6/26: ₹300 registration, ₹250 lab) → **leave them closed** | `APP-FLOW-PRD.md` §4.10, §7 |
+| 2 | Visit time shows 12-hour on some computers and 24-hour on others; staff do not read 24-hour time | A **12-hour hour · minute · AM/PM picker** that looks the same everywhere, for the visit and the discharge time. Found on the way: a new visit never actually pre-filled today's date and time, so one saved without a time was stored at midnight (1 of 17 visits) — fixed | §4.4, BUGS #80 |
+| 3 | The doctor visit settlement form is too big, with too much information | Asked, with two mock-ups → **one compact step**: per visit × visits = total (or a typed total), paid by, reference only for non-cash, handed over by (a typed name only for "someone else"), optional note, **Pay ₹X** | §4.8 |
+| 4 | On the patient, show *x* — the payments — big: *"this is the main amount; the rest are taken for proposed services"* | The Overview's headline is **Payments received (x)**; the x + y + z = A line shows x in large type | §4.3 |
+
 ### 9.0c Round 8 — after the client demo, answered 2026-09-26
 
 The client's list after the demo (ten points), and the answers to the questions it raised.
@@ -1339,3 +1348,4 @@ The baseline `PRD.md` §10 questions were carried into round 1: Q1 → Q-37 · Q
 | 2026-09-25 | **Q-99 = A: the Dashboard is removed** (BUGS #73). The admin lands on Patients like everyone else; the sidebar entry and the admin-only redirect are gone; sign-in, change-password and the middleware's role redirects all go to `/patients`; `/dashboard` survives only as a redirect for old bookmarks. `feature/v2-release-fixes` and this change merged to `main` for the client release. Nothing open | Claude |
 | 2026-09-25 | **BUGS #68 steps 1–3 applied** (client's go-ahead): the server uses the service-role key; live refresh listens to the data-free `change_signals` table fed by triggers (also fixes #75); the anon and authenticated roles lost every right (`20260925000006`–`0007`, undo script in `supabase/rollback/`); the backup function needs a Vault secret (`0008`). Found and fixed on the way: every scheduled backup had been failing on a stale database password (#76). Step 4 (RLS) not done. Details and verification: `SECURITY-DB-ACCESS.md` §0 | Claude |
 | 2026-09-26 | **Round 8** (§9.0c): medicine is always an expense (no question, no "not decided"); lab is in-house income, taken like the registration fee — a payment, its own ledger type and a read-only Charges line, together (`lib/billing/linked-charge.ts`, `patient_charges.installment_id`, migration `20260926000001`); the registration fee writes nothing until collected and follows the catalogue until then; Overview and Finances split money in into payments + registration + lab; the Ledger loses Add payment and hides its totals from reception; the hospital logo; lists no longer cut off below 1280 px; the Finances PDFs' transaction tables, always empty, fixed | Claude |
+| 2026-09-26 | **Round 9** (§9.0d): every ledger row is born Open, the admin's included; a 12-hour time picker for visit and discharge times, and new visits now really pre-fill today and the current time (BUGS #80); the doctor-fee pay form is one compact step; the Overview leads with the payments figure (x) | Claude |

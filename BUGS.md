@@ -21,7 +21,7 @@ failures**. What is open:
 |---|---|---|
 | 🟡 #68 | ~~The database is readable and writable with the key the browser carries~~ | **Closed in practice 2026-09-25** (steps 1–3 of [`docs/SECURITY-DB-ACCESS.md`](docs/SECURITY-DB-ACCESS.md)); step 4, row-level security as a second lock, not done |
 
-**Fixed on 2026-09-26:** the registration fee disagreeing between tabs (#77) · lists cut off on narrower screens (#78) · empty Finances PDF tables (#79).
+**Fixed on 2026-09-26:** a new visit's date and time never pre-filled (#80) · the registration fee disagreeing between tabs (#77) · lists cut off on narrower screens (#78) · empty Finances PDF tables (#79).
 
 **Fixed on 2026-09-25:** the browser's key closed (#68, steps 1–3) · live refresh on every screen (#75) · scheduled backups, failing since at least 24 Sep (#76) · the placeholder Dashboard removed (#73, Q-99 = A) · security #1, #3, #4, #5, #6, #69, #70, #74 · correctness #9, #14,
 #22, #26, #27, #44, #45, #54, #64, #65, #66, #67 · polish #71, #72 · and 14 older entries
@@ -707,6 +707,11 @@ the suite exercises the API, not the database's own access rules.
 service-role key (server-only, never `NEXT_PUBLIC_`), revoke the anon/authenticated table
 grants, and give live refresh a narrow alternative (RLS policies scoped to realtime, or
 server-sent refetch signals).
+
+### ✅ #80 — RESOLVED — A new visit never pre-filled today's date and time
+**Where:** `components/patients/consultation-form-modal.tsx`
+
+The form meant to open on "today, now", but spread the helper's `{ date, time }` into fields named `consultation_date` / `consultation_time`, so nothing was set: every new visit opened blank, and a visit saved without a time was stored at midnight (1 of 17 visits in production). **Resolved 2026-09-26** with the 12-hour time picker (round 9): today and the current time are filled in; a patient discharged before today gets no date, so the form never offers a day after discharge.
 
 ### ✅ #77 — RESOLVED — An uncollected registration fee showed in Charges, and at a stale price
 **Where:** `lib/billing/registration-fee.ts`, the patient's Overview, Payments and Charges tabs

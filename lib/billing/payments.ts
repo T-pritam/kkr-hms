@@ -207,7 +207,7 @@ export interface RecordPaymentArgs {
   kind?: PaymentKind
   input: PaymentInput
   userId: string
-  /** Decides whether the ledger credit is born Open or Closed (Q-25 = A). */
+  /** Recorded on the ledger row's creation; every row is born Open (26 Sep). */
   userRole?: string | null
 }
 

@@ -69,9 +69,9 @@ export interface LedgerTransactionInput {
   status?: 'open' | 'closed'
   created_by: string
   /**
-   * The creator's role. An entry an admin makes is born Closed — they are the
-   * one who would close it anyway (Q-25 = A). Reception's entries, payouts
-   * included, are born Open and wait for the admin's "Mark closed" (Q-71).
+   * The creator's role. It no longer decides anything: every entry is born
+   * Open and waits for the admin's "Mark closed", the admin's own included
+   * (client, 26 Sep; Q-25 = A reversed). Kept so callers need not change.
    */
   created_by_role?: string | null
 }
@@ -110,7 +110,6 @@ function validate(
     expense_category_detail,
     status,
     created_by,
-    created_by_role,
   } = input
 
   if (!transaction_date || !transaction_type || !source || !amount || !payment_mode || !description) {
@@ -156,9 +155,12 @@ function validate(
     categoryDetail = detail.value
   }
 
-  // Born Closed for an admin, Open for everyone else (Q-25 = A). A closed row
-  // always carries who closed it and when (the CHECK in 20260924000001).
-  const bornStatus = status ?? (created_by_role === 'ADMIN' ? 'closed' : 'open')
+  // Every row is born Open, the admin's included (client, 26 Sep — reversing
+  // Q-25 = A, which closed an admin's own entries on the spot, so a payment the
+  // admin took at the desk skipped the close like no one else's did). Rows are
+  // closed only by the admin's "Mark closed". A closed row always carries who
+  // closed it and when (the CHECK in 20260924000001).
+  const bornStatus = status ?? 'open'
   const closing =
     bornStatus === 'closed'
       ? { closed_at: new Date().toISOString(), closed_by: created_by }

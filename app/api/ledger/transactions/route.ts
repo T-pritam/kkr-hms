@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
       expense_category: body.expense_category,
       expense_category_detail: body.expense_category_detail,
       created_by: user.id,
-      // Admin's entries are born Closed; everyone else's wait (Q-25 = A).
+      // Every entry is born Open, the admin's included (26 Sep).
       created_by_role: user.role,
     })
 

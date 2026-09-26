@@ -8,8 +8,7 @@
  * G-12). Both now go through lib/billing/payouts.ts: one ledger OUT per payout,
  * carried on the settlement so un-paying can reverse it.
  *
- * Reception pays these too (Q-19 f). Their debit is born Open and waits for the
- * admin's close; an admin's is born Closed (Q-71 = A, Q-25 = A).
+ * Reception pays these too (Q-19 f).
  */
 
 import { NextRequest, NextResponse } from 'next/server';
