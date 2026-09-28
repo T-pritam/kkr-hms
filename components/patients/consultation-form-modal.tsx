@@ -55,6 +55,12 @@ interface FormState {
   consultation_date: string
   consultation_time: string
   notes: string
+  /** Create only: one visit, or one a day across a range (client, 28 Sep). */
+  several: boolean
+  to_date: string
+  include_last: boolean
+  /** Days in the range the desk unticked in the preview. */
+  skipped: string[]
 }
 
 const EMPTY: FormState = {
@@ -63,7 +69,34 @@ const EMPTY: FormState = {
   consultation_date: '',
   consultation_time: '',
   notes: '',
+  several: false,
+  to_date: '',
+  include_last: true,
+  skipped: [],
 }
+
+const nextDay = (day: string) =>
+  new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)
+
+/** Every day from `from` to `to`, the last one only if asked; at most 90. */
+function rangeOf(from: string, to: string, includeLast: boolean): string[] {
+  if (!from || !to || to < from) return []
+  const days: string[] = []
+  for (let d = from; d <= to && days.length < 91; d = nextDay(d)) days.push(d)
+  return includeLast ? days : days.slice(0, -1)
+}
+
+/** "14:05" → "2:05 PM", the way the time picker shows it. */
+const formatTime12 = (hhmm: string) => {
+  const [h, m] = hhmm.split(':').map(Number)
+  if (Number.isNaN(h)) return ''
+  return `${h % 12 === 0 ? 12 : h % 12}:${String(m || 0).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`
+}
+
+const dayLabel = (day: string) =>
+  new Date(`${day}T00:00:00Z`).toLocaleDateString('en-IN', {
+    weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC',
+  })
 
 interface VisitPurpose {
   id: string
@@ -128,6 +161,7 @@ export function ConsultationFormModal({
     if (consultation) {
       const { date, time } = istFields(parseStoredInstant(consultation.consultation_date))
       setForm({
+        ...EMPTY,
         doctor_id: consultation.doctor_id || '',
         visit_purpose_id: consultation.visit_purpose_id || '',
         consultation_date: date,
@@ -193,16 +227,40 @@ export function ConsultationFormModal({
     return { minDate: min, maxDate: max, clampedByDischarge: max === discharge }
   }, [patientJoinDate, dischargeDate, form.consultation_date])
 
+  /**
+   * Several days: every day of the range, each marked with why it can't be a
+   * visit (before joining, after discharge, in the future) or ticked/unticked
+   * by the desk.
+   */
+  const preview = useMemo(() => {
+    if (!form.several) return []
+    const join = dateValue(patientJoinDate)
+    const discharge = dateValue(dischargeDate)
+    const today = istNowFields().date
+    return rangeOf(form.consultation_date, form.to_date, form.include_last).map(day => {
+      const blocked =
+        join && day < join ? 'before joining'
+          : discharge && day > discharge ? 'after discharge'
+            : day > today ? 'in the future'
+              : null
+      return { day, blocked, picked: !blocked && !form.skipped.includes(day) }
+    })
+  }, [form.several, form.consultation_date, form.to_date, form.include_last, form.skipped, patientJoinDate, dischargeDate])
+  const pickedDays = preview.filter(p => p.picked).map(p => p.day)
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setSaving(true)
     setError('')
 
     try {
+      const several = mode === 'create' && form.several
       const payload = {
         doctor_id: form.doctor_id,
         visit_purpose_id: form.visit_purpose_id,
-        consultation_date: toISTInstant(form.consultation_date, form.consultation_time),
+        ...(several
+          ? { consultation_dates: pickedDays.map(day => toISTInstant(day, form.consultation_time)) }
+          : { consultation_date: toISTInstant(form.consultation_date, form.consultation_time) }),
         notes: form.notes,
         // On edit, keep whatever the row already points at and back-fill the rows the old
         // code saved with a null.
@@ -252,11 +310,16 @@ export function ConsultationFormModal({
               !form.doctor_id ||
               !form.visit_purpose_id ||
               !form.consultation_date ||
+              (form.several && pickedDays.length === 0) ||
               !billingId
             }
           >
             {saving && <Loader2 size={16} className="mr-2 animate-spin" />}
-            {mode === 'edit' ? 'Save changes' : 'Add consultation'}
+            {mode === 'edit'
+              ? 'Save changes'
+              : form.several
+                ? `Add ${pickedDays.length} visit${pickedDays.length === 1 ? '' : 's'}`
+                : 'Add consultation'}
           </Button>
         </div>
       }
@@ -305,10 +368,26 @@ export function ConsultationFormModal({
           </Select>
         </Field>
 
+        {mode === 'create' && (
+          <div className="inline-flex rounded-lg border border-border overflow-hidden">
+            {([false, true] as const).map(v => (
+              <button
+                key={String(v)}
+                type="button"
+                onClick={() => update('several', v)}
+                disabled={saving}
+                className={`px-3 py-1.5 text-sm ${form.several === v ? 'bg-info text-foreground' : 'bg-surface-inset text-muted hover:text-foreground'}`}
+              >
+                {v ? 'Several days' : 'One day'}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field
             id="consultation_date"
-            label="Consultation date"
+            label={form.several ? 'From' : 'Consultation date'}
             required
             hint={clampedByDischarge ? `Discharged on ${maxDate}` : 'Today or earlier'}
           >
@@ -323,15 +402,85 @@ export function ConsultationFormModal({
             />
           </Field>
 
-          <Field id="consultation_time" label="Consultation time">
-            <TimeInput
-              id="consultation_time"
-              value={form.consultation_time}
-              onChange={value => update('consultation_time', value)}
-              disabled={saving}
-            />
-          </Field>
+          {form.several ? (
+            <Field id="to_date" label="To" required>
+              <Input
+                id="to_date"
+                type="date"
+                value={form.to_date}
+                onChange={e => update('to_date', e.target.value)}
+                disabled={saving}
+                min={form.consultation_date || minDate}
+                max={maxDate}
+              />
+            </Field>
+          ) : (
+            <Field id="consultation_time" label="Consultation time">
+              <TimeInput
+                id="consultation_time"
+                value={form.consultation_time}
+                onChange={value => update('consultation_time', value)}
+                disabled={saving}
+              />
+            </Field>
+          )}
         </div>
+
+        {form.several && (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-end gap-4">
+              <Field id="consultation_time" label="Time, each day">
+                <TimeInput
+                  id="consultation_time"
+                  value={form.consultation_time}
+                  onChange={value => update('consultation_time', value)}
+                  disabled={saving}
+                />
+              </Field>
+              <label className="flex items-center gap-2 text-sm text-foreground pb-2.5">
+                <input
+                  type="checkbox"
+                  checked={form.include_last}
+                  onChange={e => update('include_last', e.target.checked)}
+                  disabled={saving}
+                />
+                Include last date as well
+              </label>
+            </div>
+
+            {/* What will be added, before it is — untick any day to leave it out. */}
+            <div className="rounded-lg border border-border bg-surface-inset p-3 space-y-1.5">
+              <p className="text-sm font-medium text-foreground">
+                {preview.length === 0
+                  ? 'Pick the From and To dates'
+                  : `These visits will be added (${pickedDays.length})`}
+              </p>
+              <div className="max-h-56 overflow-y-auto space-y-1">
+                {preview.map(({ day, blocked, picked }) => (
+                  <label
+                    key={day}
+                    className={`flex items-center gap-2 text-sm ${blocked ? 'text-muted' : 'text-foreground'}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={picked}
+                      disabled={saving || Boolean(blocked)}
+                      onChange={e =>
+                        update(
+                          'skipped',
+                          e.target.checked ? form.skipped.filter(d => d !== day) : [...form.skipped, day],
+                        )
+                      }
+                    />
+                    <span className="w-40">{dayLabel(day)}</span>
+                    <span className="text-muted">{form.consultation_time ? formatTime12(form.consultation_time) : 'no time'}</span>
+                    {blocked && <span className="text-xs text-warning-text">— {blocked}</span>}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         <Field id="notes" label="Notes">
           <Textarea

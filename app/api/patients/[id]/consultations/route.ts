@@ -4,6 +4,9 @@ import { verifyAuth } from '@/lib/auth/verify';
 import { requireBilling } from '@/lib/billing/authz';
 import { istFields } from '@/lib/consultations/ist';
 
+/** A bulk entry covers at most this many days (a long stay's worth of rounds). */
+const MAX_BULK_VISITS = 90
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -96,6 +99,27 @@ export async function POST(
       );
     }
 
+    /**
+     * One visit, or several at once (client, 28 Sep: entering a week of ward
+     * rounds one by one took too long). `consultation_dates` is the list the
+     * form's preview showed; every date is checked before any is written, so a
+     * bad day saves none of them.
+     */
+    const bulk = Array.isArray(body.consultation_dates)
+    const instants: string[] = bulk
+      ? body.consultation_dates.map((d: unknown) => String(d))
+      : [body.consultation_date || new Date().toISOString()];
+
+    if (bulk && (instants.length === 0 || instants.length > MAX_BULK_VISITS)) {
+      return NextResponse.json(
+        { error: instants.length === 0 ? 'Pick at least one day' : `At most ${MAX_BULK_VISITS} visits at once` },
+        { status: 400 }
+      );
+    }
+    if (instants.some(i => Number.isNaN(Date.parse(i)))) {
+      return NextResponse.json({ error: 'One of the visit dates is not a valid date' }, { status: 400 });
+    }
+
     // Validate consultation date is after patient join date
     const { data: patient } = await supabase
       .from('patients')
@@ -108,68 +132,62 @@ export async function POST(
       // parses as UTC midnight, so a visit entered between 00:00 and 05:29 IST on the
       // admission day is an instant on the *previous* UTC day and was rejected — an error
       // with no way round it from the form, which now defaults to today.
-      const istDay = istFields(new Date(body.consultation_date || new Date())).date;
       const joinDay = String(patient.date_of_join).slice(0, 10);
+      const early = instants.find(i => istFields(new Date(i)).date < joinDay);
 
-      if (istDay < joinDay) {
+      if (early) {
         return NextResponse.json(
-          { error: 'Consultation date cannot be before patient join date' },
+          {
+            error: bulk
+              ? `${istFields(new Date(early)).date} is before the patient joined (${joinDay}) — nothing was added`
+              : 'Consultation date cannot be before patient join date',
+          },
           { status: 400 }
         );
       }
     }
 
-    // Calculate visit_number: count consultations for this doctor and patient
-    let visitNumber = 1;
-    if (body.doctor_id) {
-      const { data: existingConsultations } = await supabase
-        .from('patient_consultations')
-        .select('id', { count: 'exact' })
-        .eq('patient_id', patientId)
-        .eq('doctor_id', body.doctor_id)
-        .is('deleted_at', null);
-
-      visitNumber = (existingConsultations?.length || 0) + 1;
-    }
-
-    // Convert consultation_date to UTC if provided
-    let consultationDateUTC = new Date().toISOString();
-    if (body.consultation_date) {
-      // Parse the date string from frontend (which is in local timezone)
-      const localDate = new Date(body.consultation_date);
-      // Convert to UTC by getting ISO string
-      consultationDateUTC = localDate.toISOString();
-    }
+    // Visit numbers carry on from this doctor's visits to this patient.
+    const { data: existingConsultations } = await supabase
+      .from('patient_consultations')
+      .select('id', { count: 'exact' })
+      .eq('patient_id', patientId)
+      .eq('doctor_id', body.doctor_id)
+      .is('deleted_at', null);
+    const firstNumber = (existingConsultations?.length || 0) + 1;
 
     // No fee at visit entry — pricing happens at settle time, against the
     // settlement sync creates for this doctor+purpose. price_per_visit is left
     // at its column default.
-    const consultationData = {
-      patient_id: patientId,
-      doctor_id: body.doctor_id || null,
-      visit_purpose_id: body.visit_purpose_id,
-      consultation_date: consultationDateUTC,
-      visit_number: visitNumber,
-      notes: body.notes || null,
-      billing_id: body.billing_id || null,
-      created_by: authResult.user.id,
-    };
+    const rows = [...instants]
+      .sort()
+      .map((instant, index) => ({
+        patient_id: patientId,
+        doctor_id: body.doctor_id || null,
+        visit_purpose_id: body.visit_purpose_id,
+        consultation_date: new Date(instant).toISOString(),
+        visit_number: firstNumber + index,
+        notes: body.notes || null,
+        billing_id: body.billing_id || null,
+        created_by: authResult.user.id,
+      }));
 
     const { data, error } = await supabase
       .from('patient_consultations')
-      .insert(consultationData)
+      .insert(rows)
       .select(`
         *,
         doctor:doctors(id, name, specialist),
         visit_purpose:visit_purposes(id, code, name),
         created_by_user:users!created_by(id, username, email),
         updated_by_user:users!updated_by(id, username)
-      `)
-      .single();
+      `);
 
     if (error) throw error;
 
-    return NextResponse.json(data);
+    return NextResponse.json(
+      bulk ? { consultations: data, count: data?.length ?? 0 } : (Array.isArray(data) ? data[0] : data)
+    );
   } catch (error) {
     console.error('Error creating consultation:', error);
     return NextResponse.json(

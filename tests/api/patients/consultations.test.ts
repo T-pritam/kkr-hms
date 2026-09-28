@@ -574,3 +574,64 @@ describe('DELETE /api/patients/[id]/consultations/[consultationId]', () => {
     expect((await remove('p1', 'c-old')).status).toBe(409)
   })
 })
+
+/**
+ * Several visits at once (client, 28 Sep): the form previews one visit a day
+ * across a range and sends the days left ticked.
+ */
+describe('POST /api/patients/[id]/consultations — several days at once', () => {
+  const days = ['2026-03-11T03:30:00.000Z', '2026-03-09T03:30:00.000Z', '2026-03-10T03:30:00.000Z']
+
+  it('adds one visit per day, numbered in date order after the ones already there', async () => {
+    await signInAs('NURSE')
+    aPatient({ id: 'p1', date_of_join: '2026-03-01' })
+    aDoctor({ id: 'd1' })
+    aConsultation({ patient_id: 'p1', doctor_id: 'd1', visit_number: 1 })
+
+    const { status, body } = await create('p1', { doctor_id: 'd1', consultation_dates: days })
+
+    expect(status).toBe(200)
+    expect(body.count).toBe(3)
+    const added = db
+      .rows('patient_consultations')
+      .filter((r) => r.visit_number > 1)
+      .map((r) => [r.consultation_date.slice(0, 10), r.visit_number])
+    expect(added).toEqual([
+      ['2026-03-09', 2],
+      ['2026-03-10', 3],
+      ['2026-03-11', 4],
+    ])
+  })
+
+  it('adds none of them when any day is before the patient joined', async () => {
+    await signInAs('NURSE')
+    aPatient({ id: 'p1', date_of_join: '2026-03-10' })
+    aDoctor({ id: 'd1' })
+
+    const { status, body } = await create('p1', { doctor_id: 'd1', consultation_dates: days })
+
+    expect(status).toBe(400)
+    expect(body.error).toMatch(/before the patient joined.*nothing was added/)
+    expect(db.count('patient_consultations')).toBe(0)
+  })
+
+  it('refuses an empty list', async () => {
+    await signInAs('NURSE')
+    aPatient({ id: 'p1', date_of_join: '2026-03-01' })
+    aDoctor({ id: 'd1' })
+
+    expect((await create('p1', { doctor_id: 'd1', consultation_dates: [] })).status).toBe(400)
+  })
+
+  it('still answers a single visit with the one record, as before', async () => {
+    await signInAs('NURSE')
+    aPatient({ id: 'p1', date_of_join: '2026-03-01' })
+    aDoctor({ id: 'd1' })
+
+    const { status, body } = await create('p1', { doctor_id: 'd1', consultation_date: days[0] })
+
+    expect(status).toBe(200)
+    expect(body.id).toEqual(expect.any(String))
+    expect(body.count).toBeUndefined()
+  })
+})
