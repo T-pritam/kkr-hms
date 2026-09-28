@@ -20,6 +20,10 @@ import {
   mkLetterheadDoc, minimalPatientBlock, letterheadSectionTitle, letterheadTable, autoPrint,
 } from './letterhead'
 import type { LetterheadMode } from './letterhead'
+import { combineCharges } from '@/lib/billing/group-charges'
+
+/** Every line as it was entered, by date — or one line per charge. */
+export type ChargesLayout = 'separate' | 'combined'
 
 export interface PatientChargesRow {
   charge_date: string
@@ -28,7 +32,9 @@ export interface PatientChargesRow {
   qty: number
   /** Decides whether the quantity is a count, an hours figure, or nothing. */
   billing_mode?: string | null
+  /** The line total (rate × qty). */
   amount: number
+  charge_item_id?: string | null
 }
 
 export interface PatientChargesPatient extends AgeSubject {
@@ -94,7 +100,34 @@ export function chargeRowsByDate(charges: PatientChargesRow[]): string[][] {
   )
 }
 
-export function renderPatientCharges(data: PatientChargesData, mode: LetterheadMode = 'digital') {
+/**
+ * The combined statement (client, 28 Sep): one line per charge — rate ×
+ * days/qty = amount — instead of every day of a stay on its own line.
+ */
+export function combinedChargeRows(charges: PatientChargesRow[]): string[][] {
+  return combineCharges(charges, c => {
+    const qty = Number(c.qty) || 1
+    const perDay = c.billing_mode === 'per_day'
+    return {
+      label: c.charge_type,
+      itemId: c.charge_item_id,
+      rate: perDay ? Number(c.amount) || 0 : (Number(c.amount) || 0) / qty,
+      qty,
+      billingMode: c.billing_mode,
+    }
+  }).map(line => [
+    line.label,
+    fmt(line.rate),
+    line.unit ? `${line.quantity} ${line.unit === 'days' && line.quantity === 1 ? 'day' : line.unit}` : String(line.quantity),
+    fmt(line.total),
+  ])
+}
+
+export function renderPatientCharges(
+  data: PatientChargesData,
+  mode: LetterheadMode = 'digital',
+  layout: ChargesLayout = 'separate',
+) {
   const h = mkLetterheadDoc(mode)
   const { patient, charges } = data
 
@@ -112,6 +145,21 @@ export function renderPatientCharges(data: PatientChargesData, mode: LetterheadM
     h.doc.setFontSize(9)
     h.doc.setTextColor(0, 0, 0)
     h.doc.text('No charges recorded yet.', M, h.y)
+    return h.doc
+  }
+
+  if (layout === 'combined') {
+    letterheadTable(
+      h,
+      [
+        { label: 'Charge', width: 62 },
+        { label: 'Rate', width: 22, align: 'right' },
+        { label: 'Days / Qty', width: 20, align: 'right' },
+        { label: 'Amount', width: 22, align: 'right' },
+      ],
+      combinedChargeRows(charges),
+      { totalLabel: 'TOTAL', totalValue: fmt(total(charges)) },
+    )
     return h.doc
   }
 
@@ -136,12 +184,12 @@ export function patientChargesFilename(data: PatientChargesData): string {
   return `Patient_Charges_${safeName}.pdf`
 }
 
-export function generatePatientChargesPDF(data: PatientChargesData): void {
-  renderPatientCharges(data, 'digital').save(patientChargesFilename(data))
+export function generatePatientChargesPDF(data: PatientChargesData, layout: ChargesLayout = 'separate'): void {
+  renderPatientCharges(data, 'digital', layout).save(patientChargesFilename(data))
 }
 
 /** Renders the print (no-background) copy and sends it straight to the
  * browser's print dialog, for the pre-printed letterhead paper. */
-export function printPatientCharges(data: PatientChargesData): void {
-  autoPrint(renderPatientCharges(data, 'print'))
+export function printPatientCharges(data: PatientChargesData, layout: ChargesLayout = 'separate'): void {
+  autoPrint(renderPatientCharges(data, 'print', layout))
 }

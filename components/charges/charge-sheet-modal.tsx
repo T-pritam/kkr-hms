@@ -61,11 +61,21 @@ export interface ChargeSheetLine {
   billing_mode: 'one_time' | 'per_day' | 'per_hour'
   /** The day this line falls on. Blank means "use the sheet date". */
   service_date: string
-  /** Range entry, only ever set on a line that has not been saved yet. */
+  /** Range entry: a new per-day line, or saved per-day rows folded back into one. */
   from_date: string
   to_date: string
+  /** per_day: bill the To date too. New lines start unticked (client, 28 Sep). */
+  include_last: boolean
   /** per_day: the days dropped from the chosen range before saving. */
   removed_days: string[]
+  /**
+   * per_day, folded from saved rows: which stored row each day already is, so
+   * saving reuses those rows (and deletes the days no longer in the range)
+   * instead of replacing the whole block.
+   */
+  row_ids: Record<string, string>
+  /** The name was typed ("Not in the list") rather than picked. */
+  custom: boolean
   /** Set when this line is a fetched pharmacy bill rather than a typed charge. */
   pharmacy_bill_id: string | null
 }
@@ -80,7 +90,7 @@ interface Props {
 
 const today = () => istToday()
 
-const BLANK_LINE: ChargeSheetLine = {
+export const BLANK_LINE: ChargeSheetLine = {
   id: null,
   charge_item_id: null,
   charge_name: '',
@@ -91,7 +101,10 @@ const BLANK_LINE: ChargeSheetLine = {
   service_date: '',
   from_date: '',
   to_date: '',
+  include_last: false,
   removed_days: [],
+  row_ids: {},
+  custom: false,
   pharmacy_bill_id: null,
 }
 
@@ -109,9 +122,9 @@ const money = (n: number) =>
  * template-built `sm:grid-cols-[…]` would never exist in the stylesheet.
  */
 const LINE_GRID =
-  'grid-cols-[132px_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)_86px_88px_88px_28px]'
+  'grid-cols-[132px_minmax(0,1.4fr)_minmax(0,1fr)_86px_88px_88px_28px]'
 const LINE_GRID_SM =
-  'sm:grid-cols-[132px_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)_86px_88px_88px_28px]'
+  'sm:grid-cols-[132px_minmax(0,1.4fr)_minmax(0,1fr)_86px_88px_88px_28px]'
 
 /** Every date from `from` to `to` inclusive, stepped in UTC so a DST boundary
  * never repeats or skips a day. Mirrors expandDateRange in lib/billing/validate.ts. */
@@ -128,10 +141,79 @@ function eachDay(from: string, to: string): string[] {
   return days
 }
 
-/** The days a ranged line covers, after the ones the user dropped. */
+/** The days a ranged line covers: the last one only if ticked, less any dropped. */
 function daysOf(line: ChargeSheetLine): string[] {
   const dropped = new Set(line.removed_days)
-  return eachDay(line.from_date, line.to_date).filter(day => !dropped.has(day))
+  const all = eachDay(line.from_date, line.to_date)
+  const days = line.include_last ? all : all.slice(0, -1)
+  return days.filter(day => !dropped.has(day))
+}
+
+const nextDay = (day: string) =>
+  new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)
+
+/**
+ * Saved rows back into form lines (client, 28 Sep).
+ *
+ * A per-day charge is stored one row per day, and editing used to show every
+ * one of them: a ten-day room stay opened as ten lines. Rows of the same
+ * charge, rate and note on consecutive days fold back into one ranged line
+ * that remembers which row each day is, so a save touches only what changed.
+ * A gap in the days starts a new line, and a row carrying a pharmacy bill is
+ * never folded.
+ */
+export function foldSheetItems(items: any[]): ChargeSheetLine[] {
+  const one = (v: any) => (Array.isArray(v) ? v[0] : v) ?? null
+  const toLine = (i: any): ChargeSheetLine => ({
+    ...BLANK_LINE,
+    id: i.id,
+    charge_item_id: i.charge_item_id,
+    charge_name: i.charge_name || i.description || '',
+    description: i.charge_name ? i.description || '' : '',
+    unit_price: String(i.unit_price ?? ''),
+    qty: String(i.qty ?? 1),
+    billing_mode: i.billing_mode || 'one_time',
+    service_date: i.service_date ? String(i.service_date).slice(0, 10) : '',
+    custom: !i.charge_item_id,
+    pharmacy_bill_id: one(i.pharmacy_bill)?.id ?? null,
+  })
+
+  const sorted = [...items].sort((a, b) =>
+    String(a.service_date ?? '').localeCompare(String(b.service_date ?? '')),
+  )
+  const lines: ChargeSheetLine[] = []
+  const open = new Map<string, ChargeSheetLine>()
+
+  for (const item of sorted) {
+    const line = toLine(item)
+    const foldable = line.billing_mode === 'per_day' && !line.pharmacy_bill_id && Number(item.qty ?? 1) === 1 && line.service_date
+    if (!foldable) {
+      lines.push(line)
+      continue
+    }
+    const key = [line.charge_item_id, line.charge_name, line.description, Number(line.unit_price)].join('|')
+    const current = open.get(key)
+    if (current && nextDay(current.to_date) === line.service_date) {
+      current.to_date = line.service_date
+      current.row_ids[line.service_date] = item.id
+      continue
+    }
+    const folded: ChargeSheetLine = {
+      ...line,
+      id: null,
+      service_date: '',
+      qty: '1',
+      from_date: line.service_date,
+      to_date: line.service_date,
+      // Saved rows include their last day; keep exactly those days.
+      include_last: true,
+      row_ids: { [line.service_date]: item.id },
+    }
+    open.set(key, folded)
+    lines.push(folded)
+  }
+
+  return lines
 }
 
 /**
@@ -142,7 +224,7 @@ function daysOf(line: ChargeSheetLine): string[] {
  * patient charges route does server-side, done here because the sheet API takes
  * the lines as given.
  */
-function expandLine(line: ChargeSheetLine, sheetDate: string) {
+export function expandLine(line: ChargeSheetLine, sheetDate: string) {
   const base = {
     charge_item_id: line.charge_item_id,
     charge_name: line.charge_name.trim(),
@@ -168,9 +250,11 @@ function expandLine(line: ChargeSheetLine, sheetDate: string) {
 
   // One unit on each day. Forced rather than carried over, so switching a line
   // from a one-off "× 3" to a per-day service cannot silently treble a stay.
+  // A day that is already a stored row keeps that row; the sheet API deletes
+  // the stored rows no longer listed.
   return daysOf(line).map(day => ({
     ...base,
-    id: null,
+    id: line.row_ids[day] ?? null,
     qty: 1,
     service_date: day,
   }))
@@ -263,22 +347,10 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
         // Stored lines come back one per day, already expanded — the same way
         // the Charges tab shows a saved per-day block as its individual days.
         // Editing one touches that day alone; a new range is entered as a range.
-        setLines(
-          items.length > 0
-            ? items.map((i: any) => ({
-                ...BLANK_LINE,
-                id: i.id,
-                charge_item_id: i.charge_item_id,
-                charge_name: i.charge_name || i.description || '',
-                description: i.charge_name ? i.description || '' : '',
-                unit_price: String(i.unit_price ?? ''),
-                qty: String(i.qty ?? 1),
-                billing_mode: i.billing_mode || 'one_time',
-                service_date: i.service_date ? String(i.service_date).slice(0, 10) : '',
-                pharmacy_bill_id: (Array.isArray(i.pharmacy_bill) ? i.pharmacy_bill[0] : i.pharmacy_bill)?.id ?? null,
-              }))
-            : [{ ...BLANK_LINE }],
-        )
+        // Folded back into one line per charge, with a blank row always ready
+        // at the bottom — without it, editing a saved sheet gave nowhere to type
+        // a new charge (client, 28 Sep).
+        setLines([...foldSheetItems(items), { ...BLANK_LINE }])
       } catch (err: any) {
         if (!cancelled) setError(err.message)
       } finally {
@@ -322,6 +394,7 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
 
     updateLine(index, {
       charge_item_id: item?.id ?? null,
+      custom: !item,
       charge_name: item ? item.name : current.charge_name,
       unit_price: item ? String(item.default_price ?? '') : current.unit_price,
       billing_mode: mode,
@@ -636,8 +709,7 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
             <div className={`hidden sm:grid ${LINE_GRID} gap-2 px-1 text-xs font-medium text-muted uppercase`}>
               <span>Date</span>
               <span>Charge</span>
-              <span>Name</span>
-              <span>Description</span>
+              <span>Note</span>
               <span className="text-center">Qty / Hrs</span>
               <span className="text-right">Rate</span>
               <span className="text-right">Amount</span>
@@ -675,6 +747,9 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
                         />
                       </div>
 
+                      {/* One column: the catalogue picker, or — for "Not in the
+                          list" — the name typed in its place (client, 28 Sep:
+                          picker and name side by side read as two charges). */}
                       <div className="col-span-2 sm:col-span-1">
                         {isPharmacy ? (
                           <button
@@ -683,8 +758,27 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
                             className="flex items-center gap-1.5 text-sm text-info hover:underline"
                           >
                             <Pill size={14} />
-                            View bill
+                            {line.charge_name || 'View bill'}
                           </button>
+                        ) : line.custom ? (
+                          <div className="flex items-center gap-1">
+                            <Input
+                              aria-label="Charge name"
+                              value={line.charge_name}
+                              onChange={e => updateLine(index, { charge_name: e.target.value })}
+                              disabled={saving}
+                              placeholder="What is being charged"
+                              autoFocus={!line.charge_name}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => updateLine(index, { custom: false })}
+                              disabled={saving}
+                              className="text-xs text-info hover:underline shrink-0"
+                            >
+                              list
+                            </button>
+                          </div>
                         ) : (
                           <ChargeItemSelect
                             id={`sheet-line-${index}`}
@@ -693,16 +787,6 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
                             disabled={saving}
                           />
                         )}
-                      </div>
-
-                      <div className="col-span-2 sm:col-span-1">
-                        <Input
-                          aria-label="Name"
-                          value={line.charge_name}
-                          onChange={e => updateLine(index, { charge_name: e.target.value })}
-                          disabled={saving || isPharmacy}
-                          placeholder="What is being charged"
-                        />
                         {fieldErrors[`items.${index}.charge_name`] && (
                           <p className="text-xs text-destructive mt-1">
                             {fieldErrors[`items.${index}.charge_name`]}
@@ -712,7 +796,7 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
 
                       <div className="col-span-2 sm:col-span-1">
                         <Input
-                          aria-label="Description"
+                          aria-label="Note"
                           value={line.description}
                           onChange={e => updateLine(index, { description: e.target.value })}
                           disabled={saving || isPharmacy}
@@ -805,10 +889,19 @@ export function ChargeSheetModal({ isOpen, onClose, onSuccess, sheetId }: Props)
                               disabled={saving}
                             />
                           </div>
+                          <label className="flex items-center gap-1.5 text-sm text-foreground pb-2.5">
+                            <input
+                              type="checkbox"
+                              checked={line.include_last}
+                              onChange={e => updateLine(index, { include_last: e.target.checked })}
+                              disabled={saving}
+                            />
+                            Include last date as well
+                          </label>
                           <span className="text-xs text-muted pb-2.5">
                             {days.length === 0
                               ? 'Pick a range'
-                              : `${days.length} day${days.length === 1 ? '' : 's'} — ${days.length} line${days.length === 1 ? '' : 's'} will be added`}
+                              : `${days.length} day${days.length === 1 ? '' : 's'} billed`}
                           </span>
                         </div>
 

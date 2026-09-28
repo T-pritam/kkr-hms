@@ -11,7 +11,7 @@ import { PharmacyBillAddModal } from '@/components/patients/pharmacy-bill-add-mo
 import { PharmacyBillViewModal } from '@/components/patients/pharmacy-bill-view-modal';
 import { PatientChargesDownloadModal } from '@/components/patients/patient-charges-download-modal';
 import { CHARGE_CATEGORY_LABELS } from '@/lib/billing/constants';
-import { groupByCharge, groupByDate } from '@/lib/billing/group-charges';
+import { combineCharges, groupByCharge, groupByDate } from '@/lib/billing/group-charges';
 import {
   printPatientCharges, type PatientChargesPatient,
 } from '@/lib/pdf/patient-charges-pdf';
@@ -60,7 +60,7 @@ const readCharge = (charge: any) => ({
 export default function ChargesTab({ patientId, billing, onCreateBilling, patient }: ChargesTabProps) {
   const { user } = useUser();
   const [charges, setCharges] = useState<any[]>([]);
-  const [view, setView] = useState<'date' | 'charge'>('date');
+  const [view, setView] = useState<'date' | 'charge' | 'combined'>('date');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<any | null>(null);
@@ -142,11 +142,24 @@ export default function ChargesTab({ patientId, billing, onCreateBilling, patien
       qty: c.qty || 1,
       billing_mode: c.billing_mode,
       amount: lineTotal(c),
+      charge_item_id: c.charge_item_id ?? null,
     })),
   }), [charges, patient]);
 
   const groups = useMemo(() => groupByCharge(charges, readCharge), [charges]);
   const byDate = useMemo(() => groupByDate(charges, readCharge), [charges]);
+  /** One line per charge — rate × days/qty (client, 28 Sep). */
+  const combined = useMemo(
+    () =>
+      combineCharges(charges, (c: any) => ({
+        label: c.charge_type || 'Charge',
+        itemId: c.charge_item_id,
+        rate: Number(c.amount) || 0,
+        qty: Number(c.qty) || 1,
+        billingMode: c.billing_mode,
+      })),
+    [charges],
+  );
 
   const toggle = (key: string) => {
     setExpanded((prev) => {
@@ -187,7 +200,7 @@ export default function ChargesTab({ patientId, billing, onCreateBilling, patien
           {/* A per-day service is one row per day, so both views collapse the
               repetition — by the day it happened, or by what was charged. */}
           <div className="inline-flex rounded-lg border border-border overflow-hidden">
-            {(['date', 'charge'] as const).map((v) => (
+            {(['date', 'charge', 'combined'] as const).map((v) => (
               <button
                 key={v}
                 onClick={() => setView(v)}
@@ -197,7 +210,7 @@ export default function ChargesTab({ patientId, billing, onCreateBilling, patien
                     : 'bg-surface-inset text-muted hover:text-foreground'
                 }`}
               >
-                {v === 'date' ? 'By date' : 'By charge'}
+                {v === 'date' ? 'By date' : v === 'charge' ? 'By charge' : 'Combined'}
               </button>
             ))}
           </div>
@@ -212,7 +225,7 @@ export default function ChargesTab({ patientId, billing, onCreateBilling, patien
           </Button>
           <Button
             variant="outline"
-            onClick={() => printPatientCharges(pdfData)}
+            onClick={() => printPatientCharges(pdfData, view === 'combined' ? 'combined' : 'separate')}
             className="min-h-[44px]"
           >
             <Printer className="h-4 w-4 sm:mr-2" />
@@ -246,6 +259,41 @@ export default function ChargesTab({ patientId, billing, onCreateBilling, patien
       {charges.length === 0 ? (
         <div className="bg-surface-hover rounded-lg p-8 text-center text-muted">
           No charges recorded yet
+        </div>
+      ) : view === 'combined' ? (
+        // Read-only: one line per charge. Editing happens in the other views.
+        <div className="bg-surface-hover rounded-lg border border-border overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-xs text-muted uppercase">
+              <tr className="border-b border-border">
+                <th className="px-4 py-3 text-left">Charge</th>
+                <th className="px-4 py-3 text-right">Rate</th>
+                <th className="px-4 py-3 text-right">Days / Qty</th>
+                <th className="px-4 py-3 text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {combined.map((line) => (
+                <tr key={line.key}>
+                  <td className="px-4 py-2.5 text-foreground">{line.label}</td>
+                  <td className="px-4 py-2.5 text-right text-muted">{money(line.rate)}</td>
+                  <td className="px-4 py-2.5 text-right text-muted">
+                    {line.quantity}
+                    {line.unit ? ` ${line.unit === 'days' && line.quantity === 1 ? 'day' : line.unit}` : ''}
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-medium text-foreground">{money(line.total)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t border-border font-semibold">
+                <td className="px-4 py-3 text-foreground" colSpan={3}>Total</td>
+                <td className="px-4 py-3 text-right text-foreground">
+                  {money(combined.reduce((sum, line) => sum + line.total, 0))}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
         </div>
       ) : view === 'date' ? (
         <div className="space-y-3">
@@ -428,6 +476,7 @@ export default function ChargesTab({ patientId, billing, onCreateBilling, patien
         patientId={patientId}
         patient={patient}
         charges={charges}
+        initialLayout={view === 'combined' ? 'combined' : 'separate'}
       />
     </div>
   );

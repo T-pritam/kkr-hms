@@ -19,7 +19,8 @@ import {
   mkLetterheadDoc, minimalPatientBlock, letterheadSectionTitle, letterheadTable, autoPrint,
 } from './letterhead'
 import type { LetterheadMode } from './letterhead'
-import { qtyCell } from './patient-charges-pdf'
+import { qtyCell, type ChargesLayout } from './patient-charges-pdf'
+import { combineCharges } from '@/lib/billing/group-charges'
 
 export interface ChargeSheetLineData {
   description: string
@@ -30,6 +31,23 @@ export interface ChargeSheetLineData {
   unit_price: number | string
   qty: number
   service_date?: string | null
+  charge_item_id?: string | null
+}
+
+/** One line per charge — rate × days/qty — for the combined sheet (28 Sep). */
+export function combinedSheetRows(items: ChargeSheetLineData[]): string[][] {
+  return combineCharges(items, i => ({
+    label: i.charge_name || i.description || 'Charge',
+    itemId: i.charge_item_id,
+    rate: Number(i.unit_price) || 0,
+    qty: Number(i.qty) || 1,
+    billingMode: i.billing_mode,
+  })).map(line => [
+    line.label,
+    fmt(line.rate),
+    line.unit ? `${line.quantity} ${line.unit === 'days' && line.quantity === 1 ? 'day' : line.unit}` : String(line.quantity),
+    fmt(line.total),
+  ])
 }
 
 const lineTotal = (item: ChargeSheetLineData) =>
@@ -95,7 +113,11 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled: 'Cancelled',
 }
 
-export function renderChargeSheet(data: ChargeSheetData, mode: LetterheadMode = 'digital') {
+export function renderChargeSheet(
+  data: ChargeSheetData,
+  mode: LetterheadMode = 'digital',
+  layout: ChargesLayout = 'separate',
+) {
   const h = mkLetterheadDoc(mode)
   const items = data.items ?? []
 
@@ -127,19 +149,33 @@ export function renderChargeSheet(data: ChargeSheetData, mode: LetterheadMode = 
   h.doc.text(statusLine, h.pw / 2, h.y, { align: 'center' })
   h.y += 9
 
-  letterheadTable(
-    h,
-    [
-      { label: 'Date', width: 20 },
-      { label: 'Charge', width: 28 },
-      { label: 'Description', width: 28 },
-      { label: 'Qty', width: 10, align: 'right' },
-      { label: 'Rate', width: 17, align: 'right' },
-      { label: 'Amount', width: 17, align: 'right' },
-    ],
-    sheetRowsByDate(items),
-    { totalLabel: 'TOTAL', totalValue: fmt(data.total_amount) },
-  )
+  if (layout === 'combined') {
+    letterheadTable(
+      h,
+      [
+        { label: 'Charge', width: 58 },
+        { label: 'Rate', width: 22, align: 'right' },
+        { label: 'Days / Qty', width: 20, align: 'right' },
+        { label: 'Amount', width: 20, align: 'right' },
+      ],
+      combinedSheetRows(items),
+      { totalLabel: 'TOTAL', totalValue: fmt(data.total_amount) },
+    )
+  } else {
+    letterheadTable(
+      h,
+      [
+        { label: 'Date', width: 20 },
+        { label: 'Charge', width: 28 },
+        { label: 'Description', width: 28 },
+        { label: 'Qty', width: 10, align: 'right' },
+        { label: 'Rate', width: 17, align: 'right' },
+        { label: 'Amount', width: 17, align: 'right' },
+      ],
+      sheetRowsByDate(items),
+      { totalLabel: 'TOTAL', totalValue: fmt(data.total_amount) },
+    )
+  }
 
   h.checkPage(20)
   h.doc.setFont('helvetica', 'normal')

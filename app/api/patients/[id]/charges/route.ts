@@ -26,7 +26,7 @@ import { createClient } from '@/lib/supabase/server'
 import { ENTRY_LOCKED, dischargeLock } from '@/lib/authz/ownership'
 import { requireBilling } from '@/lib/billing/authz'
 import {
-  expandDateRange,
+  rangeDays,
   normalisePatientChargeBody,
   validatePatientCharge,
 } from '@/lib/billing/validate'
@@ -222,7 +222,7 @@ export async function POST(
     const rows = (() => {
       if (values.billing_mode === 'per_day') {
         const groupId = crypto.randomUUID()
-        return expandDateRange(values.from_date!, values.to_date!).map(day => ({
+        return rangeDays(values.from_date!, values.to_date!, values.include_last_date).map(day => ({
           ...shared,
           qty: 1,
           charge_date: day,

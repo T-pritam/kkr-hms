@@ -271,6 +271,45 @@ describe('POST /api/patients/[id]/charges — per-day charges', () => {
     expect(rows.every((r) => r.charge_type === 'ICU Bed')).toBe(true)
   })
 
+  // Client, 28 Sep: "Include last date as well" — unticked, 1 → 4 Aug is 3 days.
+  it('leaves out the last date when include_last_date is false', async () => {
+    await signInAs('NURSE')
+    aBilling({ id: 'b1', patient_id: 'p1' })
+    const item = perDayItem()
+
+    const { status, body } = await create('p1', {
+      patient_billing_id: 'b1',
+      charge_item_id: item.id,
+      amount: 5000,
+      from_date: '2026-08-01',
+      to_date: '2026-08-04',
+      include_last_date: false,
+    })
+
+    expect(status).toBe(201)
+    expect(body.charges).toHaveLength(3)
+    expect(db.rows('patient_charges').map((r) => r.charge_date)).toEqual(['2026-08-01', '2026-08-02', '2026-08-03'])
+  })
+
+  it('refuses a one-day range with the last date left out, since that bills nothing', async () => {
+    await signInAs('NURSE')
+    aBilling({ id: 'b1', patient_id: 'p1' })
+    const item = perDayItem()
+
+    const { status, body } = await create('p1', {
+      patient_billing_id: 'b1',
+      charge_item_id: item.id,
+      amount: 5000,
+      from_date: '2026-08-01',
+      to_date: '2026-08-01',
+      include_last_date: false,
+    })
+
+    expect(status).toBe(400)
+    expect(body.fieldErrors.to_date).toMatch(/after the start date/)
+    expect(db.count('patient_charges')).toBe(0)
+  })
+
   it('gives the whole block one group id so it can be shown and removed as a unit', async () => {
     await signInAs('NURSE')
     aBilling({ id: 'b1', patient_id: 'p1' })

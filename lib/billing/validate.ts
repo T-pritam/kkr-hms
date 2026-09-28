@@ -151,6 +151,12 @@ export interface NormalisedCharge {
   charge_date: string | null
   from_date: string | null
   to_date: string | null
+  /**
+   * Whether a per-day range bills its last date too. The form's "Include last
+   * date" box starts unticked (client, 28 Sep: 21 → 25 Sep is 4 days); a caller
+   * that does not say keeps the old inclusive behaviour.
+   */
+  include_last_date: boolean
   /** Only meaningful for 'per_hour'. */
   hour_lines: HourLine[]
 }
@@ -184,6 +190,7 @@ export function normalisePatientChargeBody(body: any): NormalisedCharge {
       : String(b.charge_date).trim(),
     from_date: blank(b.from_date) ? null : String(b.from_date).trim(),
     to_date: blank(b.to_date) ? null : String(b.to_date).trim(),
+    include_last_date: !(b.include_last_date === false || b.include_last_date === 'false'),
   }
 }
 
@@ -232,8 +239,10 @@ export function validatePatientCharge(
     if (fromOk && toOk) {
       if (values.to_date! < values.from_date!) {
         errors.to_date = `${label('to_date')} cannot be before ${label('from_date').toLowerCase()}`
+      } else if (!values.include_last_date && values.to_date === values.from_date) {
+        errors.to_date = 'With the last date left out, pick an end date after the start date'
       } else {
-        const days = dayCount(values.from_date!, values.to_date!)
+        const days = dayCount(values.from_date!, values.to_date!) - (values.include_last_date ? 0 : 1)
         if (days > MAX_CHARGE_DAYS) {
           errors.to_date = `That is ${days} days. A single entry covers at most ${MAX_CHARGE_DAYS}.`
         }
@@ -303,6 +312,16 @@ export function expandDateRange(from: string, to: string): string[] {
   }
 
   return out
+}
+
+/**
+ * The days a From–To range bills: every date, or every date but the last when
+ * "Include last date" is not ticked (client, 28 Sep). Room rent for a stay from
+ * the 21st to the 25th is usually four nights, not five.
+ */
+export function rangeDays(from: string, to: string, includeLast = true): string[] {
+  const days = expandDateRange(from, to)
+  return includeLast ? days : days.slice(0, -1)
 }
 
 // ── Charge sheets ────────────────────────────────────────────────────────────

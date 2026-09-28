@@ -9,6 +9,7 @@ import {
   chargeSheetFilename, renderChargeSheet, type ChargeSheetData,
 } from '@/lib/pdf/charge-sheet-pdf'
 import { pharmacyBillParts, type PharmacyBillRef } from '@/lib/pdf/pharmacy-attachments'
+import type { ChargesLayout } from '@/lib/pdf/patient-charges-pdf'
 
 /**
  * Choosing what goes into the downloaded charge sheet.
@@ -42,6 +43,7 @@ function billsOf(items: SheetItem[] = []): PharmacyBillRef[] {
 }
 
 export function ChargeSheetDownloadModal({ isOpen, onClose, sheet }: Props) {
+  const [layout, setLayout] = useState<ChargesLayout>('separate')
   const [pickedBills, setPickedBills] = useState<Set<string>>(new Set())
   const [building, setBuilding] = useState(false)
   const [error, setError] = useState('')
@@ -79,7 +81,7 @@ export function ChargeSheetDownloadModal({ isOpen, onClose, sheet }: Props) {
           : { name: sheet.opd_name || 'Walk-in', patient_id: null }
 
       const parts: MergePart[] = [
-        { label: 'Charge sheet', bytes: docBytes(renderChargeSheet(sheet)) },
+        { label: 'Charge sheet', bytes: docBytes(renderChargeSheet(sheet, 'digital', layout)) },
       ]
 
       parts.push(
@@ -92,7 +94,7 @@ export function ChargeSheetDownloadModal({ isOpen, onClose, sheet }: Props) {
 
       // Nothing ticked: no merge pass needed at all.
       if (parts.length === 1) {
-        renderChargeSheet(sheet).save(chargeSheetFilename(sheet))
+        renderChargeSheet(sheet, 'digital', layout).save(chargeSheetFilename(sheet))
         onClose()
         return
       }
@@ -141,6 +143,19 @@ export function ChargeSheetDownloadModal({ isOpen, onClose, sheet }: Props) {
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-foreground">Charge sheet {sheet.sheet_no}</p>
             <p className="text-xs text-muted">Always included</p>
+          </div>
+          {/* Every line by date, or one line per charge (client, 28 Sep). */}
+          <div className="inline-flex rounded-lg border border-border overflow-hidden shrink-0">
+            {(['separate', 'combined'] as const).map(v => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setLayout(v)}
+                className={`px-3 py-1.5 text-sm ${layout === v ? 'bg-info text-foreground' : 'bg-surface text-muted hover:text-foreground'}`}
+              >
+                {v === 'separate' ? 'Separate' : 'Combined'}
+              </button>
+            ))}
           </div>
         </div>
 

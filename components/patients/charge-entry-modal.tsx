@@ -62,6 +62,8 @@ interface FormState {
   charge_date: string
   from_date: string
   to_date: string
+  /** per_day only: bill the To date too. Starts unticked (client, 28 Sep). */
+  include_last: boolean
   /** per_hour only: whole hours used on charge_date. */
   hours: string
 }
@@ -77,6 +79,7 @@ const BLANK: FormState = {
   charge_date: '',
   from_date: '',
   to_date: '',
+  include_last: false,
   hours: '1',
 }
 
@@ -176,6 +179,7 @@ export function ChargeEntryModal({
             hours: String(charge.qty ?? 1),
             from_date: '',
             to_date: '',
+            include_last: false,
           }
         : { ...BLANK, charge_date: today() },
     )
@@ -239,8 +243,8 @@ export function ChargeEntryModal({
   }
 
   const days = useMemo(
-    () => (isRange ? dayCount(form.from_date, form.to_date) : 1),
-    [isRange, form.from_date, form.to_date],
+    () => (isRange ? Math.max(0, dayCount(form.from_date, form.to_date) - (form.include_last ? 0 : 1)) : 1),
+    [isRange, form.from_date, form.to_date, form.include_last],
   )
 
   /** Whole hours only — the desk types a number, nothing is derived from clocks. */
@@ -282,6 +286,7 @@ export function ChargeEntryModal({
           payload.billing_mode = 'per_day'
           payload.from_date = form.from_date
           payload.to_date = form.to_date
+          payload.include_last_date = form.include_last
         } else if (isHourly) {
           // Still the list shape the route expects, with the single day on it.
           payload.billing_mode = 'per_hour'
@@ -488,7 +493,9 @@ export function ChargeEntryModal({
               hint={
                 days > MAX_CHARGE_DAYS
                   ? `That is ${days} days — the most one entry can cover is ${MAX_CHARGE_DAYS}.`
-                  : 'Both days are included.'
+                  : form.from_date && form.to_date
+                    ? `${days} day${days === 1 ? '' : 's'} billed`
+                    : undefined
               }
             >
               <Input
@@ -500,6 +507,15 @@ export function ChargeEntryModal({
                 min={form.from_date || undefined}
               />
             </Field>
+            <label className="sm:col-span-2 flex items-center gap-2 text-sm text-foreground">
+              <input
+                type="checkbox"
+                checked={form.include_last}
+                onChange={e => update('include_last', e.target.checked)}
+                disabled={saving}
+              />
+              Include last date as well
+            </label>
           </div>
         ) : isHourly ? (
           /* One day, and the hours used on it — typed, not worked out from

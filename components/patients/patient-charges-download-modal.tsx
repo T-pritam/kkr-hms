@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { docBytes, downloadPdf, mergePdfs, type MergePart } from '@/lib/pdf/merge'
 import {
-  patientChargesFilename, renderPatientCharges, type PatientChargesPatient,
+  patientChargesFilename, renderPatientCharges, type ChargesLayout, type PatientChargesPatient,
 } from '@/lib/pdf/patient-charges-pdf'
 import { pharmacyBillParts } from '@/lib/pdf/pharmacy-attachments'
 
@@ -31,6 +31,7 @@ interface ChargeRow {
   qty: number
   billing_mode?: string | null
   amount: number
+  charge_item_id?: string | null
   pharmacy_bill?: { id: string; entry_number: string | null; entry_date: string } | null
 }
 
@@ -40,6 +41,8 @@ interface Props {
   patientId: string
   patient?: PatientChargesPatient | null
   charges: ChargeRow[]
+  /** Which statement to start on — the Charges tab's current view. */
+  initialLayout?: ChargesLayout
 }
 
 type PharmacyBillRef = NonNullable<ChargeRow['pharmacy_bill']>
@@ -51,7 +54,8 @@ function pharmacyBillsOf(charges: ChargeRow[]): PharmacyBillRef[] {
   return charges.flatMap(c => (c.pharmacy_bill ? [c.pharmacy_bill] : []))
 }
 
-export function PatientChargesDownloadModal({ isOpen, onClose, patientId, patient, charges }: Props) {
+export function PatientChargesDownloadModal({ isOpen, onClose, patientId, patient, charges, initialLayout = 'separate' }: Props) {
+  const [layout, setLayout] = useState<ChargesLayout>(initialLayout)
   const [pickedBills, setPickedBills] = useState<Set<string>>(new Set())
   const [building, setBuilding] = useState(false)
   const [error, setError] = useState('')
@@ -62,7 +66,8 @@ export function PatientChargesDownloadModal({ isOpen, onClose, patientId, patien
     setError('')
     setWarning('')
     setPickedBills(new Set())
-  }, [isOpen])
+    setLayout(initialLayout)
+  }, [isOpen, initialLayout])
 
   const pharmacyBills = pharmacyBillsOf(charges)
 
@@ -91,11 +96,12 @@ export function PatientChargesDownloadModal({ isOpen, onClose, patientId, patien
           qty: c.qty || 1,
           billing_mode: c.billing_mode,
           amount: lineTotal(c),
+          charge_item_id: c.charge_item_id ?? null,
         })),
       }
 
       const parts: MergePart[] = [
-        { label: 'Patient charges', bytes: docBytes(renderPatientCharges(pdfData)) },
+        { label: 'Patient charges', bytes: docBytes(renderPatientCharges(pdfData, 'digital', layout)) },
       ]
 
       parts.push(
@@ -107,7 +113,7 @@ export function PatientChargesDownloadModal({ isOpen, onClose, patientId, patien
       )
 
       if (parts.length === 1) {
-        renderPatientCharges(pdfData).save(patientChargesFilename(pdfData))
+        renderPatientCharges(pdfData, 'digital', layout).save(patientChargesFilename(pdfData))
         onClose()
         return
       }
@@ -156,6 +162,19 @@ export function PatientChargesDownloadModal({ isOpen, onClose, patientId, patien
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-foreground">Patient charges statement</p>
             <p className="text-xs text-muted">Always included</p>
+          </div>
+          {/* Every line by date, or one line per charge (client, 28 Sep). */}
+          <div className="inline-flex rounded-lg border border-border overflow-hidden shrink-0">
+            {(['separate', 'combined'] as const).map(v => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setLayout(v)}
+                className={`px-3 py-1.5 text-sm ${layout === v ? 'bg-info text-foreground' : 'bg-surface text-muted hover:text-foreground'}`}
+              >
+                {v === 'separate' ? 'Separate' : 'Combined'}
+              </button>
+            ))}
           </div>
         </div>
 

@@ -102,3 +102,54 @@ export function groupByCharge<T>(
 
   return [...byKey.values()]
 }
+
+export interface CombinableCharge {
+  label: string
+  itemId?: string | null
+  /** Price of one unit — a day, an hour, or one of a one-off charge. */
+  rate: number
+  qty: number
+  billingMode?: string | null
+}
+
+export interface CombinedLine {
+  key: string
+  label: string
+  rate: number
+  /** Days for a per-day charge, hours for per-hour, a count otherwise. */
+  quantity: number
+  unit: 'days' | 'hrs' | ''
+  total: number
+}
+
+/**
+ * One line per charge: rate × days/qty = amount (client, 28 Sep — the
+ * "combined" statement).
+ *
+ * The same catalogue entry (or, typed, the same name) at the same rate and
+ * billing mode is one line, however many rows or date ranges it came from. A
+ * different rate stays its own line, so a room repriced mid-stay reads as two
+ * honest lines rather than an averaged one. Lines keep the order each charge
+ * first appears in.
+ */
+export function combineCharges<T>(rows: T[], read: (row: T) => CombinableCharge): CombinedLine[] {
+  const lines = new Map<string, CombinedLine>()
+
+  for (const row of rows) {
+    const { label, itemId, rate, qty, billingMode } = read(row)
+    const mode = billingMode === 'per_day' ? 'per_day' : billingMode === 'per_hour' ? 'per_hour' : 'one_time'
+    const key = `${itemId || label}|${rate}|${mode}`
+    // A per-day row is one day, whatever its stored qty says.
+    const units = mode === 'per_day' ? 1 : Number(qty) || 1
+
+    let line = lines.get(key)
+    if (!line) {
+      line = { key, label, rate, quantity: 0, unit: mode === 'per_day' ? 'days' : mode === 'per_hour' ? 'hrs' : '', total: 0 }
+      lines.set(key, line)
+    }
+    line.quantity += units
+    line.total += rate * units
+  }
+
+  return [...lines.values()]
+}
