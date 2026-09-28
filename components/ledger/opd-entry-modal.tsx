@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { X } from 'lucide-react'
+import { Plus, Trash2, X } from 'lucide-react'
+import { DoctorSelect } from '@/components/patients/doctor-select'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -41,6 +42,16 @@ export function OpdEntryModal({
   })
 
   /**
+   * The doctors who saw the walk-in, each with the fee they are to be paid, and
+   * the medicine inside the payment (client, 28 Sep). Each doctor becomes a
+   * visit and an unpaid fee on the doctor's page; medicine is the hospital's
+   * expense. A doctor whose fee is already paid is shown but locked.
+   */
+  const [doctors, setDoctors] = useState<{ doctor_id: string; name?: string | null; fee: string; paid?: boolean }[]>([])
+  const [medicine, setMedicine] = useState('')
+  const anyPaid = doctors.some(d => d.paid)
+
+  /**
    * Extract patient name from:
    * "OPD John Doe" → "John Doe"
    */
@@ -63,6 +74,30 @@ export function OpdEntryModal({
 
 
   useEffect(() => {
+    if (isOpen && mode === 'edit' && initialData?.id) {
+      let cancelled = false
+      fetch(`/api/ledger/transactions/${initialData.id}`)
+        .then(r => (r.ok ? r.json() : null))
+        .then(body => {
+          if (cancelled || !body?.data) return
+          setMedicine(body.data.medicine_expense ? String(body.data.medicine_expense) : '')
+          setDoctors(
+            (body.data.doctors ?? []).map((d: any) => ({
+              doctor_id: d.doctor_id,
+              name: d.doctor_name,
+              fee: String(d.fee ?? ''),
+              paid: d.paid,
+            })),
+          )
+        })
+        .catch(() => {})
+      return () => {
+        cancelled = true
+      }
+    }
+  }, [isOpen, mode, initialData?.id])
+
+  useEffect(() => {
     if (isOpen && mode === 'edit' && initialData) {
       setFormData({
         patient_name: extractPatientName(initialData.description),
@@ -81,6 +116,8 @@ export function OpdEntryModal({
         reference_number: '',
         notes: '',
       })
+      setDoctors([])
+      setMedicine('')
     }
   }, [isOpen, mode, initialData])
 
@@ -105,21 +142,35 @@ export function OpdEntryModal({
       return
     }
 
+    const picked = doctors.filter(d => d.doctor_id)
+    if (picked.some(d => !(Number(d.fee) > 0))) {
+      alert("Enter each doctor's fee")
+      return
+    }
+
     try {
       setLoading(true)
-      const response = await fetch('/api/ledger/transactions', {
-        method: 'POST',
+      const extras = {
+        doctors: picked.map(d => ({ doctor_id: d.doctor_id, fee: Number(d.fee) })),
+        medicine_expense: medicine ? Number(parseIndianNumber(medicine)) : null,
+      }
+      // Editing saves over the entry (it used to POST a second copy; the form
+      // was never opened in edit mode until OPD entries gained doctors).
+      const editing = mode === 'edit' && initialData?.id
+      const response = await fetch(editing ? `/api/ledger/transactions/${initialData!.id}` : '/api/ledger/transactions', {
+        method: editing ? 'PUT' : 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
           body: JSON.stringify({
-            transaction_date: selectedDate,
-            transaction_type: 'credit',
-            source: 'opd',
+            ...(editing
+              ? {}
+              : { transaction_date: selectedDate, transaction_type: 'credit', source: 'opd' }),
             amount: Number(parseIndianNumber(formData.amount)),
             payment_mode: formData.payment_mode,
             reference_number: formData.reference_number || null,
             description: `OPD ${formData.patient_name}`,
             notes: formData.notes || null,
+            ...extras,
           }),
         }
       )
@@ -228,6 +279,73 @@ export function OpdEntryModal({
               }
               required={formData.payment_mode === 'upi'}
             />
+          </div>
+
+          {/* Doctors seen — each becomes a fee to pay on the doctor's page. */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Doctors seen</Label>
+              <button
+                type="button"
+                onClick={() => setDoctors([...doctors, { doctor_id: '', fee: '' }])}
+                disabled={anyPaid}
+                className="flex items-center gap-1 text-sm text-info hover:underline disabled:opacity-50"
+              >
+                <Plus size={14} /> Add doctor
+              </button>
+            </div>
+            {doctors.length === 0 && <p className="text-xs text-muted">None — optional.</p>}
+            {doctors.map((d, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <div className="flex-1 min-w-0">
+                  {d.paid ? (
+                    <p className="text-sm text-foreground py-2">{d.name} <span className="text-xs text-success-text">· paid</span></p>
+                  ) : (
+                    <DoctorSelect
+                      id={`opd-doctor-${i}`}
+                      value={d.doctor_id}
+                      onChange={id => setDoctors(doctors.map((x, j) => (j === i ? { ...x, doctor_id: id } : x)))}
+                      includeId={d.doctor_id || undefined}
+                      fallbackLabel={d.name ?? undefined}
+                    />
+                  )}
+                </div>
+                <Input
+                  aria-label="Fee for this doctor"
+                  inputMode="numeric"
+                  placeholder="Fee"
+                  className="w-24"
+                  value={d.fee}
+                  disabled={d.paid || anyPaid}
+                  onChange={e => /^\d*$/.test(e.target.value) && setDoctors(doctors.map((x, j) => (j === i ? { ...x, fee: e.target.value } : x)))}
+                />
+                <button
+                  type="button"
+                  onClick={() => setDoctors(doctors.filter((_, j) => j !== i))}
+                  disabled={anyPaid}
+                  aria-label="Remove this doctor"
+                  className="p-1.5 text-muted hover:text-destructive disabled:opacity-30"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
+            {anyPaid && (
+              <p className="text-xs text-muted">A doctor&apos;s fee here is already paid, so the doctors can&apos;t change.</p>
+            )}
+          </div>
+
+          {/* Medicine inside the payment — the hospital's expense. */}
+          <div>
+            <Label htmlFor="opd-medicine">Medicine (optional)</Label>
+            <Input
+              id="opd-medicine"
+              inputMode="numeric"
+              placeholder="Amount of medicine in this payment"
+              value={medicine}
+              onChange={e => /^[\d,]*$/.test(e.target.value) && setMedicine(e.target.value)}
+            />
+            <p className="text-xs text-muted mt-1">Counted as the hospital&apos;s expense (Finances ▸ Medicine).</p>
           </div>
 
           {/* Notes */}

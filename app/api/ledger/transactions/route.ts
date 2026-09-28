@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireLedger } from '@/lib/ledger/authz'
 import { createLedgerTransaction } from '@/lib/ledger/transactions'
+import { parseOpdExtras, writeOpdExtras } from '@/lib/ledger/opd'
 
 export async function POST(request: NextRequest) {
   try {
@@ -23,6 +24,13 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const supabase = await createClient()
+
+    // An OPD receipt may carry the doctors who saw the walk-in and a medicine
+    // amount (client, 28 Sep) — checked before anything is written.
+    const opd = body.source === 'opd' ? parseOpdExtras(body) : null
+    if (opd && !opd.ok) {
+      return NextResponse.json({ error: opd.error }, { status: opd.status })
+    }
 
     const result = await createLedgerTransaction(supabase, {
       transaction_date: body.transaction_date,
@@ -48,8 +56,23 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const row = result.rows[0]
+    if (opd?.ok && (opd.value.doctors.length > 0 || opd.value.medicine_expense !== null)) {
+      const extras = await writeOpdExtras(supabase, {
+        ledgerId: row.id,
+        transactionDate: row.transaction_date,
+        extras: opd.value,
+        userId: user.id,
+      })
+      if (!extras.ok) {
+        // All or nothing: the receipt goes too, so a retry never doubles it.
+        await supabase.from('daily_ledger_transactions').delete().eq('id', row.id)
+        return NextResponse.json({ error: extras.error }, { status: extras.status })
+      }
+    }
+
     return NextResponse.json(
-      { success: true, message: 'Transaction created successfully', data: result.rows[0] },
+      { success: true, message: 'Transaction created successfully', data: row },
       { status: 201 },
     )
   } catch (error: any) {

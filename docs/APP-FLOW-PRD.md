@@ -253,7 +253,7 @@ Reception sees everything except **Net** [Q-66]. The "Lab & medicine" block is g
 ### 4.4 Doctor visits
 
 **Who:** A D N R record; the creator or an admin edits/deletes.
-**Flow:** Patient ▸ Doctor visits ▸ Add visit: doctor (active doctors only), **visit purpose** (consultation, ward round…, required), date (today by default) and time (IST, **12-hour: hour · minute · AM/PM**, the current time by default — the same on every computer, whatever its own clock format), notes. A visit cannot be dated — or edited to a date — before the patient joined.
+**Flow:** Patient ▸ Doctor visits ▸ Add visit: doctor (active doctors only), **visit purpose** (consultation, ward round…, required), date (today by default) — or **Several days**: From–To with **"Include last date as well" (ticked)**, one time for all, and a preview of every visit that will be added, where any day can be unticked, then **Add N visits** (all or none; days before joining, after discharge or in the future are left out and say why) [2026-09-28] — and time (IST, **12-hour: hour · minute · AM/PM**, the current time by default — the same on every computer, whatever its own clock format), notes. A visit cannot be dated — or edited to a date — before the patient joined.
 
 - Visits are numbered per doctor for the patient (visit 1, 2, 3 with Dr Rao).
 - **A visit locks for the desk once its doctor fee is paid** [§3.2 row 6]: reception cannot edit or delete it after the money has gone. The admin may still correct it, but can delete it only after un-paying the fee.
@@ -269,11 +269,13 @@ Reception sees everything except **Net** [Q-66]. The "Lab & medicine" block is g
 1. Pick an item from the **catalogue** (the price list) or type one in. Categories: Room & Bed · Medical & Nursing · Diagnostics · Procedures · Registration & Admin · Pharmacy · Lab · Other.
 2. The catalogue item decides the **billing mode**:
    - **One-off** — a date, an amount and a quantity.
-   - **Per day** (room rent, oxygen) — a date range; the app writes **one line per day** (up to 180 days), grouped so the block shows and deletes as one.
+   - **Per day** (room rent, oxygen) — a date range; the app writes **one line per day** (up to 180 days), grouped so the block shows and deletes as one. **"Include last date as well"** starts **unticked**: 21 → 25 Sep bills 4 days (21–24); tick it to bill the 25th too [2026-09-28].
    - **Per hour** — pick the day and the hours (1–24); each day is its own line with its hours as the quantity.
 3. **Medicine** (a pharmacy item) is saved with no question, and an alert says **"Added as an expense only."** It is the hospital's expense from its date [round 8].
    - **Lab tests and the registration fee are not offered here.** They are added on the Payments tab, which writes their charge line with the payment. Those lines show a **From payment** tag and are read-only in Charges: they change or disappear with their payment.
 4. **Locks:** reception cannot add, edit or delete a charge once the patient is **Discharged** [Q-03 = B]. Admin can.
+
+**Three views of the list:** *By date*, *By charge*, and **Combined** — one line per charge, rate × days/qty = amount, which is also a choice (**Separate / Combined**) when downloading or printing the patient charges PDF [2026-09-28].
 
 **Pharmacy bills (SmartPharma360):** a pharmacy bill can be looked up by its number and attached to a charge, as a **record only** for a patient who wants the full itemised bill. It touches no finance figure [Q-84].
 
@@ -292,6 +294,8 @@ Reception sees everything except **Net** [Q-66]. The "Lab & medicine" block is g
 - It can be for a **registered patient** or a **walk-in** (name only). A walk-in sheet cannot be forwarded — there is nobody to bill.
 - **Forwarding** copies every line onto the patient's charges exactly once (a second forward is refused), tags each copy with the sheet it came from, and carries any quoted pharmacy bill across. **Lab lines are not forwarded** — a lab test is added on the Payments tab when the patient pays — and the result says how many were left [round 8].
 - A **forwarded** sheet can no longer be edited or deleted: it is where the patient's charges came from. A cancelled sheet stays editable.
+- **Entering and editing lines** [2026-09-28]: one row per line — Date · **Charge** (the catalogue picker, or a typed name for "Not in the list") · Note · Qty/Hrs · Rate · Amount. A blank row is always ready at the bottom, also when editing a saved sheet (it used to be missing there). A saved per-day charge reopens as **one line with its From–To dates** rather than one line per day, and saving it changes only the days that moved. Per-day ranges have the same **"Include last date as well"** box (unticked).
+- The sheet PDF has the same **Separate / Combined** choice.
 
 ### 4.7 Patient payments
 
@@ -335,7 +339,7 @@ The patient's **total bill** is the sum of these payments.
 
 1. **Sync visits** (Billing & settlement tab) creates or refreshes one row per doctor × purpose from the visits on the bill. Running it twice changes nothing. A settled row is left alone; visits recorded after it was paid go on a new row. Deleting a visit shrinks its unpaid row.
 2. **Price** it: per visit or as a total, typed by the desk each time. There is no rate card: the same doctor charges differently for a consultation and a surgery, and per procedure, so the doctor fee schedule was dropped [Q-97, 2026-09-25]. The visit form collects no fee either — what a visit costs is decided here, not when it is recorded.
-3. **Pay** it — from the patient's Billing tab, in **one short form**: per visit × visits = total (or type the total), paid by, a reference for non-cash, handed over by, an optional note, **Pay ₹X**. The price is saved first if it changed; what is paid is the fee [2026-09-26]. Or in bulk from **Finances ▸ Settlements** (each selected fee is paid at its own total; one explicit amount is only allowed for a single fee). Paying less than the price makes the amount paid the new total [Q-37 b].
+3. **Pay** it — from the patient's Billing tab or **the doctor's own page** (Doctors ▸ a doctor: **Still to pay** — one row per patient or OPD walk-in × purpose, with **Edit** and **Pay**; opening it as the desk first syncs any visit not yet on a fee row, as *Sync visits* does) [2026-09-28], in **one short form**: per visit × visits = total (or type the total), paid by, a reference for non-cash, handed over by, an optional note, **Pay ₹X**. The price is saved first if it changed; what is paid is the fee [2026-09-26]. Or in bulk from **Finances ▸ Settlements** (each selected fee is paid at its own total; one explicit amount is only allowed for a single fee). Paying less than the price makes the amount paid the new total [Q-37 b].
 4. **Nothing is written to the ledger.** The admin hands the cash to the doctor directly, so the ledger never sees it [client revision 2026-09-24]. The fee row is the whole record, and Finances counts it as money out on the day it was paid.
 5. **Who may change it** [Q-88]:
    - **Unpaid:** anyone at the desk (any receptionist, or the admin), whoever entered it.
@@ -352,10 +356,10 @@ The patient's **total bill** is the sum of these payments.
 
 ### 4.9 Referral commission
 
-**Who:** A R. **Screen:** Patient ▸ Billing & settlement ▸ Referral & commission.
+**Who:** A R. **Screen:** Patient ▸ Billing & settlement ▸ **Referral commission** — one block [2026-09-28].
 
-1. Set the **referral person** (from the referrals list; the desk can add a new one) and the **commission amount**.
-2. **Pay it** exactly like a doctor fee: mode, reference, notes, **handed over by** (a user, default you, or a typed name). No ledger entry.
+1. Pick the **referral person** (from the referrals list; the desk can add a new one) and type the **commission** right in the block, then **Save**. (The separate "Referral & Commission" button at the top is gone.)
+2. **Pay ₹X** in the same short form as a doctor fee: paid by, a reference for non-cash, **handed over by** (a user, default you, or a typed name), an optional note. No ledger entry. Once paid, the block is a one-line summary; only an admin gets **Edit**.
 3. Same rules as fees [Q-88]: unpaid = anyone at the desk; paid = admin only, every field. Same three stamps (amount / status / given by).
 4. Bulk payment is on **Finances ▸ Settlements**.
 
@@ -370,7 +374,7 @@ The patient's **total bill** is the sum of these payments.
 | Patient payment, labelled | Patient ▸ Payments |
 | Registration fee — type *Registration fee* | registration, or Payments ▸ Collect now |
 | Lab test — type *Lab* | Payments ▸ Add lab test |
-| OPD receipt | Ledger ▸ **Add OPD receipt** (the only thing typed directly into the ledger) |
+| OPD receipt | Ledger ▸ **Add OPD receipt** (the only thing typed directly into the ledger). It can also list the **doctors seen**, each with the **fee** they are to be paid — each becomes a visit and an unpaid fee on the doctor's page — and an optional **medicine** amount inside the payment, the hospital's expense [2026-09-28]. Once a fee on it is paid, its doctors are fixed and it can't be deleted. Editing an OPD row opens this same form. |
 | *Legacy desk expenses* | 6 rows from before petty cash existed, kept as history; no new ones can be added |
 
 **Not in it:** doctor fees and commissions (paid by the admin directly), desk spending (petty cash), admin spending (general expenses), salary and advances (Employees). The database itself refuses a doctor-fee or commission debit.
@@ -535,6 +539,8 @@ Three logs, and they never overlap [Q-07 = A]:
 | Registration fee, collected | **IN** (type Registration fee) | — | — | Payments (Registration) + a Charges line | money in, own line |
 | Lab test (in-house) | **IN** (type Lab) | — | — | Payments (Lab) + a Charges line | money in, own line |
 | OPD receipt | **IN** | — | — | — | money in |
+| OPD doctor's fee | — | — | — | the fee row, on the OPD receipt | money out, on the day paid |
+| OPD medicine | — | — | — | the OPD receipt | money out (**Medicine**), on the OPD day |
 | Petty cash top-up (admin → desk) | — | **IN** | — | — | *not counted* (cash moving between pockets) |
 | Desk expense | — | **OUT** | — | — | money out, as one "Petty cash spent" line |
 | Advance paid **by reception** | — | **OUT** | — | the advance log | money out, inside **salary** (once) |

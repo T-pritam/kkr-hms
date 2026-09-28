@@ -17,7 +17,7 @@ import { EditDoctorFeeModal, PayDoctorFeeModal, type DoctorFeeRow } from '@/comp
 
 interface UnpaidFee extends DoctorFeeRow {
   patient_id: string | null
-  patient: { id: string; patient_id: string | null; name: string | null } | null
+  patient: { id: string | null; patient_id: string | null; name: string | null } | null
   purpose: string | null
 }
 
@@ -103,7 +103,9 @@ export function UnpaidFeesPanel({ doctorId, onChanged }: { doctorId: string; onC
               {fees.map(fee => (
                 <tr key={fee.id}>
                   <td className="px-4 py-2.5">
-                    {fee.patient ? (
+                    {fee.patient && !fee.patient.id ? (
+                      <span className="text-foreground">{fee.patient.patient_id} · {fee.patient.name}</span>
+                    ) : fee.patient ? (
                       <Link href={`/patients/${fee.patient.id}`} className="text-info hover:underline">
                         {fee.patient.patient_id} {fee.patient.name}
                       </Link>

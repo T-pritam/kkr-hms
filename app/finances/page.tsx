@@ -943,7 +943,10 @@ export default function FinancesPage() {
               {medicineRows.map((row: any) => (
                 <div key={row.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
                   <span className="min-w-0">
-                    {row.patient ? (
+                    {row.opd ? (
+                      // An OPD walk-in has no patient record to open.
+                      <span className="font-medium text-foreground">OPD · {row.patient?.name}</span>
+                    ) : row.patient ? (
                       <Link
                         href={`/patients/${row.patient.id}`}
                         className="text-info hover:underline font-medium"

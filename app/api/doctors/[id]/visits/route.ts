@@ -22,6 +22,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireBilling } from '@/lib/billing/authz'
+import { opdPatient } from '@/lib/ledger/opd'
 import { toISTInstant } from '@/lib/consultations/ist'
 
 const num = (v: unknown) => Number(v) || 0
@@ -29,8 +30,9 @@ const one = <T,>(v: T | T[] | null | undefined): T | null =>
   Array.isArray(v) ? (v[0] ?? null) : (v ?? null)
 
 const SELECT = `
-  id, consultation_date, notes, patient_id, settlement_id,
+  id, consultation_date, notes, patient_id, settlement_id, opd_ledger_transaction_id,
   patient:patients(id, patient_id, name),
+  opd:daily_ledger_transactions!opd_ledger_transaction_id(id, description),
   visit_purpose:visit_purposes(id, code, name),
   settlement:doctor_visit_settlements!settlement_id(
     id, amount_per_visit, total_amount, visit_count, settled,
@@ -96,7 +98,9 @@ export async function GET(
         id: row.id,
         consultation_date: row.consultation_date,
         notes: row.notes,
-        patient: one<any>(row.patient),
+        // An OPD walk-in has no patient record; it is named from its receipt.
+        patient: one<any>(row.patient) ?? opdPatient(one<any>(row.opd)),
+        opd: Boolean(row.opd_ledger_transaction_id),
         purpose: purpose ? { id: purpose.id, name: purpose.name } : null,
         // What this one visit was worth. An unbilled visit has no fee yet.
         fee: settlement ? num(settlement.amount_per_visit) : null,

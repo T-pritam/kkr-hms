@@ -571,8 +571,21 @@ export default function LedgerPage() {
         }}
         selectedDate={istToday()}
       />
+      {/* An OPD row opens its own form, which also holds the doctors seen and
+          the medicine (client, 28 Sep); every other row, the generic one. */}
+      <OpdEntryModal
+        isOpen={editing !== null && editing.source === 'opd'}
+        mode="edit"
+        initialData={editing && editing.source === 'opd' ? (editing as any) : undefined}
+        onClose={() => setEditing(null)}
+        onSuccess={() => {
+          setEditing(null)
+          void fetchEntries()
+        }}
+        selectedDate={istToday()}
+      />
       <EditTransactionModal
-        isOpen={editing !== null}
+        isOpen={editing !== null && editing.source !== 'opd'}
         onClose={() => setEditing(null)}
         onSuccess={() => {
           setEditing(null)

@@ -21,6 +21,8 @@ failures**. What is open:
 |---|---|---|
 | 🟡 #68 | ~~The database is readable and writable with the key the browser carries~~ | **Closed in practice 2026-09-25** (steps 1–3 of [`docs/SECURITY-DB-ACCESS.md`](docs/SECURITY-DB-ACCESS.md)); step 4, row-level security as a second lock, not done |
 
+**Fixed on 2026-09-28 (round 10, unreleased):** charge sheets offered no new row when editing (#81) · the OPD form's edit would have duplicated (#82).
+
 **Fixed on 2026-09-26:** a new visit's date and time never pre-filled (#80) · the registration fee disagreeing between tabs (#77) · lists cut off on narrower screens (#78) · empty Finances PDF tables (#79).
 
 **Fixed on 2026-09-25:** the browser's key closed (#68, steps 1–3) · live refresh on every screen (#75) · scheduled backups, failing since at least 24 Sep (#76) · the placeholder Dashboard removed (#73, Q-99 = A) · security #1, #3, #4, #5, #6, #69, #70, #74 · correctness #9, #14,
@@ -707,6 +709,16 @@ the suite exercises the API, not the database's own access rules.
 service-role key (server-only, never `NEXT_PUBLIC_`), revoke the anon/authenticated table
 grants, and give live refresh a narrow alternative (RLS policies scoped to realtime, or
 server-sent refetch signals).
+
+### ✅ #81 — RESOLVED — Editing a saved charge sheet offered no row for a new charge
+**Where:** `components/charges/charge-sheet-modal.tsx`
+
+A new sheet grows a blank row as the last one is filled, but a saved sheet loaded its lines with no blank row after them, so there was nowhere to type a new charge (client, 28 Sep: "sometimes new field for charge not generating below"). And a saved per-day charge reopened as one line per day. **Resolved 2026-09-28 (round 10):** a blank row is always kept at the bottom, and consecutive days of one charge fold back into one ranged line that saves onto its own rows.
+
+### ✅ #82 — RESOLVED — Editing an OPD entry would have added a second one
+**Where:** `components/ledger/opd-entry-modal.tsx`
+
+Its edit mode sent POST, not PUT, so saving an edit created a duplicate receipt. It was never reached — the Ledger edited OPD rows in its generic dialog — until OPD entries gained doctors and medicine. **Resolved 2026-09-28:** edit saves with PUT, and the Ledger opens this form for OPD rows.
 
 ### ✅ #80 — RESOLVED — A new visit never pre-filled today's date and time
 **Where:** `components/patients/consultation-form-modal.tsx`

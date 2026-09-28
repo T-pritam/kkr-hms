@@ -33,7 +33,7 @@ interface VisitRow {
   id: string
   consultation_date: string
   notes: string | null
-  patient: { id: string; patient_id: string; name: string } | null
+  patient: { id: string | null; patient_id: string; name: string } | null
   purpose: { id: string; name: string } | null
   fee: number | null
   billed: boolean
@@ -329,7 +329,9 @@ export default function DoctorVisitsPage() {
                           <tr key={row.id} className="hover:bg-surface-hover">
                             <td className="p-3 whitespace-nowrap">{formatIST(row.consultation_date)}</td>
                             <td className="p-3">
-                              {row.patient ? (
+                              {row.patient && !row.patient.id ? (
+                                <span className="text-foreground">{row.patient.patient_id} · {row.patient.name}</span>
+                              ) : row.patient ? (
                                 <Link href={`/patients/${row.patient.id}`} className="text-primary hover:underline">
                                   {row.patient.patient_id} {row.patient.name}
                                 </Link>

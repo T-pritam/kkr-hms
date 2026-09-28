@@ -28,13 +28,40 @@ export interface MedicineCharge {
   description: string
   category: string
   amount: number
-  patient: { id: string; patient_id: string | null; name: string | null } | null
+  patient: { id: string | null; patient_id: string | null; name: string | null } | null
+  /** Set on OPD medicine: the walk-in is not a registered patient. */
+  opd?: boolean
 }
 
 export interface MedicineExpense {
   total: number
   count: number
   rows: MedicineCharge[]
+}
+
+/**
+ * Medicine inside OPD walk-ins' payments (client, 28 Sep): the hospital's
+ * expense too, dated the OPD day. The walk-in is named from the receipt.
+ */
+async function opdMedicine(db: Db, range: { start: string; end: string }): Promise<MedicineCharge[]> {
+  const { data } = await db
+    .from('daily_ledger_transactions')
+    .select('id, transaction_date, description, medicine_expense, source')
+    .eq('source', 'opd')
+    .gte('transaction_date', range.start)
+    .lte('transaction_date', range.end)
+
+  return (data ?? [])
+    .filter((row: any) => Number(row.medicine_expense) > 0)
+    .map((row: any) => ({
+      id: row.id,
+      charge_date: String(row.transaction_date).slice(0, 10),
+      description: 'Medicine (OPD)',
+      category: MEDICINE_CATEGORY,
+      amount: num(row.medicine_expense),
+      patient: { id: null, patient_id: 'OPD', name: String(row.description || '').replace(/^OPD\s+/i, '') || 'Walk-in' },
+      opd: true,
+    }))
 }
 
 /**
@@ -73,6 +100,7 @@ export async function medicineExpense(
       }
     })
     .filter((row: MedicineCharge) => row.category === MEDICINE_CATEGORY)
+    .concat(await opdMedicine(db, range))
     .sort((a: MedicineCharge, b: MedicineCharge) =>
       a.charge_date === b.charge_date ? b.amount - a.amount : a.charge_date < b.charge_date ? 1 : -1,
     )

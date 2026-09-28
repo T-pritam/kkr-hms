@@ -51,6 +51,8 @@ export const SCHEMA: Record<string, string[]> = {
     'expense_category', 'expense_category_detail',
     // 20260924000001 — closing is per row now, not per day (CR-06).
     'closed_at', 'closed_by', 'close_batch_id', 'reopened_at', 'reopened_by', 'reopen_reason',
+    // 20260928000001 — OPD rows only: the medicine inside the walk-in's payment, the hospital's expense
+    'medicine_expense',
   ],
   ledger_close_batches: [
     'id', 'note', 'amount_received', 'row_count', 'closed_at', 'closed_by',
@@ -82,6 +84,8 @@ export const SCHEMA: Record<string, string[]> = {
     // handed the money over
     'amount_set_at', 'status_set_by', 'status_set_at',
     'given_by_user_id', 'given_by_set_by', 'given_by_set_at',
+    // 20260928000001 — an OPD visit's fee hangs off the OPD ledger row, not a bill
+    'opd_ledger_transaction_id',
   ],
 
   doctors: [
@@ -294,6 +298,8 @@ export const SCHEMA: Record<string, string[]> = {
     // "not yet billed". Set only by the sync endpoint, cleared only by deleting
     // that settlement.
     'settlement_id',
+    // 20260928000001 — an OPD walk-in's visit hangs off its ledger row instead of a patient
+    'opd_ledger_transaction_id',
   ],
 
   patient_test_results: [

@@ -17,6 +17,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireBilling } from '@/lib/billing/authz'
 import { syncPatientVisits } from '@/lib/billing/sync-visits'
+import { opdPatient } from '@/lib/ledger/opd'
 
 type Db = Awaited<ReturnType<typeof createClient>>
 
@@ -25,7 +26,8 @@ async function unpaidFor(db: Db, doctorId: string) {
     .from('doctor_visit_settlements')
     .select(
       'id, patient_id, patient_billing_id, visit_count, amount_per_visit, total_amount, settlement_type, settlement_notes, ' +
-        'doctor:doctors(id, name), purpose:visit_purposes(id, name), patient:patients(id, patient_id, name)',
+        'doctor:doctors(id, name), purpose:visit_purposes(id, name), patient:patients(id, patient_id, name), ' +
+        'opd:daily_ledger_transactions!opd_ledger_transaction_id(id, description)',
     )
     .eq('doctor_id', doctorId)
     .eq('settled', false)
@@ -48,7 +50,8 @@ async function unpaidFor(db: Db, doctorId: string) {
     .map(r => ({
       id: r.id,
       patient_id: r.patient_id,
-      patient: one(r.patient),
+      patient: one(r.patient) ?? opdPatient(one(r.opd)),
+      opd: !r.patient_id,
       purpose: one(r.purpose)?.name ?? null,
       doctor: one(r.doctor),
       visit_count: Number(r.visit_count) || 0,

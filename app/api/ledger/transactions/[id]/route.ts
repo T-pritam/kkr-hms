@@ -4,6 +4,7 @@ import { canModify } from '@/lib/authz/ownership'
 import { normaliseLedgerCategoryDetail, validateLedgerExpenseCategory } from '@/lib/finances/validate'
 import { requireLedger } from '@/lib/ledger/authz'
 import { paymentLinks } from '@/lib/billing/payments'
+import { OPD_FEE_PAID, opdHasPaidFee, parseOpdExtras, readOpdExtras, writeOpdExtras } from '@/lib/ledger/opd'
 
 /**
  * A patient payment's ledger credit is changed through the payment, never here
@@ -26,6 +27,26 @@ async function assertNotPaymentEntry(supabase: any, existing: any): Promise<Next
     },
     { status: 409 }
   )
+}
+
+/**
+ * GET /api/ledger/transactions/[id] — an OPD receipt's doctors and medicine,
+ * for its edit form (client, 28 Sep).
+ */
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+    const auth = await requireLedger(request, 'ledger:read')
+    if (auth.response) return auth.response
+    const supabase = await createClient()
+    return NextResponse.json({ success: true, data: await readOpdExtras(supabase, id) })
+  } catch (error: any) {
+    console.error('Read transaction error:', error)
+    return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 })
+  }
 }
 
 /**
@@ -140,6 +161,32 @@ export async function PUT(
       }
     }
 
+    /**
+     * An OPD receipt's doctors and medicine (client, 28 Sep). Once a doctor's
+     * fee on it is paid, its doctors are fixed; the medicine stays editable.
+     */
+    let opdExtras: ReturnType<typeof parseOpdExtras> | null = null
+    if (existing.source === 'opd' && (body.doctors !== undefined || body.medicine_expense !== undefined)) {
+      opdExtras = parseOpdExtras(body)
+      if (!opdExtras.ok) {
+        return NextResponse.json({ error: opdExtras.error }, { status: opdExtras.status })
+      }
+      if (body.doctors !== undefined && (await opdHasPaidFee(supabase, id))) {
+        const current = await readOpdExtras(supabase, id)
+        const key = (list: { doctor_id: string; fee: number }[]) =>
+          list.map(d => `${d.doctor_id}:${Number(d.fee)}`).sort().join(',')
+        if (key(current.doctors) !== key(opdExtras.value.doctors)) {
+          return NextResponse.json({ error: OPD_FEE_PAID, code: 'OPD_FEE_PAID' }, { status: 409 })
+        }
+        // Same doctors: only the medicine may change.
+        await supabase
+          .from('daily_ledger_transactions')
+          .update({ medicine_expense: opdExtras.value.medicine_expense })
+          .eq('id', id)
+        opdExtras = null
+      }
+    }
+
     // Update transaction
     const { data, error } = await supabase
       .from('daily_ledger_transactions')
@@ -156,6 +203,16 @@ export async function PUT(
     if (error) {
       console.error('Update transaction error:', error)
       return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    if (opdExtras?.ok) {
+      const written = await writeOpdExtras(supabase, {
+        ledgerId: id,
+        transactionDate: data.transaction_date,
+        extras: opdExtras.value,
+        userId: user.id,
+      })
+      if (!written.ok) return NextResponse.json({ error: written.error }, { status: written.status })
     }
 
     return NextResponse.json({ 
@@ -210,6 +267,12 @@ export async function DELETE(
 
     const paymentEntry = await assertNotPaymentEntry(supabase, existing)
     if (paymentEntry) return paymentEntry
+
+    // Its unpaid visits and fees go with it (on delete cascade); a paid fee
+    // keeps it (client, 28 Sep).
+    if (existing.source === 'opd' && (await opdHasPaidFee(supabase, id))) {
+      return NextResponse.json({ error: OPD_FEE_PAID, code: 'OPD_FEE_PAID' }, { status: 409 })
+    }
 
     // Delete transaction
     const { error } = await supabase

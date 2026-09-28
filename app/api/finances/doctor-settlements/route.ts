@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireBilling } from '@/lib/billing/authz'
+import { opdPatient } from '@/lib/ledger/opd'
 import { payDoctorFee, validatePayout } from '@/lib/billing/payouts'
 
 /**
@@ -28,7 +29,8 @@ export async function GET(request: NextRequest) {
         *,
         doctor:doctors(*),
         visit_purpose:visit_purposes(id, code, name),
-        patient:patients(*)
+        patient:patients(*),
+        opd:daily_ledger_transactions!opd_ledger_transaction_id(id, description)
       `)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
@@ -49,9 +51,17 @@ export async function GET(request: NextRequest) {
 
     if (error) throw error
 
+    // An OPD walk-in's fee has no patient record; name it from its receipt
+    // (client, 28 Sep) so the list reads "OPD · K Sandhya".
+    const one = (v: any) => (Array.isArray(v) ? v[0] : v) ?? null
+    const rows = (data || []).map((row: any) => {
+      const { opd, ...rest } = row
+      return rest.patient ? rest : { ...rest, patient: opdPatient(one(opd)), opd: Boolean(one(opd)) }
+    })
+
     return NextResponse.json({
       success: true,
-      data: data || [],
+      data: rows,
     })
   } catch (error: any) {
     console.error('Error fetching doctor settlements:', error)

@@ -1139,6 +1139,16 @@ Order matters: the new code writes columns that exist only after the migrations.
 
 This section keeps the **answer log**: round 7 (§9.0b), round 6 (§9.0a), round 4 (§9.0), round 3 (§9.1), round 2 (§9.2), the questions closed by your clarification (§9.3), and round 1 (§9.4).
 
+### 9.0e Round 10 — answered 2026-09-28
+
+| # | Asked / reported | Decision | Recorded in |
+|---|---|---|---|
+| 1 | Charge sheets hard to add to (a new row sometimes doesn't appear) and to edit; "Include last date" on From–To; a combined view in the list and the PDF | A blank row is always at the bottom, editing included; a saved per-day charge reopens as one line with its dates. Asked → the combined view is **one line per charge: rate × days/qty = amount**, an option in the Charges list, the patient charges PDF and the charge sheet PDF; **"Include last date" starts unticked** for charges | `APP-FLOW-PRD.md` §4.5, §4.6 |
+| 2 | Adding doctor visits one by one is slow | Asked → **one visit a day** over a From–To range (**Include last date ticked**), one time for all, a preview where days can be unticked, all or none | §4.4 |
+| 3 | Referral commission split between a top "Set" button and a block | Asked → **one block**: person and amount inline, Save, then **Pay** in the doctor-fee form | §4.9 |
+| 4 | OPD walk-ins seen by one or more doctors, and medicine | Asked → it is **Ledger ▸ Add OPD receipt**; each doctor gets a **fee typed on the entry**, paid later like any fee; **medicine is inside the payment**, so it is the hospital's expense. Migration `20260928000001` (OPD visits and fees hang off the receipt) | §4.10, §5.1 |
+| 5 | Settle doctors from the doctor's page, not patient by patient | Asked → **per patient and purpose, Pay and Edit** (the same forms), syncing unbilled visits automatically | §4.8 |
+
 ### 9.0d Round 9 — answered 2026-09-26
 
 | # | Asked / reported | Decision | Recorded in |
@@ -1349,3 +1359,4 @@ The baseline `PRD.md` §10 questions were carried into round 1: Q1 → Q-37 · Q
 | 2026-09-25 | **BUGS #68 steps 1–3 applied** (client's go-ahead): the server uses the service-role key; live refresh listens to the data-free `change_signals` table fed by triggers (also fixes #75); the anon and authenticated roles lost every right (`20260925000006`–`0007`, undo script in `supabase/rollback/`); the backup function needs a Vault secret (`0008`). Found and fixed on the way: every scheduled backup had been failing on a stale database password (#76). Step 4 (RLS) not done. Details and verification: `SECURITY-DB-ACCESS.md` §0 | Claude |
 | 2026-09-26 | **Round 8** (§9.0c): medicine is always an expense (no question, no "not decided"); lab is in-house income, taken like the registration fee — a payment, its own ledger type and a read-only Charges line, together (`lib/billing/linked-charge.ts`, `patient_charges.installment_id`, migration `20260926000001`); the registration fee writes nothing until collected and follows the catalogue until then; Overview and Finances split money in into payments + registration + lab; the Ledger loses Add payment and hides its totals from reception; the hospital logo; lists no longer cut off below 1280 px; the Finances PDFs' transaction tables, always empty, fixed | Claude |
 | 2026-09-26 | **Round 9** (§9.0d): every ledger row is born Open, the admin's included; a 12-hour time picker for visit and discharge times, and new visits now really pre-fill today and the current time (BUGS #80); the doctor-fee pay form is one compact step; the Overview leads with the payments figure (x) | Claude |
+| 2026-09-28 | **Round 10** (§9.0e), on `feature/round-10`, **not released** (the client decides when): charge ranges with "Include last date"; charge sheets keep a blank row and fold per-day lines when edited; a Combined view and PDFs; visits over a date range; the referral commission in one block; OPD receipts with doctors (fees to pay) and medicine (migration `20260928000001`, to apply **before** the deploy); Pay/Edit from the doctor's page (`/api/doctors/[id]/unpaid`); the fee dialogs and the visit sync shared (`components/billing/doctor-fee-modals.tsx`, `lib/billing/sync-visits.ts`) | Claude |
