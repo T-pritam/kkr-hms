@@ -1,12 +1,12 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { CommissionStamps, FeeStamps } from '@/components/patients/payout-stamps';
+import { FeeStamps } from '@/components/patients/payout-stamps';
 import { GivenByPicker } from '@/components/finances/given-by-picker';
-import { Plus, Check, X, Download, RefreshCw } from 'lucide-react';
+import { Check, X, Download, RefreshCw } from 'lucide-react';
 import { useUser } from '@/hooks/use-user';
 import { fetchPatientPDFData, generatePatientPDF } from '@/lib/pdf/patient-pdf';
-import { SetChargesModal } from './set-charges-modal';
+import { ReferralCommissionBlock } from './referral-commission-block';
 import { UpdatedStamp } from '@/components/ui/updated-stamp';
 
 interface BillingSettlementTabProps {
@@ -41,7 +41,6 @@ export default function BillingSettlementTab({
 }: BillingSettlementTabProps) {
   const { user } = useUser();
   const [settlements, setSettlements] = useState<any[]>([]);
-  const [showSetCharges, setShowSetCharges] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showSettleModal, setShowSettleModal] = useState(false);
   const [settleData, setSettleData] = useState({
@@ -71,14 +70,6 @@ export default function BillingSettlementTab({
     visit_count: 0,
   });
   const [showSettleNote, setShowSettleNote] = useState(false);
-  const [showSettleReferralModal, setShowSettleReferralModal] = useState(false);
-  const [settleReferralData, setSettleReferralData] = useState({
-    payment_method: 'cash',
-    transaction_reference: '',
-    settlement_notes: '',
-    given_by: '',
-    given_by_user_id: null as string | null,
-  });
   /** Which "Settled" summaries are expanded to show the individual payments behind them. */
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
@@ -409,51 +400,6 @@ export default function BillingSettlementTab({
     }
   };
 
-  const handleSettleReferralCommission = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!billing?.referral?.id || billing?.referral_commission_amount <= 0) return;
-
-    setLoading(true);
-
-    try {
-      const response = await fetch(`/api/patients/${patientId}/billing`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          billing_id: billing.id,
-          referral_settled: true,
-          referral_settlement_date: new Date().toISOString(),
-          referral_settlement_payment_method: settleReferralData.payment_method,
-          referral_settlement_transaction_ref: settleReferralData.transaction_reference,
-          referral_settlement_notes: settleReferralData.settlement_notes,
-          referral_settlement_given_by: settleReferralData.given_by,
-          referral_given_by_user_id: settleReferralData.given_by_user_id,
-        }),
-      });
-
-      if (response.ok) {
-        alert('Referral commission settlement recorded successfully');
-        onBillingUpdate();
-        setShowSettleReferralModal(false);
-        setSettleReferralData({
-          payment_method: 'cash',
-          transaction_reference: '',
-          settlement_notes: '',
-          given_by: '',
-    given_by_user_id: null as string | null,
-        });
-      } else {
-        const error = await response.json();
-        alert(error.error || 'Failed to settle referral commission');
-      }
-    } catch (error) {
-      console.error('Error settling referral commission:', error);
-      alert('Failed to settle referral commission');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   if (!billing) {
     return (
       <div className="bg-surface-hover rounded-lg p-8 text-center">
@@ -476,7 +422,6 @@ export default function BillingSettlementTab({
    * flags only stop us offering a button that would be refused.
    */
   const canPrice = isAdmin || user?.role === 'RECEPTIONIST';
-  const commissionSettled = Boolean(billing?.referral_settled);
 
   // Shared input class for the inline number inputs in modals
   const numInputClass = "w-full bg-surface-inset text-foreground rounded-lg px-4 py-2 border border-border focus:border-ring focus:outline-none";
@@ -501,20 +446,6 @@ export default function BillingSettlementTab({
               <Download className="h-4 w-4" />
               <span className="hidden sm:inline">Download PDF</span>
             </button>
-            {(isAdmin || (canPrice && !commissionSettled)) && (
-              <button
-                onClick={() => setShowSetCharges(true)}
-                className="flex items-center gap-2 bg-info hover:bg-info-hover text-foreground px-4 py-2 rounded-lg transition-colors"
-              >
-                <Plus className="h-4 w-4" />
-                Referral & Commission
-              </button>
-            )}
-            {!isAdmin && canPrice && commissionSettled && (
-              <span className="self-center text-xs text-muted">
-                Commission paid — only an admin can change it now
-              </span>
-            )}
           </div>
         </div>
 
@@ -525,26 +456,6 @@ export default function BillingSettlementTab({
           are the patient's expenses, paid out of that money. Paise shown (Q-50).
         */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-surface-inset rounded-lg p-4">
-            <p className="text-muted text-sm">Referral Person</p>
-            <p className="text-2xl text-foreground">
-              {billing.referral?.name || 'Not set'}
-            </p>
-            {billing.referral?.phone && (
-              <p className="text-xs text-muted mt-1">
-                {billing.referral.phone}
-              </p>
-            )}
-          </div>
-          <div className="bg-surface-inset rounded-lg p-4">
-            <p className="text-muted text-sm">Referral Commission</p>
-            <p className="text-2xl font-bold text-foreground">
-              {inr(billing.referral_commission_amount)}
-            </p>
-            {Number(billing.referral_commission_amount || 0) > 0 && (
-              <p className="text-xs text-muted mt-1">An expense of this patient — paid out of their payments</p>
-            )}
-          </div>
           <div className="bg-surface-inset rounded-lg p-4">
             <p className="text-muted text-sm">Doctor Fees</p>
             <p className="text-2xl font-bold text-foreground">
@@ -568,52 +479,14 @@ export default function BillingSettlementTab({
         </div>
       </div>
 
-      {/* Referral Commission Settlement */}
-      {billing.referral?.id && (
-        <div className="bg-surface-hover rounded-lg p-6">
-          <h3 className="text-xl font-semibold text-foreground mb-4">Referral Commission Settlement</h3>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <div className="bg-surface-inset rounded-lg p-4">
-              <p className="text-muted text-sm">Referral</p>
-              <p className="text-foreground font-medium">{billing.referral?.name || 'N/A'}</p>
-            </div>
-            <div className="bg-surface-inset rounded-lg p-4">
-              <p className="text-muted text-sm">Commission Amount</p>
-              <p className="text-2xl font-bold text-foreground">
-                ₹{parseInt(billing.referral_commission_amount || 0)}
-              </p>
-            </div>
-            <div className="bg-surface-inset rounded-lg p-4">
-              <p className="text-muted text-sm">Status</p>
-              {billing.referral_settled ? (
-                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-success-subtle text-success-text mt-2">
-                  <Check className="h-3 w-3" />
-                  Settled
-                </span>
-              ) : (
-                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-warning-subtle text-warning-text mt-2">
-                  Pending
-                </span>
-              )}
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-start justify-between gap-3 mb-4 text-sm">
-            <CommissionStamps billing={billing} />
-            <RecordedStamp record={billing} />
-          </div>
-
-          {!billing.referral_settled && (
-            <button
-              onClick={() => setShowSettleReferralModal(true)}
-              className="bg-primary hover:bg-primary-hover text-foreground px-6 py-2 rounded-lg transition-colors"
-            >
-              Settle Referral Commission
-            </button>
-          )}
-        </div>
-      )}
+      {/* Referral commission — set, save and pay in one place (client, 28 Sep). */}
+      <ReferralCommissionBlock
+        patientId={patientId}
+        billing={billing}
+        isAdmin={isAdmin}
+        canPrice={canPrice}
+        onChanged={onBillingUpdate}
+      />
 
       {/* Doctor Visit Settlements */}
       <div>
@@ -1056,106 +929,6 @@ export default function BillingSettlementTab({
           </form>
         </div>
       )}
-
-      {/* Settle Referral Commission Modal */}
-      {showSettleReferralModal && (
-        <div className="fixed inset-0 bg-overlay flex items-end sm:items-center justify-center z-50 sm:p-4">
-          <form onSubmit={handleSettleReferralCommission} className="bg-surface-hover rounded-t-2xl sm:rounded-lg p-4 sm:p-6 w-full sm:max-w-md space-y-4 max-h-[95vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h4 className="text-xl font-semibold text-foreground">Settle Referral Commission</h4>
-              <button type="button" onClick={() => setShowSettleReferralModal(false)} className="text-muted hover:text-foreground">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="bg-surface-inset rounded-lg p-4 space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted">Referral:</span>
-                <span className="text-foreground font-medium">{billing?.referral?.name}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted">Commission Amount:</span>
-                <span className="text-foreground font-medium">₹{parseInt(billing?.referral_commission_amount || 0)}</span>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-muted mb-2">Payment Method *</label>
-              <select
-                required
-                value={settleReferralData.payment_method}
-                onChange={e => setSettleReferralData({ ...settleReferralData, payment_method: e.target.value })}
-                className={numInputClass}
-              >
-                <option value="cash">CASH</option>
-                <option value="upi">UPI</option>
-                <option value="card">CARD</option>
-                <option value="bank_transfer">BANK TRANSFER</option>
-                <option value="cheque">CHEQUE</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-muted mb-2">Transaction Reference</label>
-              <input
-                type="text"
-                value={settleReferralData.transaction_reference}
-                onChange={e => setSettleReferralData({ ...settleReferralData, transaction_reference: e.target.value })}
-                className={numInputClass}
-              />
-            </div>
-
-            <GivenByPicker
-              value={{
-                given_by_user_id: settleReferralData.given_by_user_id,
-                given_by: settleReferralData.given_by,
-              }}
-              onChange={next =>
-                setSettleReferralData({
-                  ...settleReferralData,
-                  given_by_user_id: next.given_by_user_id,
-                  given_by: next.given_by,
-                })
-              }
-            />
-
-            <div>
-              <label className="block text-sm font-medium text-muted mb-2">Notes</label>
-              <textarea
-                rows={2}
-                value={settleReferralData.settlement_notes}
-                onChange={e => setSettleReferralData({ ...settleReferralData, settlement_notes: e.target.value })}
-                className={numInputClass}
-              />
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                type="submit"
-                disabled={loading}
-                className="flex-1 bg-success hover:bg-success-hover text-foreground px-6 py-2 rounded-lg transition-colors disabled:opacity-50 cursor-pointer"
-              >
-                {loading ? 'Recording...' : 'Record Settlement'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowSettleReferralModal(false)}
-                className="bg-surface-inset hover:bg-surface-inset text-foreground px-6 py-2 rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      <SetChargesModal
-        isOpen={showSetCharges}
-        onClose={() => setShowSetCharges(false)}
-        patientId={patientId}
-        billing={billing}
-        onSuccess={onBillingUpdate}
-      />
     </div>
   );
 }
