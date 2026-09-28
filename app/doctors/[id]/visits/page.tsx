@@ -27,6 +27,7 @@ import { generateDoctorVisitsPDF } from '@/lib/pdf/doctor-visits-pdf'
 import { formatIST } from '@/lib/consultations/ist'
 import { istMonth } from '@/lib/dates/ist'
 import { ArrowLeft, Download, FileSpreadsheet, RefreshCw, Stethoscope } from 'lucide-react'
+import { UnpaidFeesPanel } from '@/components/doctors/unpaid-fees-panel'
 
 interface VisitRow {
   id: string
@@ -207,6 +208,9 @@ export default function DoctorVisitsPage() {
             {error}
           </div>
         )}
+
+        {/* Pay and correct fees right here (client, 28 Sep). */}
+        <UnpaidFeesPanel doctorId={doctorId} onChanged={() => void fetchVisits()} />
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {cards.map(card => (
