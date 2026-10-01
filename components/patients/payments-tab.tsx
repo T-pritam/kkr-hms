@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, Edit, AlertTriangle, FlaskConical } from 'lucide-react';
+import { Plus, Trash2, Edit, AlertTriangle, FlaskConical, Receipt } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useUser } from '@/hooks/use-user';
 import { UpdatedStamp } from '@/components/ui/updated-stamp';
 import { istToday } from '@/lib/dates/ist';
+import { PaymentReceiptModal, type ReceiptTarget } from './payment-receipt-modal';
 import {
   DESK_PAYMENT_KINDS,
   PAYMENT_KIND_LABELS,
@@ -40,11 +41,34 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
   };
   const [formData, setFormData] = useState(EMPTY_FORM);
 
+  // Printed receipts (client, 1 Oct): reception and admin make one for a single
+  // payment or for several, and each is kept as it was last typed.
+  const canReceipt = user?.role === 'ADMIN' || user?.role === 'RECEPTIONIST';
+  const [receipts, setReceipts] = useState<any[]>([]);
+  const [receiptTarget, setReceiptTarget] = useState<ReceiptTarget | null>(null);
+
+  const fetchReceipts = async () => {
+    if (!canReceipt) return;
+    try {
+      const response = await fetch(`/api/patients/${patientId}/receipts`);
+      if (response.ok) setReceipts((await response.json()).receipts ?? []);
+    } catch (error) {
+      console.error('Error fetching receipts:', error);
+    }
+  };
+
+  const handleDeleteReceipt = async (receipt: any) => {
+    if (!confirm(`Delete receipt ${receipt.receipt_no}? The payments on it are not touched.`)) return;
+    const response = await fetch(`/api/patients/${patientId}/receipts/${receipt.id}`, { method: 'DELETE' });
+    if (response.ok) await fetchReceipts();
+    else alert((await response.json().catch(() => ({})))?.error || 'Failed to delete the receipt');
+  };
+
   useEffect(() => {
     if (billing) {
       fetchInstallments();
     }
-  }, [billing]);
+  }, [billing, canReceipt]);
 
   const fetchInstallments = async () => {
     try {
@@ -52,6 +76,8 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
       if (response.ok) {
         const data = await response.json();
         setInstallments(data);
+        // A receipt's rows and total follow the payments, so they reload together.
+        void fetchReceipts();
       }
     } catch (error) {
       console.error('Error fetching installments:', error);
@@ -187,6 +213,22 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
   // one rule — the same one the server enforces — and it gates the buttons.
   const isLocked = (installment: any) => installment.entry_closed;
 
+  const receiptButton = (installment: any, withLabel = false) =>
+    canReceipt ? (
+      <button
+        type="button"
+        onClick={() => setReceiptTarget({ kind: 'single', installmentId: installment.id })}
+        title="Receipt for this payment"
+        className={
+          withLabel
+            ? 'text-foreground text-sm font-medium min-h-[44px] flex items-center gap-1.5'
+            : 'inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-foreground hover:bg-surface-inset'
+        }
+      >
+        <Receipt size={14} /> Receipt
+      </button>
+    ) : null;
+
   const canEditOrDelete = (installment: any) => {
     if (isLocked(installment)) return false;
     return user?.role === 'ADMIN' || installment.created_by === user?.id;
@@ -258,6 +300,11 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
       </div>
 
       <div className="flex justify-end -mt-3">
+        {canReceipt && installments.length > 1 && (
+          <Button size="sm" variant="outline" className="mr-2" onClick={() => setReceiptTarget({ kind: 'several' })}>
+            <Receipt className="h-4 w-4 mr-1" /> Receipt for several payments
+          </Button>
+        )}
         <Button size="sm" variant="outline" onClick={() => void handleAddLabTest()}>
           <FlaskConical className="h-4 w-4 mr-1" /> Add lab test
         </Button>
@@ -459,6 +506,8 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
                       ₹{parseFloat(installment.amount).toFixed(2)}
                     </td>
                     <td className="px-4 py-3 text-center">
+                      <div className="flex items-center justify-center gap-2">
+                      {receiptButton(installment)}
                       {canEditOrDelete(installment) ? (
                         <div className="flex justify-center gap-2">
                           <Button
@@ -488,6 +537,7 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
                           🔒
                         </span>
                       ) : null}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -551,6 +601,7 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
                 )}
                 {canEditOrDelete(installment) ? (
                   <div className="flex gap-3 pt-2 border-t border-input-border">
+                    {receiptButton(installment, true)}
                     <button
                       onClick={() => handleEdit(installment)}
                       className="text-info text-sm font-medium min-h-[44px] flex items-center gap-1.5"
@@ -565,7 +616,8 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
                     </button>
                   </div>
                 ) : isLocked(installment) ? (
-                  <div className="pt-2 border-t border-input-border">
+                  <div className="flex items-center gap-3 pt-2 border-t border-input-border">
+                    {receiptButton(installment, true)}
                     <span
                       className="text-xs text-muted inline-flex items-center gap-1"
                       title="Closed in the ledger — an admin reopens it before it can be changed"
@@ -573,6 +625,8 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
                       🔒 Closed
                     </span>
                   </div>
+                ) : canReceipt ? (
+                  <div className="pt-2 border-t border-input-border">{receiptButton(installment, true)}</div>
                 ) : null}
               </div>
             ))}
@@ -585,6 +639,49 @@ export default function PaymentsTab({ patientId, billing, onCreateBilling }: Pay
           </>
         )}
       </div>
+
+      {canReceipt && receipts.length > 0 && (
+        <div className="space-y-2">
+          <h4 className="text-base font-semibold text-foreground">Saved receipts</h4>
+          <div className="bg-surface-hover rounded-lg divide-y divide-input-border">
+            {receipts.map((receipt) => (
+              <div key={receipt.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-foreground">
+                    Receipt {receipt.receipt_no}
+                    <span className="ml-2 font-normal text-muted">
+                      {receipt.lines.length === 1
+                        ? `payment #${receipt.lines[0].installment_number}`
+                        : `payments ${receipt.lines.map((line: any) => `#${line.installment_number}`).join(', ')}`}
+                    </span>
+                  </p>
+                  <UpdatedStamp by={receipt.saved_by} at={receipt.saved_at} action="Saved" />
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-semibold text-foreground">
+                    ₹{Number(receipt.total).toLocaleString('en-IN')}
+                  </span>
+                  <Button size="sm" variant="outline" onClick={() => setReceiptTarget({ kind: 'saved', receiptId: receipt.id })}>
+                    Open
+                  </Button>
+                  <Button size="sm" variant="destructive" onClick={() => void handleDeleteReceipt(receipt)} aria-label={`Delete receipt ${receipt.receipt_no}`}>
+                    <Trash2 size={16} />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {canReceipt && (
+        <PaymentReceiptModal
+          patientId={patientId}
+          target={receiptTarget}
+          onClose={() => setReceiptTarget(null)}
+          onSaved={() => void fetchReceipts()}
+        />
+      )}
     </div>
   );
 }

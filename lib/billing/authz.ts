@@ -28,6 +28,7 @@ export type BillingCapability =
   | 'doctor-fee:write'
   | 'pharmacy-charge:write'
   | 'payment:write'
+  | 'receipt:write'
   | 'payout:read'
   | 'payout:write'
   | 'finance:read'
@@ -97,6 +98,10 @@ export const BILLING_CAPABILITIES: Record<BillingCapability, UserRole[]> = {
   // settlement row, with who paid it and who carried it, is the whole record
   // (client revision, 2026-09-24).
   'payout:write': ['ADMIN', 'RECEPTIONIST'],
+
+  // The printed receipt for a patient's payments — reading, making, editing
+  // and deleting one. The client named the two roles: reception and admin.
+  'receipt:write': ['ADMIN', 'RECEPTIONIST'],
 }
 
 export interface BillingUser {

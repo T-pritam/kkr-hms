@@ -246,6 +246,17 @@ export const SCHEMA: Record<string, string[]> = {
     'referral_given_by_user_id', 'referral_given_by_set_by', 'referral_given_by_set_at',
   ],
 
+  // 20261001000001 — the printed receipt for one or more payments, as last typed
+  payment_receipts: [
+    'id', 'patient_id', 'patient_billing_id', 'receipt_no', 'heading', 'patient_name', 'age_sex',
+    'mobile', 'address', 'ip_no', 'doctors', 'department', 'created_by_label',
+    'created_at', 'created_by', 'updated_at', 'updated_by',
+  ],
+  payment_receipt_lines: [
+    'id', 'receipt_id', 'installment_id', 'position', 'line_date', 'payment_mode',
+    'transaction_type', 'remarks',
+  ],
+
   patient_billing_installments: [
     'id', 'patient_billing_id', 'installment_number', 'amount', 'payment_date', 'payment_method',
     'transaction_reference', 'remarks', 'created_at', 'created_by', 'updated_at', 'updated_by',

@@ -315,6 +315,19 @@ Reception sees everything except **Net** [Q-66]. The "Lab & medicine" block is g
 
 The patient's **total bill** is the sum of these payments.
 
+**The printed receipt** [1 Oct, not released]. **Who:** A R only, reading included. Each payment has a **Receipt** button, and **Receipt for several payments** puts ticked payments on one receipt. It is the desk's own "Cash Receipt": a half sheet (A5 landscape) on plain paper, with its own boxed header (logo, "KKR Hospital", address), not the letterhead.
+
+1. The app fills the form in:
+   - the patient line (`Mr.` / `Ms.` from the gender, then the name), age/sex as `11yrs/Male`, both mobile numbers, the address, and the IP no (the patient ID);
+   - every doctor who has a visit for the patient, names only, in the order they first came; the **Department** is the first doctor's;
+   - one row per payment: date, payment mode (Cash · UPI · Card · Bank transfer · Cheque), transaction type (`cash`, or `transfer` for anything else), and remarks (the payment's label, then its own remarks);
+   - **Created by**: whoever recorded the payment; for several payments, whoever is signed in.
+2. **Everything can be typed over except the amount**, which is always the payment's own and is never stored on the receipt. A corrected payment corrects its receipt. The patient's record is not changed by what is typed here.
+3. The **Receipt No is typed by hand** from the desk's book and is **required**: Save & download and Save & print stay off without it. The app does not number receipts and does not check the number is unused.
+4. **Saving keeps what was typed.** A payment's own receipt reopens from its Receipt button; every saved receipt is also listed under **Saved receipts** (Open · Delete). Deleting a receipt leaves its payments alone.
+5. The total, and the amount in words (`Rupees: eight thousand only.`), are worked out from the rows. A line left empty (address, doctors, department, created by) is left out of the print. More rows than fit continue on a second half sheet.
+6. Deleting a payment takes its row off any receipt, and removes a receipt left with no rows.
+
 ### 4.8 Doctor fees — raise, price, pay out
 
 **Who:** A R price and pay (Q-19); D N cannot (a doctor cannot price their own fee). A D R can read the payout lists.
@@ -633,6 +646,7 @@ The rule is enforced by the server, not just hidden in the screens: every write 
 | forward into charges | ✅ | — | — | — | — |
 | **Payments** — record | ✅ | ✅ | ✅ | ✅ | — |
 | edit · delete (until its ledger row is closed) | ✅* | own | own | own | — |
+| printed receipt — see · make · edit · delete | ✅ | — | — | ✅ | — |
 | **Doctor fees** — sync visits · price · pay out (unpaid) | ✅ | — | — | ✅ | — |
 | change a paid fee · un-pay | ✅ | — | — | — | — |
 | **Referral commission** — set · pay (unpaid) | ✅ | — | — | ✅ | — |
@@ -712,6 +726,8 @@ CASE SHEET         draft ──(finalise)──► final ──(reopen)──►
 | Discharge summary | `DS/2026/00012` | one per case sheet |
 | Charge sheet | `CS-000123` | one per quote |
 | Payment in the ledger | `12/26 Ramesh Kumar (Advance)` | patient ID, name, label |
+| Payment receipt no | `287(A)` | **typed by hand** from the desk's book; required; not issued or checked by the app |
+| Payment receipt | A5 landscape · `13.07.26` · `8,000` · `Total Amount : 8,000/-` | whole rupees as the desk writes them (paise only when there are any); the total also in words |
 | Dates | **India time (IST)** everywhere | "today" and "this month" are IST days; a 00:30 visit files under its own IST day [CR-14] |
 | Money | rupees **with paise** everywhere [Q-50] | PDFs print `Rs.1,250.00` (the PDF font has no ₹ sign) |
 | Payment modes | cash · UPI · card · bank transfer · cheque | UPI always needs its reference |
@@ -724,7 +740,8 @@ CASE SHEET         draft ──(finalise)──► final ──(reopen)──►
 users ─┬─ created_by / updated_by / closed_by / settled_by / …  (attribution on every money row)
 
 patients ──1:N── patient_billing (a bill per stay) ──1:N── patient_billing_installments (payments)
-   │                    │                                         └──1:1── daily_ledger_transactions (IN)
+   │                    │                                         ├──1:1── daily_ledger_transactions (IN)
+   │                    │                                         └──N:M── payment_receipts (via payment_receipt_lines)
    │                    ├──1:N── patient_charges ──► charge_items (the catalogue)
    │                    │           └── lab_medicine_status: included | NULL
    │                    ├──1:N── doctor_visit_settlements (fee rows) ◄── patient_consultations (visits)

@@ -1139,6 +1139,24 @@ Order matters: the new code writes columns that exist only after the migrations.
 
 This section keeps the **answer log**: round 7 (§9.0b), round 6 (§9.0a), round 4 (§9.0), round 3 (§9.1), round 2 (§9.2), the questions closed by your clarification (§9.3), and round 1 (§9.4).
 
+### 9.0f Payment receipts — answered 2026-10-01
+
+The client sent a photo of the receipt the desk types by hand today and asked for it from the app: *"a pdf for payments receipts for the patients… receptionist and admin can download all patients and payments… fetch the consulting doctor names and designations if any… always give an edit field… only amount, patient details need to be hardcoded, rest all things are editable."*
+
+| # | Asked | Decision | Recorded in |
+|---|---|---|---|
+| 1 | What does one receipt cover? | **Both**: a Receipt button per payment, and one receipt for several ticked payments | APP-FLOW §4.7 |
+| 2 | "Download all patients and payments"? | **Any patient, any payment**, from that patient's Payments tab, for reception and admin. No bulk download | §4.7, §6.2 |
+| 3 | The photo's "Receipt No: 287(A)" | **Typed by hand**, and **required** before downloading. The app issues no number | §4.7, §8 |
+| 4 | Are the desk's edits kept? | **Yes**: a saved receipt reopens as last typed | §4.7 |
+| 5 | Paper and header | **Half sheet (A5 landscape)** with the photo's own boxed header, on plain paper; not the letterhead | §4.7 |
+| 6 | The "Consultant doctor" lines | Start from **every doctor who visited, names only**; Department from the first doctor's | §4.7 |
+| 7 | Missing addresses (no current patient has one), and which patient details are editable | *"Keep them also editable like the doctor details"* → **all patient details are editable** on the receipt (name, age/sex, IP no, mobile, address), saved with the receipt only. **Only the amount is fixed.** This reverses "patient details hardcoded" from the request | §4.7 |
+| 8 | "Mr." before the name | **From gender**: Mr. / Ms., as the start of the name line | §4.7 |
+| 9 | The row's date | **Editable** | §4.7 |
+
+Two slips on the photo are not copied: its total reads 7,000 beside an 8,000 payment, and its column says "Tansaction Amount". The app prints the real sum and "Transaction Amount".
+
 ### 9.0e Round 10 — answered 2026-09-28
 
 | # | Asked / reported | Decision | Recorded in |
@@ -1360,3 +1378,4 @@ The baseline `PRD.md` §10 questions were carried into round 1: Q1 → Q-37 · Q
 | 2026-09-26 | **Round 8** (§9.0c): medicine is always an expense (no question, no "not decided"); lab is in-house income, taken like the registration fee — a payment, its own ledger type and a read-only Charges line, together (`lib/billing/linked-charge.ts`, `patient_charges.installment_id`, migration `20260926000001`); the registration fee writes nothing until collected and follows the catalogue until then; Overview and Finances split money in into payments + registration + lab; the Ledger loses Add payment and hides its totals from reception; the hospital logo; lists no longer cut off below 1280 px; the Finances PDFs' transaction tables, always empty, fixed | Claude |
 | 2026-09-26 | **Round 9** (§9.0d): every ledger row is born Open, the admin's included; a 12-hour time picker for visit and discharge times, and new visits now really pre-fill today and the current time (BUGS #80); the doctor-fee pay form is one compact step; the Overview leads with the payments figure (x) | Claude |
 | 2026-09-28 | **Round 10** (§9.0e), **released 2026-10-01** (the OPD migration applied first, then the deploy): charge ranges with "Include last date"; charge sheets keep a blank row and fold per-day lines when edited; a Combined view and PDFs; visits over a date range; the referral commission in one block; OPD receipts with doctors (fees to pay) and medicine (migration `20260928000001`, to apply **before** the deploy); Pay/Edit from the doctor's page (`/api/doctors/[id]/unpaid`); the fee dialogs and the visit sync shared (`components/billing/doctor-fee-modals.tsx`, `lib/billing/sync-visits.ts`) | Claude |
+| 2026-10-01 | **Payment receipts** (§9.0f), on `feature/payment-receipts`, **not released** (the client decides when; migration `20261001000001_payment_receipts.sql` goes first): the desk's "Cash Receipt" as an A5-landscape PDF for one payment or several, pre-filled from the patient, their visits and the payments, everything editable but the amount, receipt number typed by hand and required, saved as typed. Reception and admin only. New: `payment_receipts`, `payment_receipt_lines`, `receipt:write`, `rupeesInWords`. |

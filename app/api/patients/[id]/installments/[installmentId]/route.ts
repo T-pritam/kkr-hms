@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { ENTRY_LOCKED } from '@/lib/authz/ownership';
 import { requireBilling } from '@/lib/billing/authz';
 import { deletePayment, isDeskPaymentKind, updatePayment, validatePayment } from '@/lib/billing/payments';
+import { forgetPaymentOnReceipts, receiptsCarrying } from '@/lib/billing/receipts';
 
 /**
  * Refuses when the ledger credit this payment created has already been
@@ -72,7 +73,12 @@ export async function DELETE(
     const closed = await assertEntryOpen(supabase, installment.ledger_transaction_id);
     if (closed) return closed;
 
+    // A printed receipt cannot keep a payment that no longer exists: its row
+    // goes, and so does a receipt left with no rows.
+    const receiptIds = await receiptsCarrying(supabase, installmentId);
+
     await deletePayment(supabase, installment);
+    await forgetPaymentOnReceipts(supabase, installmentId, receiptIds);
 
     return NextResponse.json({ success: true });
   } catch (error) {
