@@ -17,7 +17,7 @@
 -- Additive: nothing live reads either table. Access control lives in the API;
 -- the browser's key reaches neither (BUGS #68).
 --
--- NOT applied to production until the client releases the receipts.
+-- Applied to production on 2026-10-01 (as `payment_receipts`), before the deploy.
 
 create table if not exists public.payment_receipts (
   id uuid primary key default gen_random_uuid(),

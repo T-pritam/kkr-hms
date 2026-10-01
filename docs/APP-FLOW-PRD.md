@@ -315,7 +315,7 @@ Reception sees everything except **Net** [Q-66]. The "Lab & medicine" block is g
 
 The patient's **total bill** is the sum of these payments.
 
-**The printed receipt** [1 Oct, not released]. **Who:** A R only, reading included. Each payment has a **Receipt** button, and **Receipt for several payments** puts ticked payments on one receipt. It is the desk's own "Cash Receipt": a half sheet (A5 landscape) on plain paper, with its own boxed header (logo, "KKR Hospital", address), not the letterhead.
+**The printed receipt** [1 Oct]. **Who:** A R only, reading included. Each payment has a **Receipt** button, and **Receipt for several payments** puts ticked payments on one receipt. It is the desk's own "Cash Receipt": a half sheet (A5 landscape) on plain paper, with its own boxed header (logo, "KKR Hospital", address), not the letterhead.
 
 1. The app fills the form in:
    - the patient line (`Mr.` / `Ms.` from the gender, then the name), age/sex as `11yrs/Male`, both mobile numbers, the address, and the IP no (the patient ID);
