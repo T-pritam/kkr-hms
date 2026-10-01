@@ -28,7 +28,9 @@ function world() {
   aPatient({ id: 'p2', patient_id: '215/26', name: 'Someone Else' })
   aBilling({ id: 'b1', patient_id: 'p1' })
   aBilling({ id: 'b2', patient_id: 'p2' })
-  aDoctor({ id: 'd1', name: 'Dr Ramesh Naidu', department: 'General Medicine' })
+  aDoctor({ id: 'd1', name: 'Dr Ramesh Naidu', department: 'General Medicine', designation: 'Senior Consultant' })
+  aDoctor({ id: 'd2', name: 'Dr Anil', department: null, designation: null })
+  aDoctor({ id: 'd3', name: 'Dr Left', is_active: false })
   aConsultation({ patient_id: 'p1', doctor_id: 'd1' })
   anInstallment({ id: 'i1', patient_billing_id: 'b1', installment_number: 1, amount: 8000, payment_date: '2026-07-13', payment_method: 'upi', kind: 'advance', created_by: 'u-desk' })
   anInstallment({ id: 'i2', patient_billing_id: 'b1', installment_number: 2, amount: 2500, payment_date: '2026-07-15', payment_method: 'cash', kind: 'regular', created_by: 'u-desk' })
@@ -37,7 +39,8 @@ function world() {
 
 const typed = (lines: any[], extra: any = {}) => ({
   receipt_no: '287(A)', heading: 'Cash Receipt', patient_name: 'Mr. Chandan', age_sex: '11yrs/Male', mobile: '7997116180',
-  address: 'Chalam Naidu Valasa', ip_no: '214/26', doctors: ['Dr Ramesh Naidu'], department: 'General Medicine',
+  address: 'Chalam Naidu Valasa', ip_no: '214/26', department: 'General Medicine',
+  doctors: [{ name: 'Dr Ramesh Naidu', designation: 'Senior Consultant' }],
   created_by_label: 'Madhu.P', lines, ...extra,
 })
 const row = (id: string, extra: any = {}) => ({
@@ -72,8 +75,15 @@ describe('/api/patients/[id]/receipts', () => {
     expect(body.me).toBe('madhu')
     expect(body.defaults).toMatchObject({
       heading: 'Cash Receipt', patient_name: 'Mr. Chandan', age_sex: '11yrs/Male', mobile: '7997116180',
-      address: '', ip_no: '214/26', doctors: ['Dr Ramesh Naidu'], department: 'General Medicine',
+      address: '', ip_no: '214/26', department: 'General Medicine',
+      // the doctor who visited, with the designation the Doctors list has
+      doctors: [{ name: 'Dr Ramesh Naidu', designation: 'Senior Consultant' }],
     })
+    // every active doctor can be picked, by name; a deactivated one is not offered
+    expect(body.doctor_options).toEqual([
+      { id: 'd2', name: 'Dr Anil', designation: '', department: '' },
+      { id: 'd1', name: 'Dr Ramesh Naidu', designation: 'Senior Consultant', department: 'General Medicine' },
+    ])
     // only this patient's payments, oldest first, each with its starting row
     expect(body.payments).toEqual([
       expect.objectContaining({
@@ -96,8 +106,8 @@ describe('/api/patients/[id]/receipts', () => {
     expect(body.receipts).toHaveLength(1)
     expect(body.receipts[0]).toMatchObject({
       id: saved.body.id, receipt_no: '287(A)', patient_name: 'Mr. Chandan', address: 'Chalam Naidu Valasa',
-      doctors: ['Dr Ramesh Naidu'], department: 'General Medicine', created_by_label: 'Madhu.P',
-      total: 8000, saved_by: 'madhu',
+      doctors: [{ name: 'Dr Ramesh Naidu', designation: 'Senior Consultant' }], department: 'General Medicine',
+      created_by_label: 'Madhu.P', total: 8000, saved_by: 'madhu',
       lines: [{ installment_id: 'i1', installment_number: 1, line_date: '2026-07-13', payment_mode: 'Phone pay', transaction_type: 'transfer', remarks: 'advance', amount: 8000 }],
     })
     // the patient's own record is not changed by what was typed on the receipt
@@ -139,6 +149,16 @@ describe('/api/patients/[id]/receipts', () => {
     expect(db.rows('payment_receipts')).toHaveLength(0)
   })
 
+  it('still opens a receipt saved before designations, with bare doctor names', async () => {
+    await signInAs('RECEPTIONIST', { userId: 'u-desk' })
+    world()
+    const { body: saved } = await create(typed([row('i1')]))
+    db.patchRow('payment_receipts', (r) => r.id === saved.id, { doctors: ['Dr Ramesh Naidu'] })
+
+    const { body } = await list()
+    expect(body.receipts[0].doctors).toEqual([{ name: 'Dr Ramesh Naidu', designation: '' }])
+  })
+
   it('saves nothing when the rows cannot be written', async () => {
     await signInAs('RECEPTIONIST', { userId: 'u-desk' })
     world()
@@ -155,13 +175,15 @@ describe('/api/patients/[id]/receipts', () => {
     const { body: saved } = await create(typed([row('i1')]))
 
     await signInAs('ADMIN', { userId: 'u-admin' })
-    const changed = await update(saved.id, typed([row('i2', { remarks: 'balance' })], { receipt_no: '287(B)', doctors: ['Dr Krishna Chaitanya'], department: '' }))
+    const changed = await update(saved.id, typed([row('i2', { remarks: 'balance' })], { receipt_no: '287(B)', doctors: [{ name: 'Dr Krishna Chaitanya', designation: '' }, 'A typed name'], department: '' }))
     expect(changed.status).toBe(200)
 
     const { body } = await list()
     expect(body.receipts).toHaveLength(1)
     expect(body.receipts[0]).toMatchObject({
-      receipt_no: '287(B)', doctors: ['Dr Krishna Chaitanya'], department: '', saved_by: 'subham',
+      receipt_no: '287(B)', department: '', saved_by: 'subham',
+      // a doctor not in the list is kept just as typed
+      doctors: [{ name: 'Dr Krishna Chaitanya', designation: '' }, { name: 'A typed name', designation: '' }],
       lines: [expect.objectContaining({ installment_id: 'i2', remarks: 'balance', amount: 2500 })],
     })
     expect(db.rows('payment_receipt_lines')).toHaveLength(1)

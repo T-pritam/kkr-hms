@@ -319,14 +319,15 @@ The patient's **total bill** is the sum of these payments.
 
 1. The app fills the form in:
    - the patient line (`Mr.` / `Ms.` from the gender, then the name), age/sex as `11yrs/Male`, both mobile numbers, the address, and the IP no (the patient ID);
-   - every doctor who has a visit for the patient, names only, in the order they first came; the **Department** is the first doctor's;
+   - every doctor who has a visit for the patient, in the order they first came, each with the **designation** the Doctors list has for them (if any); the **Department** is the first doctor's;
    - one row per payment: date, payment mode (Cash · UPI · Card · Bank transfer · Cheque), transaction type (`cash`, or `transfer` for anything else), and remarks (the payment's label, then its own remarks);
    - **Created by**: whoever recorded the payment; for several payments, whoever is signed in.
-2. **Everything can be typed over except the amount**, which is always the payment's own and is never stored on the receipt. A corrected payment corrects its receipt. The patient's record is not changed by what is typed here.
-3. The **Receipt No is typed by hand** from the desk's book and is **required**: Save & download and Save & print stay off without it. The app does not number receipts and does not check the number is unused.
-4. **Saving keeps what was typed.** A payment's own receipt reopens from its Receipt button; every saved receipt is also listed under **Saved receipts** (Open · Delete). Deleting a receipt leaves its payments alone.
-5. The total, and the amount in words (`Rupees: eight thousand only.`), are worked out from the rows. A line left empty (address, doctors, department, created by) is left out of the print. More rows than fit continue on a second half sheet.
-6. Deleting a payment takes its row off any receipt, and removes a receipt left with no rows.
+2. **Consultant doctors are picked or typed.** Each doctor line offers the Doctors list (active doctors, with designation and department shown) and also takes any typed name. Picking one fills the designation, and the department if that is still empty; typing over a picked name drops the designation that came with it. The designation is its own editable field and prints after the name in brackets. **Preview** opens the receipt in a new tab without saving.
+3. **Everything can be typed over except the amount**, which is always the payment's own and is never stored on the receipt. A corrected payment corrects its receipt. The patient's record is not changed by what is typed here.
+4. The **Receipt No is typed by hand** from the desk's book and is **required**: Save & download and Save & print stay off without it. The app does not number receipts and does not check the number is unused.
+5. **Saving keeps what was typed.** A payment's own receipt reopens from its Receipt button; every saved receipt is also listed under **Saved receipts** (Open · Delete). Deleting a receipt leaves its payments alone.
+6. The total, and the amount in words (`Rupees: eight thousand only.`), are worked out from the rows. A line left empty (address, doctors, department, created by) is left out of the print. More rows than fit continue on a second half sheet.
+7. Deleting a payment takes its row off any receipt, and removes a receipt left with no rows.
 
 ### 4.8 Doctor fees — raise, price, pay out
 

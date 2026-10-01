@@ -28,6 +28,12 @@ export interface PaymentReceiptLine {
   amount: number
 }
 
+export interface PaymentReceiptDoctor {
+  name: string
+  /** Printed after the name, in brackets, when there is one. */
+  designation?: string
+}
+
 export interface PaymentReceiptData {
   receipt_no: string
   heading: string
@@ -36,7 +42,7 @@ export interface PaymentReceiptData {
   mobile: string
   address: string
   ip_no: string
-  doctors: string[]
+  doctors: PaymentReceiptDoctor[]
   department: string
   created_by_label: string
   lines: PaymentReceiptLine[]
@@ -59,7 +65,7 @@ const SPLIT_X = BOX_X + 90 // the header's vertical divider
 const PAD = 4
 const LINE = 5 // leading of the "Bill To" block
 const THEAD_H = 8
-const ROW_PAD = 1.3
+const ROW_PAD = 1.5
 const ROW_LINE = 4.4
 const FOOTER_H = 27 // total, words, signature, created by
 
@@ -67,9 +73,9 @@ const COL = {
   no: BOX_X + 5,
   date: BOX_X + 17,
   mode: BOX_X + 43,
-  type: BOX_X + 82,
-  amount: BOX_X + 143, // right edge of the amount
-  remarks: BOX_X + 152,
+  type: BOX_X + 79,
+  amount: BOX_X + 146, // right edge of the amount
+  remarks: BOX_X + 155,
 }
 const REMARKS_W = BOX_X + BOX_W - PAD - COL.remarks
 
@@ -95,8 +101,8 @@ export function receiptTotal(lines: PaymentReceiptLine[]): number {
 function drawTableHead(doc: jsPDF, top: number): number {
   doc.setLineWidth(0.3)
   doc.line(BOX_X, top, BOX_X + BOX_W, top)
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(9.5)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(9.2)
   const y = top + 5.4
   doc.text('*', COL.no, y)
   doc.text('Date', COL.date, y)
@@ -105,7 +111,8 @@ function drawTableHead(doc: jsPDF, top: number): number {
   doc.text('Transaction Amount', COL.amount, y, { align: 'right' })
   doc.text('Remarks', COL.remarks, y)
   doc.line(BOX_X, top + THEAD_H, BOX_X + BOX_W, top + THEAD_H)
-  return top + THEAD_H
+  doc.setFont('helvetica', 'normal')
+  return top + THEAD_H + 1
 }
 
 function drawBox(doc: jsPDF): void {
@@ -124,9 +131,14 @@ function drawHeader(doc: jsPDF, data: PaymentReceiptData): number {
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9.5)
   let y = BOX_Y + 8
+  doc.setFont('helvetica', 'bold')
   doc.text('Bill To:', right, y)
-  doc.text(`Receipt No: ${data.receipt_no}`, rightEdge, y + 1.5, { align: 'right' })
-  y += LINE + 1
+  // "Receipt No:" plain, the number itself bold — it is what the desk looks up.
+  const numberW = doc.getTextWidth(data.receipt_no)
+  doc.text(data.receipt_no, rightEdge, y, { align: 'right' })
+  doc.setFont('helvetica', 'normal')
+  doc.text('Receipt No: ', rightEdge - numberW, y, { align: 'right' })
+  y += LINE + 1.5
 
   const write = (text: string) => {
     for (const line of doc.splitTextToSize(text, rightW) as string[]) {
@@ -135,8 +147,28 @@ function drawHeader(doc: jsPDF, data: PaymentReceiptData): number {
     }
   }
 
-  const who = [data.patient_name, data.age_sex].filter(Boolean).join(' ')
-  if (who) write(who)
+  // The name stands out; age and sex follow it on the same line when they fit.
+  if (data.patient_name) {
+    doc.setFont('helvetica', 'bold')
+    const nameLines = doc.splitTextToSize(data.patient_name, rightW) as string[]
+    nameLines.forEach((line, index) => {
+      doc.text(line, right, y)
+      if (index < nameLines.length - 1) y += LINE
+    })
+    const lastW = doc.getTextWidth(nameLines[nameLines.length - 1])
+    doc.setFont('helvetica', 'normal')
+    if (data.age_sex) {
+      if (lastW + 1.5 + doc.getTextWidth(data.age_sex) <= rightW) {
+        doc.text(data.age_sex, right + lastW + 1.5, y)
+      } else {
+        y += LINE
+        doc.text(data.age_sex, right, y)
+      }
+    }
+    y += LINE
+  } else if (data.age_sex) {
+    write(data.age_sex)
+  }
   if (data.mobile) write(`Mobile no: ${data.mobile}`)
   if (data.address) write(data.address)
   if (data.ip_no) write(`Ip no: ${data.ip_no}`)
@@ -145,14 +177,32 @@ function drawHeader(doc: jsPDF, data: PaymentReceiptData): number {
     const label = 'Consultant doctor: '
     doc.text(label, right, y)
     const indent = right + doc.getTextWidth(label)
-    doc.setFont('helvetica', 'bold')
+    const width = rightEdge - indent
     for (const doctor of data.doctors) {
-      for (const line of doc.splitTextToSize(doctor, rightEdge - indent) as string[]) {
+      // The name in bold; the designation after it in brackets, on the same
+      // line when it fits and on the next when it does not.
+      doc.setFont('helvetica', 'bold')
+      const nameLines = doc.splitTextToSize(doctor.name, width) as string[]
+      nameLines.forEach((line, index) => {
         doc.text(line, indent, y)
-        y += LINE
+        if (index < nameLines.length - 1) y += LINE
+      })
+      const lastW = doc.getTextWidth(nameLines[nameLines.length - 1])
+      doc.setFont('helvetica', 'normal')
+
+      const designation = doctor.designation ? `(${doctor.designation})` : ''
+      if (designation) {
+        if (lastW + 1.5 + doc.getTextWidth(designation) <= width) {
+          doc.text(designation, indent + lastW + 1.5, y)
+        } else {
+          for (const line of doc.splitTextToSize(designation, width) as string[]) {
+            y += LINE
+            doc.text(line, indent, y)
+          }
+        }
       }
+      y += LINE
     }
-    doc.setFont('helvetica', 'normal')
   }
   if (data.department) write(`Department : ${data.department}`)
 
@@ -179,11 +229,13 @@ function drawHeader(doc: jsPDF, data: PaymentReceiptData): number {
   const heading = data.heading || 'Cash Receipt'
   const headingX = (BOX_X + SPLIT_X) / 2
   const headingY = Math.max(BOX_Y + 39, bottom - 8)
-  doc.setFontSize(11)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(11.5)
   doc.text(heading, headingX, headingY, { align: 'center' })
   const headingW = doc.getTextWidth(heading)
   doc.setLineWidth(0.25)
   doc.line(headingX - headingW / 2, headingY + 0.9, headingX + headingW / 2, headingY + 0.9)
+  doc.setFont('helvetica', 'normal')
 
   doc.setLineWidth(0.3)
   doc.line(SPLIT_X, BOX_Y, SPLIT_X, bottom)
@@ -193,23 +245,29 @@ function drawHeader(doc: jsPDF, data: PaymentReceiptData): number {
 function drawFooter(doc: jsPDF, data: PaymentReceiptData): void {
   const bottom = BOX_Y + BOX_H
   const total = receiptTotal(data.lines)
+  const rightEdge = BOX_X + BOX_W - PAD
 
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(10.5)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(11)
   doc.text(`Total Amount : ${receiptAmount(total)}/-`, BOX_X + PAD, bottom - 21)
 
+  doc.setFont('helvetica', 'normal')
   doc.setFontSize(9.5)
   doc.setTextColor(70, 70, 70)
-  const words = doc.splitTextToSize(`Rupees: ${rupeesInWords(total)}.`, 125) as string[]
+  const words = doc.splitTextToSize(`Rupees: ${rupeesInWords(total)}.`, 120) as string[]
   words.slice(0, 2).forEach((line, index) => doc.text(line, BOX_X + PAD, bottom - 16 + index * 4.2))
   doc.setTextColor(0, 0, 0)
 
+  // A line to sign on, with the caption under it.
+  const signW = 46
+  doc.setLineWidth(0.25)
+  doc.line(rightEdge - signW, bottom - 13.5, rightEdge, bottom - 13.5)
   doc.setFont('helvetica', 'bold')
-  doc.text('Authorized Signature', BOX_X + BOX_W - PAD - 4, bottom - 17, { align: 'right' })
+  doc.text('Authorized Signature', rightEdge - signW / 2, bottom - 9, { align: 'center' })
 
   doc.setFont('helvetica', 'normal')
-  doc.setFontSize(10)
-  if (data.created_by_label) doc.text(`Created by: ${data.created_by_label}`, BOX_X + PAD - 1, bottom - 4.5)
+  doc.setFontSize(9.5)
+  if (data.created_by_label) doc.text(`Created by: ${data.created_by_label}`, BOX_X + PAD, bottom - 4.5)
 }
 
 export function renderPaymentReceipt(data: PaymentReceiptData): jsPDF {
@@ -247,6 +305,14 @@ export function renderPaymentReceipt(data: PaymentReceiptData): jsPDF {
     doc.text(receiptAmount(line.amount), COL.amount, baseline, { align: 'right' })
     remarks.forEach((text, i) => doc.text(text, COL.remarks, baseline + i * ROW_LINE))
     y += height
+
+    // A hairline under each row keeps several payments apart; one row needs none.
+    if (data.lines.length > 1) {
+      doc.setDrawColor(200, 200, 200)
+      doc.setLineWidth(0.1)
+      doc.line(BOX_X + PAD, y, BOX_X + BOX_W - PAD, y)
+      doc.setDrawColor(0, 0, 0)
+    }
   })
 
   drawFooter(doc, data)
@@ -270,6 +336,11 @@ export function paymentReceiptFilename(data: PaymentReceiptData): string {
 
 export function generatePaymentReceiptPDF(data: PaymentReceiptData): void {
   renderPaymentReceipt(data).save(paymentReceiptFilename(data))
+}
+
+/** Opens the receipt in a new tab to look at, without saving or printing anything. */
+export function previewPaymentReceipt(data: PaymentReceiptData): void {
+  window.open(renderPaymentReceipt(data).output('bloburl'), '_blank')
 }
 
 /** Sends the receipt straight to the browser's print dialog. */

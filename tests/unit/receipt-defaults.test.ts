@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { ageSexFor, lineDefaults, receiptDefaults, titleFor, validateReceipt } from '@/lib/billing/receipts'
+import { ageSexFor, lineDefaults, receiptDefaults, receiptDoctors, titleFor, validateReceipt } from '@/lib/billing/receipts'
 
 /**
  * What a new payment receipt starts with, and what the desk may type into it
@@ -45,8 +45,8 @@ describe('what a new receipt starts with', () => {
   })
 
   it('names every doctor who visited, once each, in the order they first came', () => {
-    const ramesh = { id: 'd1', name: 'Dr Ramesh Naidu', department: 'General Medicine' }
-    const krishna = { id: 'd2', name: 'Dr Krishna Chaitanya', department: 'Cardiology' }
+    const ramesh = { id: 'd1', name: 'Dr Ramesh Naidu', department: 'General Medicine', designation: 'Senior Consultant' }
+    const krishna = { id: 'd2', name: 'Dr Krishna Chaitanya', department: 'Cardiology', designation: null }
     const defaults = receiptDefaults(patient, [
       { consultation_date: '2026-07-15T04:00:00Z', doctor: krishna },
       { consultation_date: '2026-07-13T04:00:00Z', doctor: ramesh },
@@ -54,7 +54,11 @@ describe('what a new receipt starts with', () => {
       { consultation_date: '2026-07-17T04:00:00Z', doctor: null },
     ], NOW)
 
-    expect(defaults.doctors).toEqual(['Dr Ramesh Naidu', 'Dr Krishna Chaitanya'])
+    // each with the designation the Doctors list has for them, if any
+    expect(defaults.doctors).toEqual([
+      { name: 'Dr Ramesh Naidu', designation: 'Senior Consultant' },
+      { name: 'Dr Krishna Chaitanya', designation: '' },
+    ])
     // the first doctor's department
     expect(defaults.department).toBe('General Medicine')
   })
@@ -76,7 +80,9 @@ describe('what the desk may save on a receipt', () => {
   const mine = new Set(['i1', 'i2'])
   const good = {
     receipt_no: ' 287(A) ', heading: '', patient_name: 'Mr. Chandan', age_sex: '11yrs/Male', mobile: '', address: '',
-    ip_no: '214/26', doctors: ['Dr Ramesh Naidu', '  ', 'Dr Krishna'], department: 'General Medicine', created_by_label: 'Madhu.P',
+    ip_no: '214/26', department: 'General Medicine', created_by_label: 'Madhu.P',
+    // picked from the list, left blank, and typed as a bare name
+    doctors: [{ name: ' Dr Ramesh Naidu ', designation: 'Senior Consultant' }, { name: '  ', designation: 'ignored' }, 'Dr Krishna'],
     lines: [{ installment_id: 'i1', line_date: '2026-07-13', payment_mode: 'Phone pay', transaction_type: 'transfer', remarks: 'advance' }],
   }
 
@@ -87,7 +93,10 @@ describe('what the desk may save on a receipt', () => {
     expect(checked.value.receipt_no).toBe('287(A)')
     // an emptied heading falls back, and blank doctor lines go
     expect(checked.value.heading).toBe('Cash Receipt')
-    expect(checked.value.doctors).toEqual(['Dr Ramesh Naidu', 'Dr Krishna'])
+    expect(checked.value.doctors).toEqual([
+      { name: 'Dr Ramesh Naidu', designation: 'Senior Consultant' },
+      { name: 'Dr Krishna', designation: '' },
+    ])
     expect(checked.value.lines).toEqual([
       { installment_id: 'i1', line_date: '2026-07-13', payment_mode: 'Phone pay', transaction_type: 'transfer', remarks: 'advance' },
     ])
@@ -113,5 +122,12 @@ describe('what the desk may save on a receipt', () => {
   it('refuses text that would not fit the slip', () => {
     expect(validateReceipt({ ...good, address: 'x'.repeat(301) }, mine)).toMatchObject({ ok: false, fieldErrors: { address: expect.any(String) } })
     expect(validateReceipt({ ...good, doctors: Array(9).fill('Dr A') }, mine)).toMatchObject({ ok: false, fieldErrors: { doctors: expect.any(String) } })
+    expect(validateReceipt({ ...good, doctors: [{ name: 'Dr A', designation: 'x'.repeat(81) }] }, mine)).toMatchObject({ ok: false, fieldErrors: { doctors: expect.any(String) } })
+  })
+
+  it('reads receipts saved before designations, which hold bare names', () => {
+    expect(receiptDoctors(['Dr Ramesh Naidu', ' '])).toEqual([{ name: 'Dr Ramesh Naidu', designation: '' }])
+    expect(receiptDoctors([{ name: 'Dr A', designation: 'Consultant' }, { name: '' }])).toEqual([{ name: 'Dr A', designation: 'Consultant' }])
+    expect(receiptDoctors(null)).toEqual([])
   })
 })

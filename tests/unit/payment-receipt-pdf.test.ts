@@ -17,7 +17,8 @@ const text = (data: PaymentReceiptData) => {
 const receipt: PaymentReceiptData = {
   receipt_no: '287(A)', heading: 'Cash Receipt', patient_name: 'Mr. Chandan Nikshith Sai', age_sex: '11yrs/Male',
   mobile: '7997116180', address: 'Chalam Naidu Valasa Village', ip_no: '214/26',
-  doctors: ['Dr Ramesh Naidu', 'Dr Krishna Chaitanya'], department: 'General Medicine', created_by_label: 'Madhu.P',
+  doctors: [{ name: 'Dr Ramesh Naidu', designation: 'Senior Consultant' }, { name: 'Dr Krishna Chaitanya' }],
+  department: 'General Medicine', created_by_label: 'Madhu.P',
   lines: [{ line_date: '2026-07-13', payment_mode: 'Phone pay', transaction_type: 'transfer', remarks: 'advance', amount: 8000 }],
 }
 
@@ -35,13 +36,26 @@ describe('payment receipt PDF', () => {
     expect(pages).toBe(1)
     expect(size).toEqual([210, 148]) // A5 landscape
     for (const expected of [
-      'KKR Hospital', 'Cash Receipt', 'Bill To:', 'Receipt No: 287\\(A\\)', 'Mr. Chandan Nikshith Sai 11yrs/Male',
-      'Mobile no: 7997116180', 'Ip no: 214/26', 'Consultant doctor: ', 'Dr Krishna Chaitanya',
+      'KKR Hospital', 'Cash Receipt', 'Bill To:', 'Receipt No: ', '287\\(A\\)', 'Mr. Chandan Nikshith Sai', '11yrs/Male',
+      'Mobile no: 7997116180', 'Ip no: 214/26', 'Consultant doctor: ', 'Dr Ramesh Naidu', '\\(Senior Consultant\\)', 'Dr Krishna Chaitanya',
       'Department : General Medicine', 'Transaction Amount', '13.07.26', 'Phone pay', 'transfer', 'advance',
       'Total Amount : 8,000/-', 'Rupees: eight thousand only.', 'Authorized Signature', 'Created by: Madhu.P',
     ]) {
       expect(body).toContain(expected)
     }
+  })
+
+  it('prints a designation only for the doctor who has one, and wraps a long one', () => {
+    // one "(…)" on the client's receipt: Krishna Chaitanya has no designation
+    expect(text(receipt).body.split('\\(Senior Consultant\\)').length - 1).toBe(1)
+    expect(text({ ...receipt, doctors: [{ name: 'Dr Krishna Chaitanya', designation: '' }] }).body).not.toContain('\\(\\)')
+
+    const long = text({
+      ...receipt,
+      doctors: [{ name: 'Dr Venkata Subrahmanyam Chowdary', designation: 'Consultant Physician and Diabetologist' }],
+    })
+    expect(long.pages).toBe(1)
+    expect(long.body).toContain('\\(Consultant Physician and Diabetologist\\)')
   })
 
   it('totals the rows it prints', () => {

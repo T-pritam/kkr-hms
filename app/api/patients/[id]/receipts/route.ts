@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requireBilling } from '@/lib/billing/authz'
 import {
   createReceipt,
+  doctorOptions,
   lineDefaults,
   listReceipts,
   patientPayments,
@@ -12,8 +13,9 @@ import {
 
 /**
  * A patient's payment receipts (client, 1 Oct): the saved ones, and what a new
- * one starts with — the patient's details, the doctors who visited, and each
- * payment's row. Reception and admin only, reading included.
+ * one starts with — the patient's details, the doctors who visited (and the
+ * Doctors list to pick others from), and each payment's row. Reception and
+ * admin only, reading included.
  */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -32,7 +34,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     const { data: visits } = await supabase
       .from('patient_consultations')
-      .select('id, consultation_date, doctor:doctors(id, name, department)')
+      .select('id, consultation_date, doctor:doctors(id, name, department, designation)')
       .eq('patient_id', patientId)
       .is('deleted_at', null)
       .order('consultation_date', { ascending: true })
@@ -45,6 +47,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     return NextResponse.json({
       defaults: receiptDefaults(patient, (visits ?? []) as any[]),
       me: me?.username ?? '',
+      // The Doctors list, to pick a consultant from; a name can also be typed.
+      doctor_options: await doctorOptions(supabase),
       payments: payments.map(payment => {
         const recorder = Array.isArray(payment.users) ? payment.users[0] : payment.users
         return {

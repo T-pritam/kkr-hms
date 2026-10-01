@@ -9,8 +9,10 @@
  *
  *   starts from the app            the patient line ("Mr. Ravi Kumar"), age and
  *                                  sex, mobile, address, IP no, the doctors who
- *                                  visited, the first doctor's department, and
- *                                  each row's date, mode, type and remarks
+ *                                  visited (each with their designation, if the
+ *                                  Doctors list has one), the first doctor's
+ *                                  department, and each row's date, mode, type
+ *                                  and remarks
  *   typed by the desk, required    the receipt number, from their own book
  *   never typed, never stored      the amount — always the payment's own
  */
@@ -34,6 +36,30 @@ export interface ReceiptLineFields {
   remarks: string
 }
 
+/**
+ * A consultant doctor on a receipt: picked from the Doctors list or typed in,
+ * with the designation the list has for them (or one typed over it).
+ */
+export interface ReceiptDoctor {
+  name: string
+  designation: string
+}
+
+/**
+ * Receipts saved before designations (1 Oct) hold bare names; both shapes are
+ * read as `{ name, designation }`.
+ */
+export function receiptDoctors(stored: unknown): ReceiptDoctor[] {
+  if (!Array.isArray(stored)) return []
+  return stored
+    .map(entry =>
+      typeof entry === 'string'
+        ? { name: entry.trim(), designation: '' }
+        : { name: String(entry?.name ?? '').trim(), designation: String(entry?.designation ?? '').trim() },
+    )
+    .filter(doctor => doctor.name)
+}
+
 export interface ReceiptHeaderFields {
   heading: string
   patient_name: string
@@ -41,7 +67,7 @@ export interface ReceiptHeaderFields {
   mobile: string
   address: string
   ip_no: string
-  doctors: string[]
+  doctors: ReceiptDoctor[]
   department: string
 }
 
@@ -64,7 +90,7 @@ interface ReceiptPatient extends AgeSubject {
 
 interface ReceiptVisit {
   consultation_date?: string | null
-  doctor?: { id?: string | null; name?: string | null; department?: string | null } | null
+  doctor?: { id?: string | null; name?: string | null; department?: string | null; designation?: string | null } | null
 }
 
 /** "Mr." for a man, "Ms." for a woman, nothing when the record does not say. */
@@ -94,7 +120,7 @@ export function receiptDefaults(
 
   // Every doctor who has visited, once each, in the order they first came.
   const seen = new Set<string>()
-  const doctors: Array<{ name: string; department: string }> = []
+  const doctors: Array<ReceiptDoctor & { department: string }> = []
   const ordered = [...visits].sort((a, b) =>
     String(a.consultation_date || '').localeCompare(String(b.consultation_date || '')),
   )
@@ -104,7 +130,11 @@ export function receiptDefaults(
     const key = String(doctor?.id || doctorName)
     if (!doctorName || seen.has(key)) continue
     seen.add(key)
-    doctors.push({ name: doctorName, department: String(doctor?.department || '').trim() })
+    doctors.push({
+      name: doctorName,
+      designation: String(doctor?.designation || '').trim(),
+      department: String(doctor?.department || '').trim(),
+    })
   }
 
   return {
@@ -117,7 +147,7 @@ export function receiptDefaults(
       .join(', '),
     address: String(patient?.address || '').trim(),
     ip_no: String(patient?.patient_id || '').trim(),
-    doctors: doctors.slice(0, MAX_RECEIPT_DOCTORS).map(d => d.name),
+    doctors: doctors.slice(0, MAX_RECEIPT_DOCTORS).map(({ name: doctorName, designation }) => ({ name: doctorName, designation })),
     department: doctors[0]?.department || '',
   }
 }
@@ -216,12 +246,17 @@ export function validateReceipt(
   if (!header.receipt_no) return refuse('Type the receipt number', 'receipt_no')
   if (!header.patient_name) return refuse("Type the patient's name", 'patient_name')
 
-  const doctors: string[] = []
+  // A doctor is a name with an optional designation; a bare name is accepted too.
+  const doctors: ReceiptDoctor[] = []
   for (const raw of Array.isArray(body?.doctors) ? body.doctors : []) {
-    const name = text(raw)
+    const name = text(typeof raw === 'string' ? raw : raw?.name)
+    const designation = text(typeof raw === 'string' ? '' : raw?.designation)
     if (!name) continue
     if (name.length > LIMITS.doctor) return refuse(`A doctor's name is too long (${LIMITS.doctor} characters at most)`, 'doctors')
-    doctors.push(name)
+    if (designation.length > LIMITS.doctor) {
+      return refuse(`A doctor's designation is too long (${LIMITS.doctor} characters at most)`, 'doctors')
+    }
+    doctors.push({ name, designation })
   }
   if (doctors.length > MAX_RECEIPT_DOCTORS) {
     return refuse(`A receipt can name ${MAX_RECEIPT_DOCTORS} doctors at most`, 'doctors')
@@ -311,6 +346,22 @@ export async function patientPayments(db: Db, patientId: string): Promise<any[]>
   return (data ?? []) as any[]
 }
 
+/** The Doctors list, for picking a consultant on the receipt (a name can also be typed). */
+export async function doctorOptions(db: Db): Promise<Array<ReceiptDoctor & { id: string; department: string }>> {
+  const { data } = await db
+    .from('doctors')
+    .select('id, name, designation, department, is_active')
+    .order('name', { ascending: true })
+  return ((data ?? []) as any[])
+    .filter(doctor => doctor.is_active !== false && String(doctor.name || '').trim())
+    .map(doctor => ({
+      id: doctor.id,
+      name: String(doctor.name).trim(),
+      designation: String(doctor.designation || '').trim(),
+      department: String(doctor.department || '').trim(),
+    }))
+}
+
 /**
  * A patient's saved receipts, newest first, each with its rows and the rows'
  * amounts read from the payments as they stand now.
@@ -358,7 +409,7 @@ export async function listReceipts(db: Db, patientId: string, payments: any[]): 
         })
       return {
         ...receipt,
-        doctors: Array.isArray(receipt.doctors) ? receipt.doctors : [],
+        doctors: receiptDoctors(receipt.doctors),
         lines: own,
         total: own.reduce((sum, line) => sum + line.amount, 0),
         saved_by: usernames.get(receipt.updated_by || receipt.created_by) ?? null,
