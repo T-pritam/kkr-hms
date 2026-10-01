@@ -14,7 +14,7 @@
 -- OPD receipt takes its visits and unpaid fees with it (on delete cascade); the
 -- app refuses to delete one whose fee is already paid.
 --
--- NOT applied to production until the client releases round 10.
+-- Applied to production on 2026-10-01 (as `opd_visits`), before the round 10 deploy.
 
 alter table public.daily_ledger_transactions
   add column if not exists medicine_expense numeric(12, 2);
