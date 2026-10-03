@@ -1139,6 +1139,17 @@ Order matters: the new code writes columns that exist only after the migrations.
 
 This section keeps the **answer log**: round 7 (§9.0b), round 6 (§9.0a), round 4 (§9.0), round 3 (§9.1), round 2 (§9.2), the questions closed by your clarification (§9.3), and round 1 (§9.4).
 
+### 9.0g Receipts for old patients — answered 2026-10-03
+
+*"I need the same things for old patient… cannot register a patient for this, just make sure I can generate this by providing all the required details… like the current format of charge sheet, need the same structure only."*
+
+| # | Asked | Decision | Recorded in |
+|---|---|---|---|
+| 1 | Where? | A new **Receipts** page under Charges listing **every** receipt; **New receipt** asks *Registered patient* or *Old patient*, like the charge sheet's Registered / OPD. Patient receipts stay in the Payments tab too | APP-FLOW §4.7, §1.4 |
+| 2 | Does an old patient's receipt record money? | **Print only**: nothing to the Ledger, Payments, Overview or Finances | §4.7 |
+| 3 | What must be filled? | **Receipt no, name, and at least one row with an amount**; the rest optional, left off the print when empty | §4.7 |
+| 4 | Who may make, edit and delete one? | **Reception and admin**, any receipt, as for patient receipts | §4.7, §6.2 |
+
 ### 9.0f Payment receipts — answered 2026-10-01
 
 The client sent a photo of the receipt the desk types by hand today and asked for it from the app: *"a pdf for payments receipts for the patients… receptionist and admin can download all patients and payments… fetch the consulting doctor names and designations if any… always give an edit field… only amount, patient details need to be hardcoded, rest all things are editable."*
@@ -1382,3 +1393,4 @@ The baseline `PRD.md` §10 questions were carried into round 1: Q1 → Q-37 · Q
 | 2026-09-28 | **Round 10** (§9.0e), **released 2026-10-01** (the OPD migration applied first, then the deploy): charge ranges with "Include last date"; charge sheets keep a blank row and fold per-day lines when edited; a Combined view and PDFs; visits over a date range; the referral commission in one block; OPD receipts with doctors (fees to pay) and medicine (migration `20260928000001`, to apply **before** the deploy); Pay/Edit from the doctor's page (`/api/doctors/[id]/unpaid`); the fee dialogs and the visit sync shared (`components/billing/doctor-fee-modals.tsx`, `lib/billing/sync-visits.ts`) | Claude |
 | 2026-10-01 | **Payment receipts** (§9.0f), **released 2026-10-01** (migration `20261001000001_payment_receipts.sql` applied first, then the deploy): the desk's "Cash Receipt" as an A5-landscape PDF for one payment or several, pre-filled from the patient, their visits and the payments, everything editable but the amount, receipt number typed by hand and required, saved as typed. Reception and admin only. New: `payment_receipts`, `payment_receipt_lines`, `receipt:write`, `rupeesInWords`. |
 | 2026-10-01 | **Payment receipts, second pass** (§9.0f rows 10–11), released the same day: consultant doctors are picked from the Doctors list or typed, each with a designation (stored as `{name, designation}`; receipts saved earlier with bare names still open); form and PDF refined; Preview added. No migration. |
+| 2026-10-03 | **Receipts for old patients** (§9.0g), on `feature/receipts-old-patients`, **not released** (migration `20261003000001_receipts_old_patients.sql` goes first): Charges ▸ Receipts lists every receipt with search and a kind filter; New receipt → Registered (the Payments-tab form) or Old patient (everything typed, amounts included, print only). `payment_receipts.subject_type`, `payment_receipt_lines.amount`; `/api/receipts`. |

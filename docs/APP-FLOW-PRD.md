@@ -99,6 +99,7 @@ THE LEDGER    = money RECEIVED at the desk only. Payouts to doctors and referrer
 | Patients list · patient record (8 tabs) | `/patients` · `/patients/[id]` | A D N R |
 | Doctors list · a doctor's visit report | `/doctors` · `/doctors/[id]/visits` | A D N R (report: A D R) |
 | Charge sheets (quotes) · Charge catalogue (price list) | `/charges/sheets` · `/charges/catalogue` | A D N R |
+| Receipts (every payment receipt; old patients' too) | `/charges/receipts` | A R |
 | Lab orders · Test catalogue | `/lab/orders` · `/lab/tests` | A D N R L |
 | Ledger (tabs **All** / **Not closed**) | `/ledger/summary` | A D N R |
 | Petty cash | `/petty-cash` | A D N R |
@@ -328,6 +329,16 @@ The patient's **total bill** is the sum of these payments.
 5. **Saving keeps what was typed.** A payment's own receipt reopens from its Receipt button; every saved receipt is also listed under **Saved receipts** (Open · Delete). Deleting a receipt leaves its payments alone.
 6. The total, and the amount in words (`Rupees: eight thousand only.`), are worked out from the rows. A line left empty (address, doctors, department, created by) is left out of the print. More rows than fit continue on a second half sheet.
 7. Deleting a payment takes its row off any receipt, and removes a receipt left with no rows.
+
+**The Receipts page and old patients** [3 Oct, not released]. **Where:** Charges ▸ **Receipts** (`/charges/receipts`), A R only, laid out like Charge Sheets.
+
+- It lists **every** receipt, newest first. **Search** by receipt no, the name on the receipt, or the IP no; a filter shows **All · Registered · Old patient**. Each row has **Open**, **Download** and **Print** (straight from the saved receipt) and **Delete**.
+- **New receipt** asks who it is for, as a charge sheet asks Registered or OPD:
+  - **Registered patient**: pick the patient, then the same form as the Payments tab, with their payments to tick.
+  - **Old patient (not registered)**: someone treated before the app, or never registered. The desk **types everything**: receipt no, patient, doctors (picked or typed, with designation), department, and each row's date, mode, type, remarks and **amount**.
+- An old patient's receipt **needs** a receipt no, a name, and at least one row, each with an amount above zero. Everything else is optional and left off the print when empty.
+- It is **print only**: nothing goes to the Ledger, Payments, Overview or Finances, and no patient is created. Saving keeps it as typed so it can be printed again; reception or admin can open, edit and delete it.
+- The PDF is the same half-sheet "Cash Receipt".
 
 ### 4.8 Doctor fees — raise, price, pay out
 
@@ -647,7 +658,7 @@ The rule is enforced by the server, not just hidden in the screens: every write 
 | forward into charges | ✅ | — | — | — | — |
 | **Payments** — record | ✅ | ✅ | ✅ | ✅ | — |
 | edit · delete (until its ledger row is closed) | ✅* | own | own | own | — |
-| printed receipt — see · make · edit · delete | ✅ | — | — | ✅ | — |
+| printed receipt — see · make · edit · delete (incl. old patients', Receipts page) | ✅ | — | — | ✅ | — |
 | **Doctor fees** — sync visits · price · pay out (unpaid) | ✅ | — | — | ✅ | — |
 | change a paid fee · un-pay | ✅ | — | — | — | — |
 | **Referral commission** — set · pay (unpaid) | ✅ | — | — | ✅ | — |

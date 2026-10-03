@@ -1,10 +1,9 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, Download, Eye, Lock, Plus, Printer, RotateCcw, X } from 'lucide-react'
+import { AlertCircle, Download, Eye, Lock, Printer } from 'lucide-react'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
-import { rupeesInWords } from '@/lib/format/rupees-in-words'
 import { loadLogoDataUri } from '@/lib/pdf/logo'
 import {
   generatePaymentReceiptPDF,
@@ -13,7 +12,23 @@ import {
   receiptAmount,
   type PaymentReceiptData,
 } from '@/lib/pdf/payment-receipt-pdf'
-import { ReceiptDoctorInput, type DoctorOption } from './receipt-doctor-input'
+import type { DoctorOption } from '@/components/receipts/receipt-doctor-input'
+import {
+  BillToCard,
+  DoctorsCard,
+  EMPTY_HEADER,
+  ReceiptDetailsCard,
+  ReceiptTotal,
+  cardClass,
+  cellClass,
+  doctorsOf,
+  fieldSetter,
+  headerReady,
+  headingClass,
+  typedDoctors,
+  type DoctorForm,
+  type HeaderForm,
+} from '@/components/receipts/receipt-form-sections'
 
 /**
  * The payment receipt form (client, 1 Oct).
@@ -52,52 +67,6 @@ interface LineForm {
   transaction_type: string
   remarks: string
 }
-
-interface HeaderForm {
-  receipt_no: string
-  heading: string
-  patient_name: string
-  age_sex: string
-  mobile: string
-  address: string
-  ip_no: string
-  department: string
-  created_by_label: string
-}
-
-interface DoctorForm {
-  name: string
-  designation: string
-}
-
-const doctorsOf = (stored: unknown): DoctorForm[] =>
-  (Array.isArray(stored) ? stored : []).map(entry =>
-    typeof entry === 'string'
-      ? { name: entry, designation: '' }
-      : { name: String(entry?.name ?? ''), designation: String(entry?.designation ?? '') },
-  )
-
-const EMPTY_HEADER: HeaderForm = {
-  receipt_no: '',
-  heading: 'Cash Receipt',
-  patient_name: '',
-  age_sex: '',
-  mobile: '',
-  address: '',
-  ip_no: '',
-  department: '',
-  created_by_label: '',
-}
-
-const MAX_DOCTORS = 8
-
-const inputClass =
-  'w-full bg-surface-inset text-foreground rounded-lg px-3 py-2 text-sm border border-border focus:border-ring focus:outline-none disabled:opacity-50'
-const cardClass = 'rounded-xl border border-border bg-surface-hover/40 p-4 space-y-3'
-const headingClass = 'text-xs font-semibold uppercase tracking-wide text-muted'
-const cellClass =
-  'w-full min-w-[6rem] bg-surface-inset text-foreground rounded-md px-2 py-1.5 text-sm border border-border focus:border-ring focus:outline-none disabled:opacity-40'
-const labelClass = 'block text-xs font-medium text-muted mb-1'
 
 const lineOf = (source: any): LineForm => ({
   line_date: source?.line_date ? String(source.line_date).slice(0, 10) : '',
@@ -207,8 +176,7 @@ export function PaymentReceiptModal({ patientId, target, onClose, onSaved }: Pro
   const chosen = payments.filter(p => picked.has(p.id))
   const total = chosen.reduce((sum, p) => sum + (Number(p.amount) || 0), 0)
 
-  const set = (field: keyof HeaderForm) => (e: { target: { value: string } }) =>
-    setHeader(prev => ({ ...prev, [field]: e.target.value }))
+  const set = fieldSetter(setHeader)
 
   const setLine = (id: string, field: keyof LineForm, value: string) =>
     setLines(prev => ({ ...prev, [id]: { ...prev[id], [field]: value } }))
@@ -228,38 +196,12 @@ export function PaymentReceiptModal({ patientId, target, onClose, onSaved }: Pro
     setLines(Object.fromEntries(payments.map(p => [p.id, lineOf(p.line)])))
   }
 
-  const ready = Boolean(header.receipt_no.trim() && header.patient_name.trim() && chosen.length > 0)
-
-  const setDoctor = (index: number, patch: Partial<DoctorForm>) =>
-    setDoctors(prev => prev.map((doctor, i) => (i === index ? { ...doctor, ...patch } : doctor)))
-
-  // Typing over a picked doctor drops the designation that came with them: it
-  // belonged to the name that is no longer there. One the desk typed stays.
-  const typeDoctor = (index: number, name: string) =>
-    setDoctors(prev =>
-      prev.map((doctor, i) => {
-        if (i !== index) return doctor
-        const was = doctorOptions.find(option => option.name === doctor.name)
-        const stale = Boolean(was?.designation) && was?.designation === doctor.designation && name !== doctor.name
-        return { name, designation: stale ? '' : doctor.designation }
-      }),
-    )
-
-  // Picking from the list brings the designation, and the department while it is empty.
-  const pickDoctor = (index: number, doctor: DoctorOption) => {
-    setDoctor(index, { name: doctor.name, designation: doctor.designation })
-    if (doctor.department) setHeader(prev => (prev.department.trim() ? prev : { ...prev, department: doctor.department }))
-  }
-
-  const typedDoctors = () =>
-    doctors
-      .map(doctor => ({ name: doctor.name.trim(), designation: doctor.designation.trim() }))
-      .filter(doctor => doctor.name)
+  const ready = headerReady(header) && chosen.length > 0
 
   const receiptData = async (): Promise<PaymentReceiptData> => ({
     ...header,
     receipt_no: header.receipt_no.trim(),
-    doctors: typedDoctors(),
+    doctors: typedDoctors(doctors),
     lines: chosen.map(p => ({
       line_date: lines[p.id]?.line_date || null,
       payment_mode: lines[p.id]?.payment_mode ?? '',
@@ -279,7 +221,7 @@ export function PaymentReceiptModal({ patientId, target, onClose, onSaved }: Pro
     try {
       const body = {
         ...header,
-        doctors: typedDoctors(),
+        doctors: typedDoctors(doctors),
         lines: chosen.map(p => ({ installment_id: p.id, ...lines[p.id], line_date: lines[p.id]?.line_date || null })),
       }
       const response = await fetch(
@@ -359,149 +301,11 @@ export function PaymentReceiptModal({ patientId, target, onClose, onSaved }: Pro
             </div>
           )}
 
-          <section className={cardClass}>
-            <h4 className={headingClass}>Receipt</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <label htmlFor="receipt-no" className={labelClass}>
-                  Receipt No <span className="text-destructive">*</span>
-                </label>
-                <input
-                  id="receipt-no"
-                  autoFocus
-                  value={header.receipt_no}
-                  onChange={set('receipt_no')}
-                  placeholder="From your receipt book, e.g. 287(A)"
-                  maxLength={40}
-                  className={`${inputClass} font-semibold ${header.receipt_no.trim() ? '' : 'border-warning'}`}
-                />
-              </div>
-              <div>
-                <label htmlFor="receipt-heading" className={labelClass}>Heading</label>
-                <input id="receipt-heading" value={header.heading} onChange={set('heading')} maxLength={60} className={inputClass} />
-              </div>
-              <div>
-                <label htmlFor="receipt-created-by" className={labelClass}>Created by</label>
-                <input
-                  id="receipt-created-by"
-                  value={header.created_by_label}
-                  onChange={set('created_by_label')}
-                  maxLength={60}
-                  className={inputClass}
-                />
-              </div>
-            </div>
-          </section>
+          <ReceiptDetailsCard header={header} onField={set} />
 
-          <section className={cardClass}>
-            <div className="flex items-center justify-between gap-3">
-              <h4 className={headingClass}>Bill to</h4>
-              <button type="button" onClick={refill} className="inline-flex items-center gap-1 text-xs text-info hover:underline">
-                <RotateCcw size={12} /> Fill from the patient&apos;s record again
-              </button>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="col-span-2">
-                <label htmlFor="receipt-name" className={labelClass}>
-                  Patient name <span className="text-destructive">*</span>
-                </label>
-                <input id="receipt-name" value={header.patient_name} onChange={set('patient_name')} maxLength={120} className={inputClass} />
-              </div>
-              <div>
-                <label htmlFor="receipt-age" className={labelClass}>Age / sex</label>
-                <input id="receipt-age" value={header.age_sex} onChange={set('age_sex')} maxLength={40} className={inputClass} />
-              </div>
-              <div>
-                <label htmlFor="receipt-ip" className={labelClass}>IP no</label>
-                <input id="receipt-ip" value={header.ip_no} onChange={set('ip_no')} maxLength={40} className={inputClass} />
-              </div>
-              <div className="col-span-2">
-                <label htmlFor="receipt-mobile" className={labelClass}>Mobile no</label>
-                <input id="receipt-mobile" value={header.mobile} onChange={set('mobile')} maxLength={60} className={inputClass} />
-              </div>
-              <div className="col-span-2">
-                <label htmlFor="receipt-address" className={labelClass}>Address</label>
-                <input
-                  id="receipt-address"
-                  value={header.address}
-                  onChange={set('address')}
-                  maxLength={300}
-                  placeholder="Left out of the receipt when empty"
-                  className={inputClass}
-                />
-              </div>
-            </div>
-          </section>
+          <BillToCard header={header} onField={set} onRefill={refill} />
 
-          <section className={cardClass}>
-            <h4 className={headingClass}>Consultant doctors</h4>
-            {doctors.length === 0 ? (
-              <p className="text-xs text-muted">None yet. The line is left out of the receipt.</p>
-            ) : (
-              <div className="space-y-2">
-                <div className="hidden sm:grid sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_2rem] gap-2 text-xs font-medium text-muted">
-                  <span>Doctor (pick from the list, or type a name)</span>
-                  <span>Designation</span>
-                  <span />
-                </div>
-                {doctors.map((doctor, index) => (
-                  <div
-                    key={index}
-                    className="grid grid-cols-[minmax(0,1fr)_2rem] sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_2rem] gap-2 items-center"
-                  >
-                    <ReceiptDoctorInput
-                      ariaLabel={`Doctor ${index + 1}`}
-                      value={doctor.name}
-                      options={doctorOptions}
-                      onType={name => typeDoctor(index, name)}
-                      onPick={picked => pickDoctor(index, picked)}
-                      className={inputClass}
-                    />
-                    <input
-                      aria-label={`Designation of doctor ${index + 1}`}
-                      value={doctor.designation}
-                      maxLength={80}
-                      placeholder="Designation (optional)"
-                      onChange={e => setDoctor(index, { designation: e.target.value })}
-                      className={`${inputClass} col-start-1 row-start-2 sm:col-start-2 sm:row-start-1`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setDoctors(prev => prev.filter((_, i) => i !== index))}
-                      className="col-start-2 row-start-1 sm:col-start-3 flex h-8 w-8 items-center justify-center rounded-md text-muted hover:bg-surface-inset hover:text-destructive"
-                      aria-label={`Remove doctor ${index + 1}`}
-                    >
-                      <X size={16} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              {doctors.length < MAX_DOCTORS ? (
-                <button
-                  type="button"
-                  onClick={() => setDoctors(prev => [...prev, { name: '', designation: '' }])}
-                  className="inline-flex items-center gap-1 text-sm text-info hover:underline"
-                >
-                  <Plus size={14} /> Add doctor
-                </button>
-              ) : (
-                <span />
-              )}
-              <div className="w-full sm:w-72">
-                <label htmlFor="receipt-department" className={labelClass}>Department</label>
-                <input
-                  id="receipt-department"
-                  value={header.department}
-                  onChange={set('department')}
-                  maxLength={80}
-                  placeholder="e.g. General Medicine"
-                  className={inputClass}
-                />
-              </div>
-            </div>
-          </section>
+          <DoctorsCard doctors={doctors} setDoctors={setDoctors} options={doctorOptions} header={header} setHeader={setHeader} />
 
           <section className={cardClass}>
             <div className="flex items-center justify-between gap-3">
@@ -608,12 +412,7 @@ export function PaymentReceiptModal({ patientId, target, onClose, onSaved }: Pro
                 </table>
               </div>
             )}
-            <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 rounded-lg bg-surface-inset px-4 py-3">
-              <p className="text-sm text-muted first-letter:uppercase">Rupees: {rupeesInWords(total)}.</p>
-              <p className="text-lg font-semibold text-foreground">
-                <span className="mr-2 text-xs font-medium uppercase tracking-wide text-muted">Total</span>₹{receiptAmount(total)}/-
-              </p>
-            </div>
+            <ReceiptTotal total={total} />
           </section>
         </div>
       )}

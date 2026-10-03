@@ -15,6 +15,11 @@
  *                                  and remarks
  *   typed by the desk, required    the receipt number, from their own book
  *   never typed, never stored      the amount — always the payment's own
+ *
+ * An **old patient** (client, 3 Oct) — someone treated before the app, or never
+ * registered — gets the same receipt with everything typed in, the amounts
+ * too, since there is no payment to read them from. It is print only: nothing
+ * reaches the Ledger, Payments, Overview or Finances.
  */
 
 import { resolveAge } from '@/lib/patients/age'
@@ -76,6 +81,24 @@ export interface ReceiptFields extends ReceiptHeaderFields {
   created_by_label: string
   lines: ReceiptLineFields[]
 }
+
+/** An old patient's row: everything a payment row has, and the amount as typed. */
+export interface OldReceiptLineFields {
+  line_date: string | null
+  payment_mode: string
+  transaction_type: string
+  remarks: string
+  amount: number
+}
+
+export interface OldReceiptFields extends ReceiptHeaderFields {
+  receipt_no: string
+  created_by_label: string
+  lines: OldReceiptLineFields[]
+}
+
+/** The largest amount one row of an old patient's receipt may carry (₹1 crore). */
+export const MAX_OLD_ROW_AMOUNT = 10000000
 
 // ─── What the form starts with ──────────────────────────────────────────────
 
@@ -220,21 +243,17 @@ const LABELS: Record<string, string> = {
   created_by_label: 'Created by',
 }
 
-/**
- * The receipt as typed, checked. `billPayments` are the ids of this patient's
- * payments — a receipt can only carry those.
- */
-export function validateReceipt(
-  body: any,
-  billPayments: Set<string>,
-): { ok: true; value: ReceiptFields } | Refusal {
-  const refuse = (error: string, field?: string): Refusal => ({
-    ok: false,
-    status: 400,
-    error,
-    ...(field ? { fieldErrors: { [field]: error } } : {}),
-  })
+const refuse = (error: string, field?: string): Refusal => ({
+  ok: false,
+  status: 400,
+  error,
+  ...(field ? { fieldErrors: { [field]: error } } : {}),
+})
 
+type Header = Omit<ReceiptFields, 'lines'>
+
+/** Everything above the rows — the same for a patient's receipt and an old patient's. */
+function checkHeader(body: any): { ok: true; value: Header } | Refusal {
   const header: Record<string, string> = {}
   for (const field of Object.keys(LABELS)) {
     const value = text(body?.[field])
@@ -262,6 +281,56 @@ export function validateReceipt(
     return refuse(`A receipt can name ${MAX_RECEIPT_DOCTORS} doctors at most`, 'doctors')
   }
 
+  return {
+    ok: true,
+    value: {
+      receipt_no: header.receipt_no,
+      heading: header.heading || DEFAULT_HEADING,
+      patient_name: header.patient_name,
+      age_sex: header.age_sex,
+      mobile: header.mobile,
+      address: header.address,
+      ip_no: header.ip_no,
+      doctors,
+      department: header.department,
+      created_by_label: header.created_by_label,
+    },
+  }
+}
+
+/** A row's typed text — date, mode, type and remarks — whichever kind of receipt it is on. */
+function checkRowText(
+  raw: any,
+): { ok: true; value: Omit<OldReceiptLineFields, 'amount'> } | Refusal {
+  const date = text(raw?.line_date)
+  if (date && (!ISO_DATE.test(date) || Number.isNaN(Date.parse(date)))) {
+    return refuse('A row has a date that is not a real date', 'lines')
+  }
+  const row = {
+    line_date: date || null,
+    payment_mode: text(raw?.payment_mode),
+    transaction_type: text(raw?.transaction_type),
+    remarks: text(raw?.remarks),
+  }
+  for (const field of ['payment_mode', 'transaction_type', 'remarks'] as const) {
+    if (row[field].length > LIMITS[field]) {
+      return refuse(`A row's ${field.replace('_', ' ')} is too long (${LIMITS[field]} characters at most)`, 'lines')
+    }
+  }
+  return { ok: true, value: row }
+}
+
+/**
+ * The receipt as typed, checked. `billPayments` are the ids of this patient's
+ * payments — a receipt can only carry those.
+ */
+export function validateReceipt(
+  body: any,
+  billPayments: Set<string>,
+): { ok: true; value: ReceiptFields } | Refusal {
+  const header = checkHeader(body)
+  if (!header.ok) return header
+
   const rawLines: any[] = Array.isArray(body?.lines) ? body.lines : []
   if (rawLines.length === 0) return refuse('Pick at least one payment for the receipt', 'lines')
   if (rawLines.length > MAX_RECEIPT_LINES) {
@@ -278,42 +347,43 @@ export function validateReceipt(
     if (seen.has(installmentId)) return refuse('The same payment is on the receipt twice', 'lines')
     seen.add(installmentId)
 
-    const date = text(raw?.line_date)
-    if (date && (!ISO_DATE.test(date) || Number.isNaN(Date.parse(date)))) {
-      return refuse('A row has a date that is not a real date', 'lines')
-    }
-
-    const line: ReceiptLineFields = {
-      installment_id: installmentId,
-      line_date: date || null,
-      payment_mode: text(raw?.payment_mode),
-      transaction_type: text(raw?.transaction_type),
-      remarks: text(raw?.remarks),
-    }
-    for (const field of ['payment_mode', 'transaction_type', 'remarks'] as const) {
-      if (line[field].length > LIMITS[field]) {
-        return refuse(`A row's ${field.replace('_', ' ')} is too long (${LIMITS[field]} characters at most)`, 'lines')
-      }
-    }
-    lines.push(line)
+    const row = checkRowText(raw)
+    if (!row.ok) return row
+    lines.push({ installment_id: installmentId, ...row.value })
   }
 
-  return {
-    ok: true,
-    value: {
-      receipt_no: header.receipt_no,
-      heading: header.heading || DEFAULT_HEADING,
-      patient_name: header.patient_name,
-      age_sex: header.age_sex,
-      mobile: header.mobile,
-      address: header.address,
-      ip_no: header.ip_no,
-      doctors,
-      department: header.department,
-      created_by_label: header.created_by_label,
-      lines,
-    },
+  return { ok: true, value: { ...header.value, lines } }
+}
+
+/**
+ * An old patient's receipt as typed, checked: the same header, and rows that
+ * each carry their own amount (more than zero).
+ */
+export function validateOldReceipt(body: any): { ok: true; value: OldReceiptFields } | Refusal {
+  const header = checkHeader(body)
+  if (!header.ok) return header
+
+  const rawLines: any[] = Array.isArray(body?.lines) ? body.lines : []
+  if (rawLines.length === 0) return refuse('Add at least one row with an amount', 'lines')
+  if (rawLines.length > MAX_RECEIPT_LINES) {
+    return refuse(`A receipt can carry ${MAX_RECEIPT_LINES} rows at most`, 'lines')
   }
+
+  const lines: OldReceiptLineFields[] = []
+  for (const [index, raw] of rawLines.entries()) {
+    const typed = raw?.amount
+    const amount = typed === '' || typed === null || typed === undefined ? NaN : Number(typed)
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return refuse(`Row ${index + 1} needs an amount of more than zero`, 'lines')
+    }
+    if (amount > MAX_OLD_ROW_AMOUNT) return refuse(`Row ${index + 1}'s amount is too large`, 'lines')
+
+    const row = checkRowText(raw)
+    if (!row.ok) return row
+    lines.push({ ...row.value, amount: Math.round(amount * 100) / 100 })
+  }
+
+  return { ok: true, value: { ...header.value, lines } }
 }
 
 // ─── Reading and writing ────────────────────────────────────────────────────
@@ -323,10 +393,10 @@ const HEADER_COLUMNS = [
   'doctors', 'department', 'created_by_label',
 ] as const
 
-const headerRow = (fields: ReceiptFields) =>
+const headerRow = (fields: Header) =>
   Object.fromEntries(HEADER_COLUMNS.map(column => [column, fields[column]]))
 
-const lineRows = (receiptId: string, lines: ReceiptLineFields[]) =>
+const lineRows = (receiptId: string, lines: Array<ReceiptLineFields | OldReceiptLineFields>) =>
   lines.map((line, index) => ({ receipt_id: receiptId, position: index + 1, ...line }))
 
 /** This patient's payments, oldest first, with who recorded each. */
@@ -420,15 +490,131 @@ export async function listReceipts(db: Db, patientId: string, payments: any[]): 
     .filter(receipt => receipt.lines.length > 0)
 }
 
+export type ReceiptKind = 'all' | 'patient' | 'old'
+
+/**
+ * Every receipt, newest first, for the Receipts page — registered patients'
+ * and old patients' alike — each with its rows and total, ready to print.
+ *
+ * A patient receipt's amounts are its payments' own, read now; an old
+ * patient's are the ones typed. `search` matches the receipt number, the name
+ * on the receipt, or its IP no.
+ */
+export async function listAllReceipts(
+  db: Db,
+  { search = '', kind = 'all', limit = 500 }: { search?: string; kind?: ReceiptKind; limit?: number } = {},
+): Promise<any[]> {
+  let query = db.from('payment_receipts').select('*').order('created_at', { ascending: false }).limit(limit)
+  if (kind === 'old') query = query.eq('subject_type', 'old')
+  if (kind === 'patient') query = query.neq('subject_type', 'old')
+  const { data: receipts, error } = await query
+  if (error) throw error
+
+  const q = search.trim().toLowerCase()
+  const rows = ((receipts ?? []) as any[]).filter(
+    receipt =>
+      !q ||
+      [receipt.receipt_no, receipt.patient_name, receipt.ip_no].some(v => String(v || '').toLowerCase().includes(q)),
+  )
+  if (rows.length === 0) return []
+
+  const { data: lines, error: linesError } = await db
+    .from('payment_receipt_lines')
+    .select('*')
+    .in('receipt_id', rows.map(r => r.id))
+    .order('position', { ascending: true })
+  if (linesError) throw linesError
+  const allLines = (lines ?? []) as any[]
+
+  const installmentIds = [...new Set(allLines.map(l => l.installment_id).filter(Boolean))]
+  const { data: payments } = installmentIds.length
+    ? await db.from('patient_billing_installments').select('id, installment_number, amount').in('id', installmentIds)
+    : { data: [] }
+  const paymentById = new Map<string, any>(((payments ?? []) as any[]).map(p => [p.id, p]))
+
+  const patientIds = [...new Set(rows.map(r => r.patient_id).filter(Boolean))]
+  const { data: patients } = patientIds.length
+    ? await db.from('patients').select('id, patient_id, name').in('id', patientIds)
+    : { data: [] }
+  const patientById = new Map<string, any>(((patients ?? []) as any[]).map(p => [p.id, p]))
+
+  const userIds = [...new Set(rows.flatMap(r => [r.created_by, r.updated_by]).filter(Boolean))]
+  const { data: users } = userIds.length
+    ? await db.from('users').select('id, username').in('id', userIds)
+    : { data: [] }
+  const usernames = new Map<string, string>(((users ?? []) as any[]).map(u => [u.id, u.username]))
+
+  return rows
+    .map(receipt => {
+      const old = receipt.subject_type === 'old'
+      const own = allLines
+        .filter(line => line.receipt_id === receipt.id)
+        .flatMap(line => {
+          const payment = line.installment_id ? paymentById.get(line.installment_id) : null
+          // A patient row whose payment is gone has nothing left to print.
+          if (!old && !payment) return []
+          return [{
+            installment_id: line.installment_id ?? null,
+            installment_number: payment?.installment_number ?? null,
+            line_date: line.line_date,
+            payment_mode: line.payment_mode,
+            transaction_type: line.transaction_type,
+            remarks: line.remarks,
+            amount: Number(old ? line.amount : payment.amount) || 0,
+          }]
+        })
+      const patient = receipt.patient_id ? patientById.get(receipt.patient_id) : null
+      return {
+        ...receipt,
+        subject_type: old ? 'old' : 'patient',
+        doctors: receiptDoctors(receipt.doctors),
+        patient: patient ? { id: patient.id, patient_id: patient.patient_id, name: patient.name } : null,
+        lines: own,
+        total: own.reduce((sum, line) => sum + line.amount, 0),
+        saved_by: usernames.get(receipt.updated_by || receipt.created_by) ?? null,
+        saved_at: receipt.updated_at || receipt.created_at,
+      }
+    })
+    .filter(receipt => receipt.lines.length > 0)
+}
+
 export async function createReceipt(
   db: Db,
   args: { patientId: string; billingId: string; fields: ReceiptFields; userId: string },
 ): Promise<{ ok: true; id: string } | Refusal> {
   const { patientId, billingId, fields, userId } = args
+  return insertReceipt(db, {
+    subject: { subject_type: 'patient', patient_id: patientId, patient_billing_id: billingId },
+    fields,
+    userId,
+  })
+}
+
+/** An old patient's receipt: no patient, no bill, and rows with typed amounts. */
+export async function createOldReceipt(
+  db: Db,
+  args: { fields: OldReceiptFields; userId: string },
+): Promise<{ ok: true; id: string } | Refusal> {
+  return insertReceipt(db, {
+    subject: { subject_type: 'old', patient_id: null, patient_billing_id: null },
+    fields: args.fields,
+    userId: args.userId,
+  })
+}
+
+async function insertReceipt(
+  db: Db,
+  args: {
+    subject: { subject_type: 'patient' | 'old'; patient_id: string | null; patient_billing_id: string | null }
+    fields: ReceiptFields | OldReceiptFields
+    userId: string
+  },
+): Promise<{ ok: true; id: string } | Refusal> {
+  const { subject, fields, userId } = args
 
   const { data: receipt, error } = await db
     .from('payment_receipts')
-    .insert({ patient_id: patientId, patient_billing_id: billingId, ...headerRow(fields), created_by: userId })
+    .insert({ ...subject, ...headerRow(fields), created_by: userId })
     .select('id')
     .single()
   if (error || !receipt) return { ok: false, status: 500, error: 'The receipt could not be saved' }
@@ -445,7 +631,7 @@ export async function createReceipt(
 
 export async function updateReceipt(
   db: Db,
-  args: { receiptId: string; fields: ReceiptFields; userId: string },
+  args: { receiptId: string; fields: ReceiptFields | OldReceiptFields; userId: string },
 ): Promise<{ ok: true; id: string } | Refusal> {
   const { receiptId, fields, userId } = args
 
@@ -455,7 +641,8 @@ export async function updateReceipt(
     .eq('id', receiptId)
   if (error) return { ok: false, status: 500, error: 'The receipt could not be saved' }
 
-  // The rows are replaced as a set: payments may have been ticked or unticked.
+  // The rows are replaced as a set: payments may have been ticked or unticked,
+  // or an old patient's rows added and removed.
   const { data: before } = await db.from('payment_receipt_lines').select('*').eq('receipt_id', receiptId)
   await db.from('payment_receipt_lines').delete().eq('receipt_id', receiptId)
   const { error: linesError } = await db.from('payment_receipt_lines').insert(lineRows(receiptId, fields.lines))

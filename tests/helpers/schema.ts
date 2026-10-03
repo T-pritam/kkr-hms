@@ -251,10 +251,14 @@ export const SCHEMA: Record<string, string[]> = {
     'id', 'patient_id', 'patient_billing_id', 'receipt_no', 'heading', 'patient_name', 'age_sex',
     'mobile', 'address', 'ip_no', 'doctors', 'department', 'created_by_label',
     'created_at', 'created_by', 'updated_at', 'updated_by',
+    // 20261003000001 — 'patient', or 'old' for a patient not in the app (everything typed)
+    'subject_type',
   ],
   payment_receipt_lines: [
     'id', 'receipt_id', 'installment_id', 'position', 'line_date', 'payment_mode',
     'transaction_type', 'remarks',
+    // 20261003000001 — an old patient's row only: the amount as typed
+    'amount',
   ],
 
   patient_billing_installments: [

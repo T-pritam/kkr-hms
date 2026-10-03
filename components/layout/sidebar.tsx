@@ -74,6 +74,8 @@ export function Sidebar({ userRole = 'ADMIN' }: SidebarProps) {
       submenu: [
         // Estimates, including for walk-ins who are not in the registry.
         { name: 'Charge Sheets', href: '/charges/sheets', roles: ['ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST'] },
+        // Payment receipts — registered patients' and old patients' (not in the app).
+        { name: 'Receipts', href: '/charges/receipts', roles: ['ADMIN', 'RECEPTIONIST'] },
         // Readable by all of them; the page hides the write controls from non-admins.
         { name: 'Charge Catalogue', href: '/charges/catalogue', roles: ['ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST'] },
       ],

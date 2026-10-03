@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { ageSexFor, lineDefaults, receiptDefaults, receiptDoctors, titleFor, validateReceipt } from '@/lib/billing/receipts'
+import { ageSexFor, lineDefaults, receiptDefaults, receiptDoctors, titleFor, validateOldReceipt, validateReceipt } from '@/lib/billing/receipts'
 
 /**
  * What a new payment receipt starts with, and what the desk may type into it
@@ -129,5 +129,42 @@ describe('what the desk may save on a receipt', () => {
     expect(receiptDoctors(['Dr Ramesh Naidu', ' '])).toEqual([{ name: 'Dr Ramesh Naidu', designation: '' }])
     expect(receiptDoctors([{ name: 'Dr A', designation: 'Consultant' }, { name: '' }])).toEqual([{ name: 'Dr A', designation: 'Consultant' }])
     expect(receiptDoctors(null)).toEqual([])
+  })
+})
+
+describe("an old patient's receipt (not in the app), as typed", () => {
+  const typed = {
+    receipt_no: '287(A)', patient_name: 'Mr. Chandan', ip_no: '214/26',
+    doctors: [{ name: 'Dr Ramesh Naidu', designation: 'Senior Consultant' }],
+    lines: [
+      { line_date: '2026-07-13', payment_mode: 'Phone pay', transaction_type: 'transfer', remarks: 'advance', amount: '8000' },
+      { line_date: '', payment_mode: 'Cash', transaction_type: 'cash', remarks: '', amount: 1500.555 },
+    ],
+  }
+
+  it('keeps each row\'s typed amount, to the paisa', () => {
+    const checked = validateOldReceipt(typed)
+    expect(checked.ok).toBe(true)
+    if (!checked.ok) return
+    expect(checked.value.lines).toEqual([
+      { line_date: '2026-07-13', payment_mode: 'Phone pay', transaction_type: 'transfer', remarks: 'advance', amount: 8000 },
+      { line_date: null, payment_mode: 'Cash', transaction_type: 'cash', remarks: '', amount: 1500.56 },
+    ])
+    expect(checked.value).toMatchObject({ heading: 'Cash Receipt', receipt_no: '287(A)', ip_no: '214/26' })
+  })
+
+  it('needs the same header as a patient receipt, and an amount on every row', () => {
+    expect(validateOldReceipt({ ...typed, receipt_no: '' })).toMatchObject({ ok: false, fieldErrors: { receipt_no: expect.any(String) } })
+    expect(validateOldReceipt({ ...typed, patient_name: '' })).toMatchObject({ ok: false, fieldErrors: { patient_name: expect.any(String) } })
+    expect(validateOldReceipt({ ...typed, lines: [] })).toMatchObject({ ok: false })
+    for (const amount of ['', null, undefined, 0, -1, 'abc', 10000001]) {
+      expect(validateOldReceipt({ ...typed, lines: [{ amount }] }).ok).toBe(false)
+    }
+    expect(validateOldReceipt({ ...typed, lines: Array(51).fill({ amount: 1 }) })).toMatchObject({ ok: false })
+  })
+
+  it('ignores any payment id sent with a row: an old patient has no payments', () => {
+    const checked = validateOldReceipt({ ...typed, lines: [{ installment_id: 'i1', amount: 100 }] })
+    expect(checked.ok && Object.keys(checked.value.lines[0])).not.toContain('installment_id')
   })
 })
