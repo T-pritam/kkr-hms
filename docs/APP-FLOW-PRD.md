@@ -330,7 +330,7 @@ The patient's **total bill** is the sum of these payments.
 6. The total, and the amount in words (`Rupees: eight thousand only.`), are worked out from the rows. A line left empty (address, doctors, department, created by) is left out of the print. More rows than fit continue on a second half sheet.
 7. Deleting a payment takes its row off any receipt, and removes a receipt left with no rows.
 
-**The Receipts page and old patients** [3 Oct, not released]. **Where:** Charges ▸ **Receipts** (`/charges/receipts`), A R only, laid out like Charge Sheets.
+**The Receipts page and old patients** [3 Oct]. **Where:** Charges ▸ **Receipts** (`/charges/receipts`), A R only, laid out like Charge Sheets.
 
 - It lists **every** receipt, newest first. **Search** by receipt no, the name on the receipt, or the IP no; a filter shows **All · Registered · Old patient**. Each row has **Open**, **Download** and **Print** (straight from the saved receipt) and **Delete**.
 - **New receipt** asks who it is for, as a charge sheet asks Registered or OPD:

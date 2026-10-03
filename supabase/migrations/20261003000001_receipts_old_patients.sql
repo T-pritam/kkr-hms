@@ -16,7 +16,7 @@
 -- Additive: the live code writes only patient receipts, which satisfy every
 -- check below.
 --
--- NOT applied to production until the client releases it.
+-- Applied to production on 2026-10-03 (as `receipts_old_patients`), before the deploy.
 
 alter table public.payment_receipts
   add column if not exists subject_type text not null default 'patient';
