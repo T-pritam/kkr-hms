@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { X, Calendar, Users, DollarSign, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { MAX_OT_DAYS } from '@/lib/employees/constants'
 
 interface Employee {
   id: string
@@ -84,7 +85,7 @@ export function MonthlySalaryCreditModal({ isOpen, onClose, onSuccess, initialMo
       ...prev,
       [empId]: {
         ...prev[empId],
-        [field]: field === 'days_present' ? Math.min(27, Math.max(0, numValue)) : Math.min(3, Math.max(0, numValue))
+        [field]: field === 'days_present' ? Math.min(27, Math.max(0, numValue)) : Math.min(MAX_OT_DAYS, Math.max(0, numValue))
       }
     }))
   }
@@ -232,7 +233,7 @@ export function MonthlySalaryCreditModal({ isOpen, onClose, onSuccess, initialMo
                   <th className="text-left p-3 text-muted text-sm font-medium">Designation</th>
                   <th className="text-left p-3 text-muted text-sm font-medium">Base Salary</th>
                   <th className="text-left p-3 text-muted text-sm font-medium">Days Present (1-27)</th>
-                  <th className="text-left p-3 text-muted text-sm font-medium">OT Days (0-3)</th>
+                  <th className="text-left p-3 text-muted text-sm font-medium">OT Days (0-{MAX_OT_DAYS})</th>
                   <th className="text-left p-3 text-muted text-sm font-medium">Calculated Salary</th>
                   <th className="text-left p-3 text-muted text-sm font-medium">Status</th>
                 </tr>
@@ -281,7 +282,7 @@ export function MonthlySalaryCreditModal({ isOpen, onClose, onSuccess, initialMo
                           <Input
                             type="number"
                             min="0"
-                            max="3"
+                            max={MAX_OT_DAYS}
                             value={att.ot_days}
                             onChange={(e) => handleAttendanceChange(employee.id, 'ot_days', e.target.value)}
                             className="w-20"

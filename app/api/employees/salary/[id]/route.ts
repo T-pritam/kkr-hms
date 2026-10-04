@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireEmployee } from '@/lib/employees/authz'
+import { MAX_OT_DAYS } from '@/lib/employees/constants'
 
 /**
  * GET /api/employees/salary/[id]
@@ -118,9 +119,9 @@ export async function PATCH(
     // Validate and update ot_days
     if (ot_days !== undefined) {
       const ot = parseInt(ot_days)
-      if (ot < 0 || ot > 3) {
+      if (ot < 0 || ot > MAX_OT_DAYS) {
         return NextResponse.json(
-          { error: 'ot_days must be between 0 and 3' },
+          { error: `ot_days must be between 0 and ${MAX_OT_DAYS}` },
           { status: 400 }
         )
       }

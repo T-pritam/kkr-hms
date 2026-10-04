@@ -168,12 +168,23 @@ describe('POST /api/employees/salary/monthly — the calculation', () => {
     expect(status).toBeGreaterThanOrEqual(400)
   })
 
-  it.each([-1, 4, 10])('rejects ot_days of %i', async (ot) => {
+  it.each([-1, 16, 30])('rejects ot_days of %i', async (ot) => {
     await signInAs('ADMIN')
     anEmployee({ id: 'e1' })
 
     const { status } = await creditFor({ employee_id: 'e1', base_salary: 27000, days_present: 27, ot_days: ot })
     expect(status).toBeGreaterThanOrEqual(400)
+  })
+
+  it('accepts up to 15 overtime days on a full month', async () => {
+    await signInAs('ADMIN')
+    anEmployee({ id: 'e1' })
+
+    // 30000/30 = 1000 a day; 15 OT days → 30000 + 15000 = 45000
+    const { status } = await creditFor({ employee_id: 'e1', base_salary: 30000, days_present: 27, ot_days: 15 })
+
+    expect(status).toBe(201)
+    expect(db.rows('salary_payments')[0]).toMatchObject({ ot_days: 15, calculated_salary: 45000 })
   })
 
   it('updates an existing record rather than creating a second one', async () => {
@@ -295,9 +306,20 @@ describe('/api/employees/salary/[id]', () => {
     expect(body.error).toBe('ot_days can only be set when days_present is 27')
   })
 
+  it('accepts 15 overtime days when correcting a full month', async () => {
+    await signInAs('ADMIN')
+    anEmployee({ id: 'e1' })
+    aSalaryRecord({ id: '1', employee_id: 'e1', month_year: THIS_MONTH, base_salary: 30000, days_present: 27 })
+
+    const { status } = await edit('1', { days_present: 27, ot_days: 15 })
+
+    expect(status).toBe(200)
+    expect(record('1')).toMatchObject({ ot_days: 15, calculated_salary: 45000 })
+  })
+
   it.each([
     ['days_present', { days_present: 30 }, 'days_present must be between 0 and 27'],
-    ['ot_days', { days_present: 27, ot_days: 5 }, 'ot_days must be between 0 and 3'],
+    ['ot_days', { days_present: 27, ot_days: 16 }, 'ot_days must be between 0 and 15'],
     ['base_salary', { base_salary: 0 }, 'base_salary must be greater than 0'],
   ])('validates %s', async (_field, body, message) => {
     await signInAs('ADMIN')

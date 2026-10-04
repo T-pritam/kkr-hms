@@ -452,8 +452,8 @@ The patient's **total bill** is the sum of these payments.
 
 **Who:** A D (payroll) [Q-06]; the register page is **A** only. Reception has no access.
 
-- **Register:** employee code `EMP/26/007` (auto, editable), name, designation, base salary, contact and bank details, status. Deactivate rather than delete, so salary history stays. **CSV import** for bulk entry (Name, Salary, Role): real CSV, so a quoted "Kumar, Ramesh" stays one name; a row whose name *and* role match an active employee is skipped and reported by row; each imported employee gets a code.
-- **Monthly salary** (the salary grid): enter **days present (0–27)** and **OT days (0–3)** per employee.
+- **Register:** employee code `EMP/26/007` (auto, editable), name, designation (the form offers the hospital's roles from its salary sheet: GNM, ANM, AYYAMMA, O.T., RECEPTION, P R O, SCAVENGER, WARDBOY, MANAGER, D M O, WATCHMAN, M.L.T.), base salary, contact and bank details, status. Deactivate rather than delete, so salary history stays. **CSV import** for bulk entry (Name, Salary, Role): real CSV, so a quoted "Kumar, Ramesh" stays one name; a row whose name *and* role match an active employee is skipped and reported by row; each imported employee gets a code.
+- **Monthly salary** (the salary grid): enter **days present (0–27)** and **OT days (0–15)** per employee.
 
 ```
   daily rate   = base salary ÷ 30

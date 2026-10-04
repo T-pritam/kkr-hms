@@ -8,6 +8,7 @@ import { UpdatedStamp } from '@/components/ui/updated-stamp'
 import { downloadPayslip } from '@/lib/pdf/payslip-pdf'
 import { Download } from 'lucide-react'
 import { Input } from '@/components/ui/input'
+import { MAX_OT_DAYS } from '@/lib/employees/constants'
 
 interface Advance {
   id: number
@@ -106,8 +107,8 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
         alert('Days present must be between 0 and 27')
         return
       }
-      if (ot < 0 || ot > 3) {
-        alert('OT days must be between 0 and 3')
+      if (ot < 0 || ot > MAX_OT_DAYS) {
+        alert(`OT days must be between 0 and ${MAX_OT_DAYS}`)
         return
       }
       if (ot > 0 && days !== 27) {
@@ -280,7 +281,7 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
                 <Input
                   type="number"
                   min="0"
-                  max="3"
+                  max={MAX_OT_DAYS}
                   value={otDays}
                   onChange={(e) => setOtDays(e.target.value)}
                   className="bg-surface-inset border-border text-foreground"

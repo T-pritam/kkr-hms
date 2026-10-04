@@ -13,19 +13,24 @@ export { GENDERS, ID_PROOF_TYPES, RELATIONS } from '@/lib/patients/constants'
 export type { Gender } from '@/lib/patients/constants'
 
 /**
- * The eight roles the form has always offered. Unchanged — the brief was
- * explicitly not to alter existing functionality, and these values are already
- * stored on live rows.
+ * The hospital's own roles, spelled as on its salary sheet (August 2026), in
+ * the sheet's order. They replaced the eight placeholder roles the form first
+ * offered. The server does not enforce this list (see `validateEmployee`), so
+ * it only decides what the form and the filters offer.
  */
 export const DESIGNATIONS = [
-  'Nurse',
-  'Wardboy',
-  'Compounder',
-  'OT Boy',
-  'Watchman',
-  'Cleaner',
-  'Lab Technician',
-  'Pharmacist',
+  'GNM',
+  'ANM',
+  'AYYAMMA',
+  'O.T.',
+  'RECEPTION',
+  'P R O',
+  'SCAVENGER',
+  'WARDBOY',
+  'MANAGER',
+  'D M O',
+  'WATCHMAN',
+  'M.L.T.',
 ] as const
 
 export type Designation = (typeof DESIGNATIONS)[number]
@@ -52,6 +57,12 @@ export const SALARY_STATUS_VARIANTS: Record<SalaryStatus, BadgeVariant> = {
   pending: 'warning',
   settled: 'success',
 }
+
+/**
+ * Most overtime days a salary month can carry. Overtime only counts on a full
+ * month (27 days present), and each OT day pays one daily rate (base / 30).
+ */
+export const MAX_OT_DAYS = 15
 
 /** Labels for validation messages, so an error names the field the way the form does. */
 export const FIELD_LABELS: Record<string, string> = {

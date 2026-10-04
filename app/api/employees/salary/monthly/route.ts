@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireEmployee } from '@/lib/employees/authz'
+import { MAX_OT_DAYS } from '@/lib/employees/constants'
 
 /**
  * POST /api/employees/salary/monthly
@@ -80,8 +81,8 @@ export async function POST(request: NextRequest) {
         throw new Error(`Invalid days_present for employee ${emp.employee_id}: must be 0-27`)
       }
 
-      if (otDays < 0 || otDays > 3) {
-        throw new Error(`Invalid ot_days for employee ${emp.employee_id}: must be 0-3`)
+      if (otDays < 0 || otDays > MAX_OT_DAYS) {
+        throw new Error(`Invalid ot_days for employee ${emp.employee_id}: must be 0-${MAX_OT_DAYS}`)
       }
 
       // OT only valid if days_present = 27
