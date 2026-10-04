@@ -59,8 +59,16 @@ export const SALARY_STATUS_VARIANTS: Record<SalaryStatus, BadgeVariant> = {
 }
 
 /**
+ * Days in a salary month. The daily rate is base / 30 and a month pays
+ * daily rate × days present, so 30 days is the full salary and 0 days is
+ * nothing. (It used to be 27 days counted as 30, which paid 3 days to
+ * someone absent the whole month.)
+ */
+export const WORKING_DAYS = 30
+
+/**
  * Most overtime days a salary month can carry. Overtime only counts on a full
- * month (27 days present), and each OT day pays one daily rate (base / 30).
+ * month (all 30 days present), and each OT day pays one daily rate.
  */
 export const MAX_OT_DAYS = 15
 

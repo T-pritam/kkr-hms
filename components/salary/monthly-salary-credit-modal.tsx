@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { X, Calendar, Users, DollarSign, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { MAX_OT_DAYS } from '@/lib/employees/constants'
+import { MAX_OT_DAYS, WORKING_DAYS } from '@/lib/employees/constants'
 
 interface Employee {
   id: string
@@ -27,8 +27,8 @@ export function MonthlySalaryCreditModal({ isOpen, onClose, onSuccess, initialMo
   const [loading, setLoading] = useState(false)
   const [employees, setEmployees] = useState<Employee[]>([])
   const [monthYear, setMonthYear] = useState('')
-  // Fixed by the payroll rule: 27 working days (see /api/employees/salary/monthly).
-  const totalWorkingDays = 27
+  // Fixed by the payroll rule: 30 days a month (see /api/employees/salary/monthly).
+  const totalWorkingDays = WORKING_DAYS
   
   // Employee attendance data
   const [attendance, setAttendance] = useState<{ [key: string]: { days_present: number, ot_days: number } }>({})
@@ -67,7 +67,7 @@ export function MonthlySalaryCreditModal({ isOpen, onClose, onSuccess, initialMo
             }
           } else {
             // New record - use defaults
-            defaultAttendance[emp.id] = { days_present: 27, ot_days: 0 }
+            defaultAttendance[emp.id] = { days_present: WORKING_DAYS, ot_days: 0 }
           }
         })
         setAttendance(defaultAttendance)
@@ -85,14 +85,16 @@ export function MonthlySalaryCreditModal({ isOpen, onClose, onSuccess, initialMo
       ...prev,
       [empId]: {
         ...prev[empId],
-        [field]: field === 'days_present' ? Math.min(27, Math.max(0, numValue)) : Math.min(MAX_OT_DAYS, Math.max(0, numValue))
+        [field]: field === 'days_present' ? Math.min(WORKING_DAYS, Math.max(0, numValue)) : Math.min(MAX_OT_DAYS, Math.max(0, numValue))
       }
     }))
   }
 
   const calculateSalary = (baseSalary: number, daysPresent: number, otDays: number) => {
-    const perDayRate = baseSalary / 30
-    return baseSalary + ((daysPresent - 27 + otDays) * perDayRate)
+    // Same as the server: days × daily rate, overtime only on a full month.
+    const perDayRate = baseSalary / WORKING_DAYS
+    const paidOt = daysPresent === WORKING_DAYS ? otDays : 0
+    return (daysPresent + paidOt) * perDayRate
   }
 
   const handleCreateRecords = async () => {
@@ -106,8 +108,8 @@ export function MonthlySalaryCreditModal({ isOpen, onClose, onSuccess, initialMo
     const salaryData = employees.map(emp => ({
       employee_id: emp.id,
       base_salary: emp.base_salary,
-      days_present: attendance[emp.id]?.days_present || 27,
-      ot_days: attendance[emp.id]?.ot_days || 0,
+      days_present: attendance[emp.id]?.days_present ?? WORKING_DAYS,
+      ot_days: attendance[emp.id]?.ot_days ?? 0,
       total_advance: emp.total_advance || 0
     }))
 
@@ -156,7 +158,7 @@ export function MonthlySalaryCreditModal({ isOpen, onClose, onSuccess, initialMo
   const editableEmployees = employees.filter(e => e.salary_record?.status !== 'settled')
   const totalBaseSalary = editableEmployees.reduce((sum, emp) => sum + emp.base_salary, 0)
   const estimatedPayout = editableEmployees.reduce((sum, emp) => {
-    const att = attendance[emp.id] || { days_present: 27, ot_days: 0 }
+    const att = attendance[emp.id] || { days_present: WORKING_DAYS, ot_days: 0 }
     return sum + calculateSalary(emp.base_salary, att.days_present, att.ot_days)
   }, 0)
 
@@ -232,7 +234,7 @@ export function MonthlySalaryCreditModal({ isOpen, onClose, onSuccess, initialMo
                   <th className="text-left p-3 text-muted text-sm font-medium">Employee Name</th>
                   <th className="text-left p-3 text-muted text-sm font-medium">Designation</th>
                   <th className="text-left p-3 text-muted text-sm font-medium">Base Salary</th>
-                  <th className="text-left p-3 text-muted text-sm font-medium">Days Present (1-27)</th>
+                  <th className="text-left p-3 text-muted text-sm font-medium">Days Present (0-{WORKING_DAYS})</th>
                   <th className="text-left p-3 text-muted text-sm font-medium">OT Days (0-{MAX_OT_DAYS})</th>
                   <th className="text-left p-3 text-muted text-sm font-medium">Calculated Salary</th>
                   <th className="text-left p-3 text-muted text-sm font-medium">Status</th>
@@ -240,7 +242,7 @@ export function MonthlySalaryCreditModal({ isOpen, onClose, onSuccess, initialMo
               </thead>
               <tbody>
                 {employees.map((employee) => {
-                  const att = attendance[employee.id] || { days_present: 27, ot_days: 0 }
+                  const att = attendance[employee.id] || { days_present: WORKING_DAYS, ot_days: 0 }
                   const calcSalary = calculateSalary(employee.base_salary, att.days_present, att.ot_days)
                   const hasRecord = !!employee.salary_record
                   const isSettled = employee.salary_record?.status === 'settled'
@@ -268,7 +270,7 @@ export function MonthlySalaryCreditModal({ isOpen, onClose, onSuccess, initialMo
                           <Input
                             type="number"
                             min="0"
-                            max="27"
+                            max={WORKING_DAYS}
                             value={att.days_present}
                             onChange={(e) => handleAttendanceChange(employee.id, 'days_present', e.target.value)}
                             className="w-20"

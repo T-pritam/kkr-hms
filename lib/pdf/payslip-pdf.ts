@@ -16,6 +16,7 @@ import jsPDF from 'jspdf'
 import { C, M, fmt, fmtDate, mkDoc, hdr, sec, thead, trow, ttotal, footers } from './base'
 import type { Cell, H } from './base'
 import { monthLabel } from './advance-log-pdf'
+import { WORKING_DAYS } from '@/lib/employees/constants'
 
 export interface PayslipData {
   month_year: string
@@ -234,7 +235,7 @@ export function renderPayslip(data: PayslipData): jsPDF {
     figure(h, 'Base salary', fmt(num(record.base_salary)))
     figure(
       h,
-      `Days present (of ${record.total_working_days ?? 27})`,
+      `Days present (of ${record.total_working_days ?? WORKING_DAYS})`,
       String(record.days_present ?? '—'),
     )
     figure(h, 'Overtime days', String(record.ot_days ?? 0))

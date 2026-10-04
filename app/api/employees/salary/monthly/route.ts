@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireEmployee } from '@/lib/employees/authz'
-import { MAX_OT_DAYS } from '@/lib/employees/constants'
+import { MAX_OT_DAYS, WORKING_DAYS } from '@/lib/employees/constants'
 
 /**
  * POST /api/employees/salary/monthly
@@ -77,24 +77,24 @@ export async function POST(request: NextRequest) {
       const otDays = parseInt(emp.ot_days) || 0
 
       // Validation
-      if (daysPresent < 0 || daysPresent > 27) {
-        throw new Error(`Invalid days_present for employee ${emp.employee_id}: must be 0-27`)
+      if (daysPresent < 0 || daysPresent > WORKING_DAYS) {
+        throw new Error(`Invalid days_present for employee ${emp.employee_id}: must be 0-${WORKING_DAYS}`)
       }
 
       if (otDays < 0 || otDays > MAX_OT_DAYS) {
         throw new Error(`Invalid ot_days for employee ${emp.employee_id}: must be 0-${MAX_OT_DAYS}`)
       }
 
-      // OT only valid if days_present = 27
-      const validOtDays = daysPresent === 27 ? otDays : 0
+      // OT only valid on a full month
+      const validOtDays = daysPresent === WORKING_DAYS ? otDays : 0
 
       // Daily rate = base_salary / 30
-      const dailyRate = baseSalary / 30
+      const dailyRate = baseSalary / WORKING_DAYS
 
-      // Regular salary = base_salary - ((27 - days_present) × daily_rate)
-      const regularSalary = baseSalary - ((27 - daysPresent) * dailyRate)
+      // Regular salary = daily_rate × days_present (0 days pays nothing)
+      const regularSalary = dailyRate * daysPresent
 
-      // OT salary = daily_rate × ot_days (only if days_present = 27)
+      // OT salary = daily_rate × ot_days (only on a full month)
       const otSalary = dailyRate * validOtDays
 
       // Calculated salary = regular + OT
@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
         employee_id: emp.employee_id,
         month_year,
         base_salary: baseSalary,
-        total_working_days: 27,
+        total_working_days: WORKING_DAYS,
         days_present: daysPresent,
         ot_days: validOtDays,
         total_advance: totalAdvance,

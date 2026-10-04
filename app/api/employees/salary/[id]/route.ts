@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireEmployee } from '@/lib/employees/authz'
-import { MAX_OT_DAYS } from '@/lib/employees/constants'
+import { MAX_OT_DAYS, WORKING_DAYS } from '@/lib/employees/constants'
 
 /**
  * GET /api/employees/salary/[id]
@@ -107,9 +107,9 @@ export async function PATCH(
     // Validate and update days_present
     if (days_present !== undefined) {
       const days = parseInt(days_present)
-      if (days < 0 || days > 27) {
+      if (days < 0 || days > WORKING_DAYS) {
         return NextResponse.json(
-          { error: 'days_present must be between 0 and 27' },
+          { error: `days_present must be between 0 and ${WORKING_DAYS}` },
           { status: 400 }
         )
       }
@@ -126,14 +126,14 @@ export async function PATCH(
         )
       }
       
-      // Check if days_present is 27 (either from update or existing)
-      const finalDaysPresent = updateData.days_present !== undefined 
-        ? updateData.days_present 
+      // Check the month is full (either from update or existing)
+      const finalDaysPresent = updateData.days_present !== undefined
+        ? updateData.days_present
         : existingRecord.days_present
 
-      if (ot > 0 && finalDaysPresent !== 27) {
+      if (ot > 0 && finalDaysPresent !== WORKING_DAYS) {
         return NextResponse.json(
-          { error: 'ot_days can only be set when days_present is 27' },
+          { error: `ot_days can only be set when days_present is ${WORKING_DAYS}` },
           { status: 400 }
         )
       }
@@ -161,11 +161,11 @@ export async function PATCH(
       ? updateData.ot_days 
       : existingRecord.ot_days
 
-    // Ensure OT is 0 if days_present < 27
-    const validOtDays = finalDaysPresent === 27 ? finalOtDays : 0
+    // Ensure OT is 0 unless the month is full
+    const validOtDays = finalDaysPresent === WORKING_DAYS ? finalOtDays : 0
 
-    const dailyRate = finalBaseSalary / 30
-    const regularSalary = finalBaseSalary - ((27 - finalDaysPresent) * dailyRate)
+    const dailyRate = finalBaseSalary / WORKING_DAYS
+    const regularSalary = dailyRate * finalDaysPresent
     const otSalary = dailyRate * validOtDays
     const calculatedSalary = regularSalary + otSalary
 
@@ -180,6 +180,7 @@ export async function PATCH(
     const finalSalary = calculatedSalary - totalAdvance
 
     updateData.ot_days = validOtDays
+    updateData.total_working_days = WORKING_DAYS
     updateData.calculated_salary = parseFloat(calculatedSalary.toFixed(2))
     updateData.final_salary = parseFloat(finalSalary.toFixed(2))
     updateData.total_advance = totalAdvance

@@ -8,7 +8,7 @@ import { UpdatedStamp } from '@/components/ui/updated-stamp'
 import { downloadPayslip } from '@/lib/pdf/payslip-pdf'
 import { Download } from 'lucide-react'
 import { Input } from '@/components/ui/input'
-import { MAX_OT_DAYS } from '@/lib/employees/constants'
+import { MAX_OT_DAYS, WORKING_DAYS } from '@/lib/employees/constants'
 
 interface Advance {
   id: number
@@ -77,7 +77,7 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
           } else {
             setSalaryRecord(null)
             setBaseSalary(emp.base_salary.toString())
-            setDaysPresent('27')
+            setDaysPresent(String(WORKING_DAYS))
             setOtDays('0')
             // Show form immediately for creating new record
             setIsEditing(true)
@@ -93,7 +93,9 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
   }
 
   const calculateSalary = (base: number, days: number, ot: number) => {
-    return base - ((27 - days) * (base / 30)) + (ot * (base / 30))
+    // Same as the server: days × daily rate, overtime only on a full month.
+    const paidOt = days === WORKING_DAYS ? ot : 0
+    return (days + paidOt) * (base / WORKING_DAYS)
   }
 
   const handleCreateOrUpdateSalary = async () => {
@@ -103,16 +105,16 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
       const ot = parseInt(otDays)
 
       // Validation
-      if (days < 0 || days > 27) {
-        alert('Days present must be between 0 and 27')
+      if (days < 0 || days > WORKING_DAYS) {
+        alert(`Days present must be between 0 and ${WORKING_DAYS}`)
         return
       }
       if (ot < 0 || ot > MAX_OT_DAYS) {
         alert(`OT days must be between 0 and ${MAX_OT_DAYS}`)
         return
       }
-      if (ot > 0 && days !== 27) {
-        alert('OT days can only be added when attendance is 27 days')
+      if (ot > 0 && days !== WORKING_DAYS) {
+        alert(`OT days can only be added when attendance is ${WORKING_DAYS} days`)
         return
       }
 
@@ -270,7 +272,7 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
                 <Input
                   type="number"
                   min="0"
-                  max="27"
+                  max={WORKING_DAYS}
                   value={daysPresent}
                   onChange={(e) => setDaysPresent(e.target.value)}
                   className="bg-surface-inset border-border text-foreground"
@@ -319,7 +321,7 @@ export function SalaryDetailsModal({ isOpen, onClose, employeeId, selectedMonth,
               </div>
               <div className="flex justify-between">
                 <span className="text-muted">Days Present:</span>
-                <span className="text-foreground font-medium">{daysPresent}/27</span>
+                <span className="text-foreground font-medium">{daysPresent}/{salaryRecord?.total_working_days ?? WORKING_DAYS}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted">OT Days:</span>

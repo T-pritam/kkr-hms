@@ -325,8 +325,8 @@ Statuses: draft → forwarded / cancelled. Numbered `CS-000001` (continuous, not
 - **Monthly salary grid** (per employee, per month):
 ```
  daily_rate      = base_salary / 30
- regular_salary  = base_salary − (27 − days_present) × daily_rate     (days_present 0–27)
- ot_salary       = daily_rate × ot_days                               (only if days_present = 27; ot_days 0–15)
+ regular_salary  = daily_rate × days_present                          (days_present 0–30)
+ ot_salary       = daily_rate × ot_days                               (only if days_present = 30; ot_days 0–15)
  calculated      = regular + ot
  final_salary    = calculated − total_advances_that_month
 ```

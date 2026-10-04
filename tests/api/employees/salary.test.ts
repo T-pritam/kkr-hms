@@ -2,10 +2,10 @@
  * /api/employees/salary/* — monthly salary calculation and settlement.
  *
  * The formula (identical in the bulk route and the single-record PATCH):
- *   total_working_days = 27          (a constant)
- *   daily_rate         = base_salary / 30      (note: /30, not /27)
- *   regular_salary     = base_salary − ((27 − days_present) × daily_rate)
- *   ot_salary          = daily_rate × ot_days  (only when days_present is exactly 27)
+ *   total_working_days = 30          (a constant)
+ *   daily_rate         = base_salary / 30
+ *   regular_salary     = daily_rate × days_present   (0 days pays nothing)
+ *   ot_salary          = daily_rate × ot_days  (only when days_present is exactly 30)
  *   calculated_salary  = round2(regular + ot)
  *   final_salary       = round2(calculated − total_advance)
  */
@@ -70,15 +70,15 @@ describe('POST /api/employees/salary/monthly — the calculation', () => {
     await signInAs('ADMIN')
     anEmployee({ id: 'e1' })
 
-    const { status } = await creditFor({ employee_id: 'e1', base_salary: 27000, days_present: 27, ot_days: 0 })
+    const { status } = await creditFor({ employee_id: 'e1', base_salary: 27000, days_present: 30, ot_days: 0 })
 
     expect(status).toBe(201)
     expect(db.rows('salary_payments')[0]).toMatchObject({
       employee_id: 'e1',
       month_year: THIS_MONTH,
       base_salary: 27000,
-      total_working_days: 27,
-      days_present: 27,
+      total_working_days: 30,
+      days_present: 30,
       calculated_salary: 27000,
       final_salary: 27000,
       status: 'pending',
@@ -89,10 +89,10 @@ describe('POST /api/employees/salary/monthly — the calculation', () => {
     await signInAs('ADMIN')
     anEmployee({ id: 'e1' })
 
-    // 30000/30 = 1000 a day; 2 days absent → 30000 − 2000 = 28000
+    // 30000/30 = 1000 a day; 5 days absent → 30000 − 5000 = 25000
     await creditFor({ employee_id: 'e1', base_salary: 30000, days_present: 25, ot_days: 0 })
 
-    expect(db.rows('salary_payments')[0].calculated_salary).toBe(28000)
+    expect(db.rows('salary_payments')[0].calculated_salary).toBe(25000)
   })
 
   it('pays overtime only when every working day was attended', async () => {
@@ -103,8 +103,8 @@ describe('POST /api/employees/salary/monthly — the calculation', () => {
     await credit({
       month_year: THIS_MONTH,
       employees_data: [
-        { employee_id: 'e1', base_salary: 30000, days_present: 27, ot_days: 2 },
-        { employee_id: 'e2', base_salary: 30000, days_present: 26, ot_days: 2 },
+        { employee_id: 'e1', base_salary: 30000, days_present: 30, ot_days: 2 },
+        { employee_id: 'e2', base_salary: 30000, days_present: 29, ot_days: 2 },
       ],
     })
 
@@ -124,7 +124,7 @@ describe('POST /api/employees/salary/monthly — the calculation', () => {
     anAdvance({ employee_id: 'e1', amount: 2000, month_year: THIS_MONTH })
     anAdvance({ employee_id: 'e1', amount: 9999, month_year: '2026-02' })
 
-    await creditFor({ employee_id: 'e1', base_salary: 27000, days_present: 27, ot_days: 0 })
+    await creditFor({ employee_id: 'e1', base_salary: 27000, days_present: 30, ot_days: 0 })
 
     expect(db.rows('salary_payments')[0]).toMatchObject({ total_advance: 7000, final_salary: 20000 })
   })
@@ -133,21 +133,29 @@ describe('POST /api/employees/salary/monthly — the calculation', () => {
     await signInAs('ADMIN')
     anEmployee({ id: 'e1' })
 
-    // 27000/30 = 900; 26 days → 27000 − 900 = 26100 exactly, so use an awkward base
+    // 27000/30 = 900 a day pays round figures, so use an awkward base
     await creditFor({ employee_id: 'e1', base_salary: 27777, days_present: 26, ot_days: 0 })
 
     const calculated = db.rows('salary_payments')[0].calculated_salary
     expect(calculated).toBe(Number(calculated.toFixed(2)))
   })
 
-  it('pays nothing for a month with no attendance', async () => {
+  it('pays nothing for a month on leave (0 days)', async () => {
     await signInAs('ADMIN')
     anEmployee({ id: 'e1' })
 
-    // 27 days absent at 30000/30 = 1000 → 30000 − 27000 = 3000
     await creditFor({ employee_id: 'e1', base_salary: 30000, days_present: 0, ot_days: 0 })
 
-    expect(db.rows('salary_payments')[0].calculated_salary).toBe(3000)
+    expect(db.rows('salary_payments')[0]).toMatchObject({ days_present: 0, calculated_salary: 0, final_salary: 0 })
+  })
+
+  it('pays one daily rate for one day', async () => {
+    await signInAs('ADMIN')
+    anEmployee({ id: 'e1' })
+
+    await creditFor({ employee_id: 'e1', base_salary: 30000, days_present: 1, ot_days: 0 })
+
+    expect(db.rows('salary_payments')[0].calculated_salary).toBe(1000)
   })
 
   it.each([
@@ -160,7 +168,7 @@ describe('POST /api/employees/salary/monthly — the calculation', () => {
     expect((await credit(body)).status).toBe(400)
   })
 
-  it.each([-1, 28, 30])('rejects days_present of %i', async (days) => {
+  it.each([-1, 31, 40])('rejects days_present of %i', async (days) => {
     await signInAs('ADMIN')
     anEmployee({ id: 'e1' })
 
@@ -172,7 +180,7 @@ describe('POST /api/employees/salary/monthly — the calculation', () => {
     await signInAs('ADMIN')
     anEmployee({ id: 'e1' })
 
-    const { status } = await creditFor({ employee_id: 'e1', base_salary: 27000, days_present: 27, ot_days: ot })
+    const { status } = await creditFor({ employee_id: 'e1', base_salary: 27000, days_present: 30, ot_days: ot })
     expect(status).toBeGreaterThanOrEqual(400)
   })
 
@@ -181,7 +189,7 @@ describe('POST /api/employees/salary/monthly — the calculation', () => {
     anEmployee({ id: 'e1' })
 
     // 30000/30 = 1000 a day; 15 OT days → 30000 + 15000 = 45000
-    const { status } = await creditFor({ employee_id: 'e1', base_salary: 30000, days_present: 27, ot_days: 15 })
+    const { status } = await creditFor({ employee_id: 'e1', base_salary: 30000, days_present: 30, ot_days: 15 })
 
     expect(status).toBe(201)
     expect(db.rows('salary_payments')[0]).toMatchObject({ ot_days: 15, calculated_salary: 45000 })
@@ -285,7 +293,7 @@ describe('/api/employees/salary/[id]', () => {
       employee_id: 'e1',
       month_year: THIS_MONTH,
       base_salary: 30000,
-      days_present: 27,
+      days_present: 30,
       calculated_salary: 30000,
       final_salary: 30000,
     })
@@ -293,7 +301,18 @@ describe('/api/employees/salary/[id]', () => {
     const { status } = await edit('1', { days_present: 25 })
 
     expect(status).toBe(200)
-    expect(record('1')).toMatchObject({ days_present: 25, calculated_salary: 28000, final_salary: 28000 })
+    expect(record('1')).toMatchObject({ days_present: 25, calculated_salary: 25000, final_salary: 25000 })
+  })
+
+  it('pays nothing when attendance is corrected to 0 days', async () => {
+    await signInAs('ADMIN')
+    anEmployee({ id: 'e1' })
+    aSalaryRecord({ id: '1', employee_id: 'e1', month_year: THIS_MONTH, base_salary: 30000, days_present: 30 })
+
+    const { status } = await edit('1', { days_present: 0 })
+
+    expect(status).toBe(200)
+    expect(record('1')).toMatchObject({ days_present: 0, calculated_salary: 0, final_salary: 0, total_working_days: 30 })
   })
 
   it('refuses overtime on a month that was not fully attended', async () => {
@@ -303,23 +322,23 @@ describe('/api/employees/salary/[id]', () => {
 
     const { status, body } = await edit('1', { days_present: 25, ot_days: 2 })
     expect(status).toBe(400)
-    expect(body.error).toBe('ot_days can only be set when days_present is 27')
+    expect(body.error).toBe('ot_days can only be set when days_present is 30')
   })
 
   it('accepts 15 overtime days when correcting a full month', async () => {
     await signInAs('ADMIN')
     anEmployee({ id: 'e1' })
-    aSalaryRecord({ id: '1', employee_id: 'e1', month_year: THIS_MONTH, base_salary: 30000, days_present: 27 })
+    aSalaryRecord({ id: '1', employee_id: 'e1', month_year: THIS_MONTH, base_salary: 30000, days_present: 30 })
 
-    const { status } = await edit('1', { days_present: 27, ot_days: 15 })
+    const { status } = await edit('1', { days_present: 30, ot_days: 15 })
 
     expect(status).toBe(200)
     expect(record('1')).toMatchObject({ ot_days: 15, calculated_salary: 45000 })
   })
 
   it.each([
-    ['days_present', { days_present: 30 }, 'days_present must be between 0 and 27'],
-    ['ot_days', { days_present: 27, ot_days: 16 }, 'ot_days must be between 0 and 15'],
+    ['days_present', { days_present: 31 }, 'days_present must be between 0 and 30'],
+    ['ot_days', { days_present: 30, ot_days: 16 }, 'ot_days must be between 0 and 15'],
     ['base_salary', { base_salary: 0 }, 'base_salary must be greater than 0'],
   ])('validates %s', async (_field, body, message) => {
     await signInAs('ADMIN')
