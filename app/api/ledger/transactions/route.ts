@@ -15,6 +15,8 @@ import { createClient } from '@/lib/supabase/server'
 import { requireLedger } from '@/lib/ledger/authz'
 import { createLedgerTransaction } from '@/lib/ledger/transactions'
 import { parseOpdExtras, writeOpdExtras } from '@/lib/ledger/opd'
+import { isValidDate } from '@/lib/billing/validate'
+import { istToday } from '@/lib/dates/ist'
 
 export async function POST(request: NextRequest) {
   try {
@@ -24,6 +26,17 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const supabase = await createClient()
+
+    // The desk picks the OPD day: today by default, or yesterday's or any
+    // earlier walk-in entered late (Oct 2026). Never a day still to come.
+    if (body.transaction_date !== undefined && body.transaction_date !== '') {
+      if (!isValidDate(body.transaction_date)) {
+        return NextResponse.json({ error: 'Enter a valid date' }, { status: 400 })
+      }
+      if (body.transaction_date > istToday()) {
+        return NextResponse.json({ error: "The date can't be in the future" }, { status: 400 })
+      }
+    }
 
     // An OPD receipt may carry the doctors who saw the walk-in and a medicine
     // amount (client, 28 Sep) — checked before anything is written.

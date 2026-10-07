@@ -20,6 +20,7 @@ interface OpdEntryModalProps {
     reference_number?: string | null
     notes?: string | null
     description?: string | null
+    transaction_date?: string | null
   }
 }
 
@@ -32,6 +33,13 @@ export function OpdEntryModal({
   initialData,
 }: OpdEntryModalProps) {
   const [loading, setLoading] = useState(false)
+
+  /**
+   * The OPD day. Today by default; the desk can go back to yesterday or any
+   * earlier day to enter a walk-in late, but not forward (the server refuses a
+   * future date too). Fixed once saved — the edit form shows it, read-only.
+   */
+  const [date, setDate] = useState(selectedDate)
 
   const [formData, setFormData] = useState({
     patient_name: '',
@@ -61,6 +69,9 @@ export function OpdEntryModal({
       ? description.replace(/^OPD\s+/i, '')
       : ''
   }
+
+  const formatDay = (value: string) =>
+    new Date(`${value}T00:00:00`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 
   const formatIndianNumber = (value: string) => {
     const number = value.replace(/,/g, '')
@@ -108,6 +119,10 @@ export function OpdEntryModal({
       })
     }
 
+    if (isOpen && mode === 'create') {
+      setDate(selectedDate)
+    }
+
     if (!isOpen) {
       setFormData({
         patient_name: '',
@@ -119,13 +134,18 @@ export function OpdEntryModal({
       setDoctors([])
       setMedicine('')
     }
-  }, [isOpen, mode, initialData])
+  }, [isOpen, mode, initialData, selectedDate])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!formData.patient_name.trim()) {
       alert('Patient name is required')
+      return
+    }
+
+    if (mode === 'create' && (!date || date > selectedDate)) {
+      alert("Pick the OPD date (it can't be in the future)")
       return
     }
 
@@ -164,7 +184,7 @@ export function OpdEntryModal({
           body: JSON.stringify({
             ...(editing
               ? {}
-              : { transaction_date: selectedDate, transaction_type: 'credit', source: 'opd' }),
+              : { transaction_date: date, transaction_type: 'credit', source: 'opd' }),
             amount: Number(parseIndianNumber(formData.amount)),
             payment_mode: formData.payment_mode,
             reference_number: formData.reference_number || null,
@@ -208,6 +228,30 @@ export function OpdEntryModal({
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 overflow-y-auto">
+          {/* OPD date */}
+          <div>
+            <Label htmlFor="opd_date">Date *</Label>
+            {mode === 'edit' ? (
+              <p id="opd_date" className="text-sm text-foreground py-2">
+                {initialData?.transaction_date ? formatDay(initialData.transaction_date) : '—'}
+              </p>
+            ) : (
+              <>
+                <Input
+                  id="opd_date"
+                  type="date"
+                  value={date}
+                  max={selectedDate}
+                  onChange={(e) => setDate(e.target.value)}
+                  required
+                />
+                {date && date !== selectedDate && (
+                  <p className="text-xs text-muted mt-1">Entering a past OPD visit for {formatDay(date)}.</p>
+                )}
+              </>
+            )}
+          </div>
+
           {/* Patient Name */}
           <div>
             <Label htmlFor="patient_name">Patient Name *</Label>

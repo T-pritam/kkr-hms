@@ -202,6 +202,35 @@ describe('POST /api/ledger/transactions — creation', () => {
       status: 'open',
     })
   })
+
+  // The OPD form's date (Oct 2026): yesterday is fine, tomorrow is not.
+  it("accepts yesterday's OPD receipt", async () => {
+    await signInAs('RECEPTIONIST')
+
+    const { status } = await create({ ...validTransaction, transaction_date: '2026-03-14' })
+
+    expect(status).toBe(201)
+    expect(db.rows('daily_ledger_transactions')[0].transaction_date).toBe('2026-03-14')
+  })
+
+  it('refuses a date in the future', async () => {
+    await signInAs('RECEPTIONIST')
+
+    const { status, body } = await create({ ...validTransaction, transaction_date: '2026-03-16' })
+
+    expect(status).toBe(400)
+    expect(body.error).toBe("The date can't be in the future")
+    expect(db.count('daily_ledger_transactions')).toBe(0)
+  })
+
+  it.each(['2026-02-31', '15-03-2026', 'yesterday'])('refuses the date %s', async (date) => {
+    await signInAs('RECEPTIONIST')
+
+    const { status, body } = await create({ ...validTransaction, transaction_date: date })
+
+    expect(status).toBe(400)
+    expect(body.error).toBe('Enter a valid date')
+  })
 })
 
 describe('PUT /api/ledger/transactions/[id]', () => {

@@ -41,6 +41,19 @@ function doctors() {
 }
 
 describe('OPD receipt — doctors and medicine', () => {
+  it('dates a back-dated receipt\'s doctor visit on the OPD day', async () => {
+    await signInAs('RECEPTIONIST', { userId: 'u-desk' })
+    doctors()
+
+    const { status } = await create(opd({ transaction_date: '2026-03-13', doctors: [{ doctor_id: 'd1', fee: 300 }] }))
+
+    expect(status).toBe(201)
+    expect(db.rows('daily_ledger_transactions')[0]).toMatchObject({ transaction_date: '2026-03-13', status: 'open' })
+    const visit = db.rows('patient_consultations')[0]
+    // 16:00 IST on the 13th, the time it was entered (the test clock is 10:30 UTC)
+    expect(new Date(visit.consultation_date).toISOString()).toBe('2026-03-13T10:30:00.000Z')
+  })
+
   it('writes one receipt, a visit and a priced unpaid fee per doctor, and the medicine', async () => {
     await signInAs('RECEPTIONIST', { userId: 'u-desk' })
     doctors()
