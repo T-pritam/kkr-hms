@@ -37,7 +37,8 @@ export function OpdEntryModal({
   /**
    * The OPD day. Today by default; the desk can go back to yesterday or any
    * earlier day to enter a walk-in late, but not forward (the server refuses a
-   * future date too). Fixed once saved — the edit form shows it, read-only.
+   * future date too). Editing an Open entry can change it; the doctor visits
+   * on it move with it. A closed entry never reaches this form.
    */
   const [date, setDate] = useState(selectedDate)
 
@@ -122,6 +123,9 @@ export function OpdEntryModal({
     if (isOpen && mode === 'create') {
       setDate(selectedDate)
     }
+    if (isOpen && mode === 'edit' && initialData) {
+      setDate(initialData.transaction_date ?? selectedDate)
+    }
 
     if (!isOpen) {
       setFormData({
@@ -144,7 +148,7 @@ export function OpdEntryModal({
       return
     }
 
-    if (mode === 'create' && (!date || date > selectedDate)) {
+    if (!date || date > selectedDate) {
       alert("Pick the OPD date (it can't be in the future)")
       return
     }
@@ -183,7 +187,7 @@ export function OpdEntryModal({
           credentials: 'include',
           body: JSON.stringify({
             ...(editing
-              ? {}
+              ? { transaction_date: date }
               : { transaction_date: date, transaction_type: 'credit', source: 'opd' }),
             amount: Number(parseIndianNumber(formData.amount)),
             payment_mode: formData.payment_mode,
@@ -231,25 +235,21 @@ export function OpdEntryModal({
           {/* OPD date */}
           <div>
             <Label htmlFor="opd_date">Date *</Label>
-            {mode === 'edit' ? (
-              <p id="opd_date" className="text-sm text-foreground py-2">
-                {initialData?.transaction_date ? formatDay(initialData.transaction_date) : '—'}
+            <Input
+              id="opd_date"
+              type="date"
+              value={date}
+              max={selectedDate}
+              onChange={(e) => setDate(e.target.value)}
+              required
+            />
+            {mode === 'edit' && initialData?.transaction_date && date !== initialData.transaction_date ? (
+              <p className="text-xs text-muted mt-1">
+                Moving from {formatDay(initialData.transaction_date)} to {formatDay(date)}; the doctor visits move with it.
               </p>
-            ) : (
-              <>
-                <Input
-                  id="opd_date"
-                  type="date"
-                  value={date}
-                  max={selectedDate}
-                  onChange={(e) => setDate(e.target.value)}
-                  required
-                />
-                {date && date !== selectedDate && (
-                  <p className="text-xs text-muted mt-1">Entering a past OPD visit for {formatDay(date)}.</p>
-                )}
-              </>
-            )}
+            ) : mode === 'create' && date && date !== selectedDate ? (
+              <p className="text-xs text-muted mt-1">Entering a past OPD visit for {formatDay(date)}.</p>
+            ) : null}
           </div>
 
           {/* Patient Name */}

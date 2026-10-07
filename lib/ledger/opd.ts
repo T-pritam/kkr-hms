@@ -18,6 +18,8 @@
  */
 
 import { istFields } from '@/lib/consultations/ist'
+import { isValidDate } from '@/lib/billing/validate'
+import { istToday } from '@/lib/dates/ist'
 
 type Db = { from: (table: string) => any }
 
@@ -32,6 +34,35 @@ export interface OpdExtras {
 }
 
 type Refusal = { ok: false; status: number; error: string; code?: string }
+
+/**
+ * The OPD day, as the desk picks it on the form (Oct 2026): today, or any
+ * earlier day for a walk-in entered late — on a new receipt and on an Open one
+ * being edited. Never a day still to come. Returns the error, or null.
+ */
+export function checkOpdDate(value: unknown): string | null {
+  if (!isValidDate(value)) return 'Enter a valid date'
+  if ((value as string) > istToday()) return "The date can't be in the future"
+  return null
+}
+
+/**
+ * Move an OPD receipt's doctor visits to its new day, each keeping the time it
+ * was recorded at, so the doctor's page shows the visit on the OPD day.
+ */
+export async function moveOpdVisits(db: Db, ledgerId: string, date: string): Promise<void> {
+  const { data: visits } = await db
+    .from('patient_consultations')
+    .select('id, consultation_date')
+    .eq('opd_ledger_transaction_id', ledgerId)
+  for (const visit of visits ?? []) {
+    const time = istFields(new Date(visit.consultation_date)).time || '12:00'
+    await db
+      .from('patient_consultations')
+      .update({ consultation_date: new Date(`${date}T${time}:00+05:30`).toISOString() })
+      .eq('id', visit.id)
+  }
+}
 
 /** The OPD form's doctors and medicine, checked before anything is written. */
 export function parseOpdExtras(body: any): { ok: true; value: OpdExtras } | Refusal {

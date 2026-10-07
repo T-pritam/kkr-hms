@@ -399,7 +399,7 @@ The patient's **total bill** is the sum of these payments.
 | Patient payment, labelled | Patient ▸ Payments |
 | Registration fee — type *Registration fee* | registration, or Payments ▸ Collect now |
 | Lab test — type *Lab* | Payments ▸ Add lab test |
-| OPD receipt | Ledger ▸ **Add OPD receipt** (the only thing typed directly into the ledger). It can also list the **doctors seen**, each with the **fee** they are to be paid — each becomes a visit and an unpaid fee on the doctor's page — and an optional **medicine** amount inside the payment, the hospital's expense [2026-09-28]. Once a fee on it is paid, its doctors are fixed and it can't be deleted. Editing an OPD row opens this same form. |
+| OPD receipt | Ledger ▸ **Add OPD receipt** (the only thing typed directly into the ledger). It has a **Date**: today by default, or yesterday or any earlier day for a walk-in entered late; never a future day. While the entry is Open its date can be changed on edit, and its doctor visits move with it; once closed, nobody edits it [2026-10-07]. It can also list the **doctors seen**, each with the **fee** they are to be paid — each becomes a visit and an unpaid fee on the doctor's page — and an optional **medicine** amount inside the payment, the hospital's expense [2026-09-28]. Once a fee on it is paid, its doctors are fixed and it can't be deleted. Editing an OPD row opens this same form. |
 | *Legacy desk expenses* | 6 rows from before petty cash existed, kept as history; no new ones can be added |
 
 **Not in it:** doctor fees and commissions (paid by the admin directly), desk spending (petty cash), admin spending (general expenses), salary and advances (Employees). The database itself refuses a doctor-fee or commission debit.

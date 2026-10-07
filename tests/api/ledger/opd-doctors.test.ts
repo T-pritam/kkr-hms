@@ -162,3 +162,59 @@ describe('OPD receipt — doctors and medicine', () => {
     expect(db.count('daily_ledger_transactions')).toBe(1)
   })
 })
+
+describe('OPD receipt — changing its date while Open (Oct 2026)', () => {
+  it('moves the receipt and its doctor visits to the new day, keeping the time', async () => {
+    await signInAs('RECEPTIONIST', { userId: 'u-desk' })
+    doctors()
+    const { body } = await create(opd({ doctors: [{ doctor_id: 'd1', fee: 300 }] }))
+
+    const { status } = await update(body.data.id, {
+      transaction_date: '2026-03-10',
+      doctors: [{ doctor_id: 'd1', fee: 300 }],
+      medicine_expense: null,
+    })
+
+    expect(status).toBe(200)
+    expect(db.rows('daily_ledger_transactions')[0]).toMatchObject({ transaction_date: '2026-03-10', status: 'open' })
+    expect(new Date(db.rows('patient_consultations')[0].consultation_date).toISOString()).toBe('2026-03-10T10:30:00.000Z')
+  })
+
+  it('moves the visits even when a paid fee has fixed the doctors', async () => {
+    await signInAs('ADMIN')
+    doctors()
+    const { body } = await create(opd({ doctors: [{ doctor_id: 'd1', fee: 300 }] }))
+    db.patchRow('doctor_visit_settlements', () => true, { settled: true })
+
+    const { status } = await update(body.data.id, { transaction_date: '2026-03-11', doctors: [{ doctor_id: 'd1', fee: 300 }] })
+
+    expect(status).toBe(200)
+    expect(db.rows('daily_ledger_transactions')[0].transaction_date).toBe('2026-03-11')
+    expect(new Date(db.rows('patient_consultations')[0].consultation_date).toISOString()).toBe('2026-03-11T10:30:00.000Z')
+  })
+
+  it('refuses a future date, and an invalid one', async () => {
+    await signInAs('RECEPTIONIST')
+    const { body } = await create(opd())
+
+    const future = await update(body.data.id, { transaction_date: '2026-03-16' })
+    const invalid = await update(body.data.id, { transaction_date: '2026-02-30' })
+
+    expect(future.status).toBe(400)
+    expect(future.body.error).toBe("The date can't be in the future")
+    expect(invalid.status).toBe(400)
+    expect(invalid.body.error).toBe('Enter a valid date')
+    expect(db.rows('daily_ledger_transactions')[0].transaction_date).toBe(TODAY)
+  })
+
+  it('refuses any change once the entry is closed, admin included', async () => {
+    await signInAs('ADMIN')
+    const { body } = await create(opd())
+    db.patchRow('daily_ledger_transactions', () => true, { status: 'closed' })
+
+    const { status } = await update(body.data.id, { transaction_date: '2026-03-10' })
+
+    expect(status).toBeGreaterThanOrEqual(400)
+    expect(db.rows('daily_ledger_transactions')[0].transaction_date).toBe(TODAY)
+  })
+})

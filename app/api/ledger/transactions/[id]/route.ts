@@ -4,7 +4,15 @@ import { canModify } from '@/lib/authz/ownership'
 import { normaliseLedgerCategoryDetail, validateLedgerExpenseCategory } from '@/lib/finances/validate'
 import { requireLedger } from '@/lib/ledger/authz'
 import { paymentLinks } from '@/lib/billing/payments'
-import { OPD_FEE_PAID, opdHasPaidFee, parseOpdExtras, readOpdExtras, writeOpdExtras } from '@/lib/ledger/opd'
+import {
+  OPD_FEE_PAID,
+  checkOpdDate,
+  moveOpdVisits,
+  opdHasPaidFee,
+  parseOpdExtras,
+  readOpdExtras,
+  writeOpdExtras,
+} from '@/lib/ledger/opd'
 
 /**
  * A patient payment's ledger credit is changed through the payment, never here
@@ -51,7 +59,8 @@ export async function GET(
 
 /**
  * PUT /api/ledger/transactions/[id]
- * Updates a transaction (amount, payment_mode, reference_number, description)
+ * Updates a transaction (amount, payment_mode, reference_number, description;
+ * an OPD receipt's date too)
  */
 export async function PUT(
   request: NextRequest,
@@ -118,6 +127,13 @@ export async function PUT(
     }
     if (body.notes !== undefined) {
       updates.notes = body.notes || null
+    }
+    // An OPD receipt's day can be corrected while it is Open (Oct 2026) — the
+    // Closed check above already refused a closed one. Other rows keep theirs.
+    if (existing.source === 'opd' && body.transaction_date !== undefined) {
+      const dateError = checkOpdDate(body.transaction_date)
+      if (dateError) return NextResponse.json({ error: dateError }, { status: 400 })
+      updates.transaction_date = body.transaction_date
     }
     // Only an expense row has a category. Silently ignoring these on a credit or
     // an OPD row is deliberate — the alternative is a 400 for a field the edit
@@ -203,6 +219,12 @@ export async function PUT(
     if (error) {
       console.error('Update transaction error:', error)
       return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    // The doctors' visits follow the receipt to its new day — also when a paid
+    // fee has fixed the doctors and they are not rewritten below.
+    if (updates.transaction_date && updates.transaction_date !== existing.transaction_date) {
+      await moveOpdVisits(supabase, id, updates.transaction_date)
     }
 
     if (opdExtras?.ok) {
